@@ -21,6 +21,9 @@ const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return `${(s / 60) | 0}:${St
 const cache = {};
 const setText = (id, v) => { if (cache[id] !== v) { cache[id] = v; $(id).textContent = v; } };
 
+// extension points used by online.js (set after load): update, tick, tag, noise
+export const hooks = {};
+
 const SEEK_COUNT = 10, SEEK_TIME = 120, HIDE_COUNT = 20, HIDE_TIME = 90, N_HIDERS = 5;
 const HIDER_COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff];
 
@@ -610,7 +613,10 @@ function updatePlayer(dt, canMove) {
   return { crouching, sprint };
 }
 const noises = [];
-function noise(x, z, r) { if (G.mode === 'hide' && G.phase === 'play') noises.push({ x, z, r }); }
+function noise(x, z, r) {
+  if (G.mode === 'hide' && G.phase === 'play') noises.push({ x, z, r });
+  hooks.noise?.(x, z, r);
+}
 
 // ======================================================================
 // characters
@@ -723,11 +729,12 @@ function endGame(win, title, sub) {
   show('hud', false); show('end', true);
 }
 function toMenu() { G.phase = 'menu'; G.paused = false; show('end', false); show('pause', false); show('hud', false); show('title', true); $('blackout').classList.remove('on'); document.exitPointerLock?.(); seekerGroup.visible = false; hiders.forEach((h) => { h.mesh.visible = false; }); }
-function pause() { if ((G.phase === 'countdown' || G.phase === 'play') && !G.paused) { G.paused = true; show('pause', true); } }
+function pause() { if (G.mode === 'online') return; if ((G.phase === 'countdown' || G.phase === 'play') && !G.paused) { G.paused = true; show('pause', true); } }
 function resume() { if (!G.paused) return; G.paused = false; show('pause', false); requestLock(); }
 
 // ----- input
 addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return; // typing in the online name / room-code fields
   keys[e.code] = true;
   if (['Space', 'ControlLeft', 'Tab'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyE' && !e.repeat) tryTag();
@@ -769,6 +776,7 @@ function tagTarget() {
   return best;
 }
 function tryTag() {
+  if (G.mode === 'online') return hooks.tag?.();
   const h = tagTarget(); if (!h) return;
   h.found = true; h.state = 'found'; h.popT = 0.3; G.found++;
   if (h.spot) { h.spot.owner = null; h.spot = null; }
@@ -925,7 +933,8 @@ function frame() {
     camera.position.set(Math.cos(G.orbit) * 30, 8 + Math.sin(G.orbit * 2), Math.sin(G.orbit) * 30);
     camera.lookAt(0, 2.5, 0); camera.fov = 60; camera.updateProjectionMatrix();
     if (G.phase === 'end') { for (const h of hiders) if (!h.found) h.mesh.visible = true; }
-  } else if (!G.paused) update(dt);
+  } else if (!G.paused) (G.mode === 'online' ? hooks.update : update)(dt);
+  hooks.tick?.(dt);
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i], a = f.p.geometry.attributes.position; f.life -= dt;
     for (let k = 0; k < a.count; k++) { f.vel[k * 3 + 1] -= 9 * dt; a.setXYZ(k, a.getX(k) + f.vel[k * 3] * dt, Math.max(0, a.getY(k) + f.vel[k * 3 + 1] * dt), a.getZ(k) + f.vel[k * 3 + 2] * dt); }
@@ -935,4 +944,4 @@ function frame() {
   composer.render();
 }
 frame();
-window.__g = { G, P, SPOTS, colliders, hiders, S, startGame, findPath, THREE, camera, endGame };
+export { THREE, scene, camera, canvas, P, G, colliders, losClear, makeChar, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, $ };

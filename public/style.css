@@ -5,13 +5,13 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
 .hidden{display:none!important}
 #vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(8,4,16,.65) 100%)}
 .panelwrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(20,10,35,.55),rgba(8,4,16,.88));z-index:20;text-align:center}
-.card{padding:40px 48px;max-width:640px;backdrop-filter:blur(8px);background:var(--panel);border:1px solid rgba(255,180,77,.25);border-radius:18px;box-shadow:0 20px 80px rgba(0,0,0,.6)}
+.card{padding:40px 48px;max-width:720px;backdrop-filter:blur(8px);background:var(--panel);border:1px solid rgba(255,180,77,.25);border-radius:18px;box-shadow:0 20px 80px rgba(0,0,0,.6)}
 h1{font-size:68px;letter-spacing:.12em;margin:0;font-weight:900;text-shadow:0 0 30px rgba(255,140,60,.5)}
 h1 span{color:var(--accent)}
 h2{font-size:48px;letter-spacing:.1em;margin:0;font-weight:900}
 .sub{opacity:.75;margin:8px 0 28px;letter-spacing:.08em}
-.modes{display:flex;gap:16px;justify-content:center;margin-top:8px}
-button{font:inherit;color:inherit;cursor:pointer;background:linear-gradient(180deg,rgba(255,180,77,.22),rgba(255,120,60,.12));border:1px solid rgba(255,180,77,.55);border-radius:12px;padding:16px 30px;min-width:210px;transition:transform .12s,box-shadow .12s,background .12s}
+.modes{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin-top:8px}
+button{font:inherit;color:inherit;cursor:pointer;background:linear-gradient(180deg,rgba(255,180,77,.22),rgba(255,120,60,.12));border:1px solid rgba(255,180,77,.55);border-radius:12px;padding:16px 30px;min-width:190px;transition:transform .12s,box-shadow .12s,background .12s}
 button:hover{transform:translateY(-3px) scale(1.03);box-shadow:0 8px 30px rgba(255,150,60,.35);background:rgba(255,180,77,.35)}
 button b{display:block;font-size:26px;letter-spacing:.14em}
 button small{opacity:.75}
@@ -48,3 +48,20 @@ kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);borde
 @keyframes pulse{to{transform:scale(1.12)}}
 @keyframes tick{from{transform:scale(1.5);opacity:.2}to{transform:scale(1);opacity:1}}
 @keyframes toast{0%{opacity:0;transform:translate(-50%,10px)}10%{opacity:1;transform:translate(-50%,0)}80%{opacity:1}100%{opacity:0}}
+
+input{font:inherit;color:inherit;background:rgba(0,0,0,.35);border:1px solid rgba(255,180,77,.4);border-radius:10px;padding:12px 16px;text-align:center;user-select:text;outline:none;width:260px;max-width:100%}
+input:focus{border-color:var(--accent)}
+input.code{width:120px;letter-spacing:.3em;font-size:22px;text-transform:uppercase}
+button:disabled{opacity:.4;cursor:default;transform:none;box-shadow:none}
+.err{color:var(--bad);min-height:1.4em;margin:12px 0}
+.linkrow input{width:340px;font-size:13px}
+#lobCode{letter-spacing:.35em;color:var(--accent)}
+#lobList{list-style:none;margin:18px 0;padding:0;text-align:left;min-width:260px}
+#lobList li{padding:6px 4px;font-size:18px;display:flex;align-items:center;gap:10px}
+.dot{width:14px;height:14px;border-radius:50%;flex:none}
+.tagx{opacity:.6;font-size:12px;letter-spacing:.15em}
+#resTable{margin:0 auto 26px;border-collapse:collapse;text-align:left;font-size:17px}
+#resTable td,#resTable th{padding:5px 14px;font-weight:600}
+#resTable th{font-size:12px;letter-spacing:.2em;opacity:.6}
+#feed{position:absolute;top:18px;right:18px;text-align:right;font-size:15px;font-weight:700;text-shadow:0 2px 8px #000;display:flex;flex-direction:column;gap:4px}
+#btnLeave{position:absolute;top:18px;left:18px;pointer-events:auto;min-width:0;padding:6px 14px;font-size:13px;margin:0}

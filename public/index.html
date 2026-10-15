@@ -28,6 +28,8 @@
   <div id="toast"></div>
   <div id="detectWrap"><div id="detectLabel">SPOTTED</div><div id="detectBar"><div id="detectFill"></div></div></div>
   <div id="banner"></div>
+  <div id="feed"></div>
+  <button id="btnLeave" class="small hidden">Leave room</button>
 </div>
 
 <div id="blackout"><div id="bigcount"></div><p id="blackmsg"></p></div>
@@ -39,6 +41,7 @@
     <div class="modes">
       <button id="btnSeek"><b>SEEK</b><small>Find 5 hiders in 120s</small></button>
       <button id="btnHide"><b>HIDE</b><small>Survive the seeker for 90s</small></button>
+      <button id="btnOnline"><b>ONLINE</b><small>2-8 players, by room code</small></button>
     </div>
     <p class="keys"><kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch &nbsp; <kbd>E</kbd>/click tag &nbsp; <kbd>Esc</kbd> pause</p>
   </div>
@@ -55,6 +58,42 @@
   <div class="modes"><button id="btnAgain"><b>PLAY AGAIN</b></button><button id="btnMenu"><b>MENU</b></button></div></div>
 </div>
 
+<div id="olMenu" class="panelwrap hidden">
+  <div class="card">
+    <h2>ONLINE</h2>
+    <p class="sub" id="olHeading">Pick a name, then create or join a room</p>
+    <input id="olName" maxlength="16" placeholder="Your name" autocomplete="off">
+    <div class="modes" id="olCreateRow"><button id="olCreate"><b>CREATE ROOM</b></button></div>
+    <p class="sub" id="olOr">or join with a code</p>
+    <div class="modes"><input id="olCode" maxlength="4" placeholder="ABCD" autocomplete="off" class="code"><button id="olJoin"><b>JOIN</b></button></div>
+    <p id="olMsg" class="err"></p>
+    <button id="olBack" class="small">Back</button>
+  </div>
+</div>
+
+<div id="olLobby" class="panelwrap hidden">
+  <div class="card">
+    <p class="sub" style="margin:0">ROOM CODE</p>
+    <h2 id="lobCode"></h2>
+    <div class="modes linkrow"><input id="lobLink" readonly><button id="lobCopy" class="small">Copy link</button></div>
+    <ul id="lobList"></ul>
+    <p class="sub" id="lobHint"></p>
+    <div class="modes"><button id="lobStart"><b>START</b></button><button id="lobLeave"><b>LEAVE</b></button></div>
+  </div>
+</div>
+
+<div id="olResults" class="panelwrap hidden">
+  <div class="card"><h2 id="resTitle"></h2><p class="sub" id="resSub"></p>
+  <table id="resTable"></table>
+  <div class="modes"><button id="resLobby"><b>BACK TO LOBBY</b></button></div></div>
+</div>
+
+<div id="olConn" class="panelwrap hidden">
+  <div class="card"><h2>CONNECTION LOST</h2><p class="sub">The link to the server dropped.</p>
+  <div class="modes"><button id="connRetry"><b>RECONNECT</b></button><button id="connMenu"><b>MENU</b></button></div></div>
+</div>
+
 <script type="module" src="game.js"></script>
+<script type="module" src="online.js"></script>
 </body>
 </html>

@@ -3,6 +3,13 @@
   "version": "1.0.0",
   "description": "3D hide and seek in a dusk suburban house and garden (Three.js, no build step)",
   "private": true,
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=20" }
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18"
+  }
 }
