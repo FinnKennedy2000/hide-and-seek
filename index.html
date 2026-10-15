@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hide &amp; Seek</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+
+<div id="hud" class="hidden">
+  <div id="top">
+    <div id="modeLabel"></div>
+    <div id="timer">0:00</div>
+    <div id="found"></div>
+    <div id="seekerState"></div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="prompt">E &middot; TAG</div>
+  <div id="toast"></div>
+  <div id="detectWrap"><div id="detectLabel">SPOTTED</div><div id="detectBar"><div id="detectFill"></div></div></div>
+  <div id="banner"></div>
+</div>
+
+<div id="blackout"><div id="bigcount"></div><p id="blackmsg"></p></div>
+
+<div id="title" class="panelwrap">
+  <div class="card">
+    <h1>HIDE <span>&amp;</span> SEEK</h1>
+    <p class="sub">A house. A garden. The last light of dusk.</p>
+    <div class="modes">
+      <button id="btnSeek"><b>SEEK</b><small>Find 5 hiders in 120s</small></button>
+      <button id="btnHide"><b>HIDE</b><small>Survive the seeker for 90s</small></button>
+    </div>
+    <p class="keys"><kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch &nbsp; <kbd>E</kbd>/click tag &nbsp; <kbd>Esc</kbd> pause</p>
+  </div>
+</div>
+
+<div id="pause" class="panelwrap hidden">
+  <div class="card"><h2>PAUSED</h2><p class="sub">Click to resume</p>
+  <button id="btnQuit" class="small">Quit to menu</button></div>
+</div>
+
+<div id="end" class="panelwrap hidden">
+  <div class="card"><h2 id="endTitle"></h2><p class="sub" id="endSub"></p>
+  <div id="endStats"></div>
+  <div class="modes"><button id="btnAgain"><b>PLAY AGAIN</b></button><button id="btnMenu"><b>MENU</b></button></div></div>
+</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
