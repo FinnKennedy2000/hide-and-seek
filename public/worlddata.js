@@ -1,6 +1,8 @@
 // Deterministic world layout shared by the client (game.js) and the server (hit detection, prop table).
 // No THREE and no DOM in here. `buildWorld(v)` records colliders and disguisable props; the optional visual
 // callbacks `v` (client only) turn each call into meshes/lights. Same code + seeded RNG = identical lists everywhere.
+// `buildWorld(v, mapId)` builds one of the maps in MAPS (bottom of this file): the house + garden, or Late Shop (maps/lateshop.js).
+import * as lateshop from './maps/lateshop.js';
 
 const mulberry32 = (a) => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 
@@ -23,7 +25,8 @@ const EXT = { // half extents of a mesh spec, only used to size prop bounds
   cyl: ([, rt, rb, h]) => [Math.max(rt, rb), h / 2, Math.max(rt, rb)], plane: ([, w, h]) => [w / 2, h / 2, 0],
 };
 
-export function buildWorld(v = {}) {
+export function buildWorld(v = {}, mapId = 'house') {
+  if (!Object.hasOwn(MAPS, mapId)) throw new Error(`unknown map ${mapId}`);
   const colliders = [], props = [];
   let cur = -1, bb = null;
   const rand = mulberry32(20240607);
@@ -55,6 +58,8 @@ export function buildWorld(v = {}) {
       cur = -1; bb = null;
     },
   };
+
+  if (mapId !== 'house') { lateshop.build(b, rnd); return { colliders, props }; } // only one other map so far
 
   function wallH(z, x0, x1, gaps = []) { // runs along x
     let c = x0;
@@ -193,3 +198,39 @@ export function buildWorld(v = {}) {
 
   return { colliders, props };
 }
+
+// ----- map registry. meta: fog {color, near, far | density}, sky 'dusk' | 'night', ambient {color, ground?, intensity}, bounds, seekerStart.
+// spots: AI hiding spots; spawns: online hider spawns (open floor); mix: [kind, count] pairs for the 5 single-player hiders;
+// materials: extra material specs the client adds to its table (name -> MeshStandardMaterial params).
+export const MAPS = {
+  house: {
+    meta: {
+      id: 'house', name: 'House', blurb: 'A house. A garden. The last light of dusk.',
+      fog: { color: 0x6b4f6e, density: 0.021 }, sky: 'dusk',
+      ambient: { color: 0x7a68b0, ground: 0x2a2030, intensity: 0.62 },
+      seekerStart: { x: 0, z: 7.8, yaw: 0 },
+      bounds: { x0: -23.5, x1: 23.5, z0: -23.5, z1: 23.5 },
+    },
+    materials: {},
+    mix: [['house', 3], ['garden', 2]],
+    spots: [
+      { x: -7.45, z: -4.7, kind: 'house', name: 'beside bed' }, { x: -3.2, z: -5.55, kind: 'house', name: 'wardrobe' },
+      { x: 0.3, z: -5.5, kind: 'house', name: 'under desk' }, { x: 2.0, z: -2.15, kind: 'house', name: 'behind armchair' },
+      { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.4, z: -5.4, kind: 'house', name: 'crate pocket' },
+      { x: -4.6, z: 3.0, kind: 'house', name: 'under table' }, { x: -7.45, z: 5.45, kind: 'house', name: 'fridge pocket' },
+      { x: 4.0, z: -0.55, kind: 'house', name: 'behind sofa' },
+      { x: 12.9, z: -12.7, kind: 'garden', name: 'shed' }, { x: -11, z: 15.1, kind: 'garden', name: 'hedge A' },
+      { x: 16.1, z: 11, kind: 'garden', name: 'hedge B' }, { x: -12, z: -16.1, kind: 'garden', name: 'hedge C' },
+      { x: -20.1, z: 0, kind: 'garden', name: 'hedge D' }, { x: -14.6, z: 8.7, kind: 'garden', name: 'tree 1' },
+      { x: 18.7, z: -6.4, kind: 'garden', name: 'tree 2' }, { x: -4.1, z: -17.7, kind: 'garden', name: 'tree 3' },
+      { x: 21.0, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
+      { x: 8, z: 16.9, kind: 'garden', name: 'car' },
+    ],
+    // open spots in the garden / yard that don't overlap the world's colliders
+    spawns: [[0, 12], [-6, 10], [-4, 16], [6, 9], [12, 6], [-12, 8], [16, 0], [-16, -4], [0, -14], [10, -18], [-8, -10], [18, 16], [-18, 16], [-20, -14]],
+  },
+  lateshop: {
+    meta: { ...lateshop.meta, blurb: 'A supermarket after closing. The strip lights are failing.' }, materials: lateshop.materials, spots: lateshop.spots, spawns: lateshop.spawns,
+    mix: [['floor', 2], ['back', 1], ['bay', 1], ['outside', 1]],
+  },
+};

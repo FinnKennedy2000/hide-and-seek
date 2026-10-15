@@ -3,7 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { buildWorld } from './worlddata.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildWorld, MAPS } from './worlddata.js';
 import { showBoss, hideBoss, bossOn } from './bossscreen.js';
 import { makeChar, animate, setSeeker, HATS, OUTFITS } from './char.js';
 
@@ -43,8 +44,6 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
-const FOG = new THREE.Color(0x6b4f6e);
-scene.fog = new THREE.FogExp2(FOG, 0.021);
 const camera = new THREE.PerspectiveCamera(72, 1, 0.08, 600);
 camera.rotation.order = 'YXZ';
 scene.add(camera); // so first-person viewmodels can be parented to it
@@ -133,8 +132,9 @@ const mat = {
 };
 
 // ======================================================================
-// world building
+// world building. Rebuildable: setWorld(mapId) tears the current map down and builds another (see worlddata.js MAPS).
 // ======================================================================
+const colliders = [], props = []; // {x0,x1,z0,z1,y0,y1} / disguisable furniture (id = index). Refilled IN PLACE by setWorld: other modules import these arrays
 const solids = [];             // meshes that block the third-person camera and are sampled by camouflage / prop picking
 const propMeshes = [];         // propId -> meshes that make up that prop
 const geoCache = new Map();
@@ -150,40 +150,59 @@ function track(m, propId, solid = true) {
   if (solid) solids.push(m);
   return m;
 }
+let world = null, worldKey = null, meta = null; // current map: group holding everything map-specific, its id, its MAPS meta
+let bounds = { x0: -23.5, x1: 23.5, z0: -23.5, z1: 23.5 };
+let SPOTS = [];                // AI hiding spots of the current map
+let recs = null;               // geometry recorded while the map builds; merged by material in flushRecs()
+const ownMats = [], flickers = []; // per-map materials to dispose; lights that flicker
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler(), _m4 = new THREE.Matrix4();
+function addRec(base, matName, cast, recv, propId, solid) {
+  if (!mat[matName]) { console.warn('unknown material', matName); matName = 'dark'; }
+  const g = base.index ? base.toNonIndexed() : base.clone(); // one attribute layout for every piece, so they can merge
+  g.applyMatrix4(_m4);
+  recs.push({ g, matName, cast, recv, propId, solid });
+}
+// Draw calls: every box / mesh is baked into world space and merged per (prop, material, shadow flags). All static scenery of
+// one material becomes ONE mesh; each disguisable prop keeps its own mesh(es) so it stays addressable (picking, makePropClone).
+function flushRecs() {
+  const groups = new Map();
+  for (const r of recs) { const k = `${r.propId}|${r.matName}|${r.cast}|${r.recv}|${r.solid}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  for (const list of groups.values()) {
+    const r = list[0], g = mergeGeometries(list.map((x) => x.g));
+    if (!g) throw new Error('geometry merge failed for ' + r.matName);
+    for (const x of list) x.g.dispose();
+    const m = new THREE.Mesh(g, mat[r.matName]);
+    m.castShadow = r.cast; m.receiveShadow = r.recv; m.matrixAutoUpdate = false; // identity matrix: geometry is already in world space
+    world.add(m); track(m, r.propId, r.solid);
+  }
+  recs = null;
+}
 // visual callbacks for worlddata.js: the layout (and colliders / props) lives there, shared with the server
 const visual = {
   box(cx, cz, w, d, h, matName, o, propId) {
     const { y0 = 0, cast = true, ry = 0, recv = true } = o;
-    const m = new THREE.Mesh(boxGeo, mat[matName]);
-    m.scale.set(w, h, d);
-    m.position.set(cx, y0 + h / 2, cz);
-    m.rotation.y = ry;
-    m.castShadow = cast; m.receiveShadow = recv;
-    m.updateMatrix(); m.matrixAutoUpdate = false;
-    scene.add(m);
-    return track(m, propId);
+    _m4.compose(_p.set(cx, y0 + h / 2, cz), _q.setFromEuler(_e.set(0, ry, 0)), _s.set(w, h, d));
+    addRec(boxGeo, matName, cast, recv, propId, true);
   },
   mesh(spec, matName, x, y, z, o, propId) {
-    const m = new THREE.Mesh(geoOf(spec), mat[matName]);
-    m.position.set(x, y, z);
-    if (o.s) m.scale.set(...o.s);
-    if (o.r) m.rotation.set(...o.r);
-    m.castShadow = o.cast ?? true; m.receiveShadow = true;
-    m.updateMatrix(); m.matrixAutoUpdate = false;
-    scene.add(m);
-    return track(m, propId, o.cast !== false);
+    _m4.compose(_p.set(x, y, z), _q.setFromEuler(o.r ? _e.set(...o.r) : _e.set(0, 0, 0)), o.s ? _s.set(...o.s) : _s.set(1, 1, 1));
+    addRec(geoOf(spec), matName, o.cast ?? true, true, propId, o.cast !== false);
   },
-  light(x, y, z, intensity, dist, color) { const l = new THREE.PointLight(color, intensity, dist, 2); l.position.set(x, y, z); scene.add(l); },
+  light(x, y, z, intensity, dist, color) {
+    const l = new THREE.PointLight(color, intensity, dist, 2); l.position.set(x, y, z); world.add(l);
+    if (color === meta.flicker) flickers.push({ l, base: intensity, dip: 0 });
+  },
   books(cx, cz, len, propId) { // against a west wall, faces +x
     const p = new THREE.Mesh(new THREE.PlaneGeometry(len * 0.94, 1.8), new THREE.MeshStandardMaterial({ map: bookTex, roughness: 0.9 }));
     p.rotation.y = Math.PI / 2; p.position.set(cx + 0.185, 1.0, cz);
     p.material.map = bookTex.clone(); p.material.map.repeat.set(len / 2, 1); p.material.map.needsUpdate = true;
-    scene.add(p); track(p, propId);
+    p.material.userData.ownMap = true; ownMats.push(p.material);
+    world.add(p); track(p, propId);
   },
 };
-const { colliders, props } = buildWorld(visual); // colliders: {x0,x1,z0,z1,y0,y1}; props: disguisable furniture, id = index
 
 // A free-standing copy of a prop for disguises: same geometry/material/scale, origin at the prop's footprint centre on the floor.
+// (Prop meshes are baked into world space with an identity transform, so shifting the clone's position is all it takes.)
 function makePropClone(id) {
   const pr = props[id], g = new THREE.Group();
   for (const m of propMeshes[id]) {
@@ -194,21 +213,22 @@ function makePropClone(id) {
   return g;
 }
 
-// ----- sky, sun, ground
+// ----- sky, sun, ambient (persistent; setWorld retunes them per map)
 const sunDir = new THREE.Vector3(-30, 11, -22).normalize();
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { horizon: { value: new THREE.Color(0x6b4f6e) }, sun: { value: sunDir }, night: { value: 0 } },
+  vertexShader: 'varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+  fragmentShader: `varying vec3 vP; uniform vec3 horizon; uniform vec3 sun; uniform float night;
+    void main(){ float h=max(vP.y,0.);
+      vec3 mid=mix(vec3(.20,.10,.28), vec3(.025,.035,.07), night), top=mix(vec3(.015,.02,.07), vec3(.008,.011,.03), night);
+      vec3 c=mix(horizon, mid, smoothstep(0.,.22,h)); c=mix(c, top, smoothstep(.15,.85,h));
+      float s=max(dot(normalize(vP),sun),0.);
+      c+=(vec3(1.,.45,.15)*pow(s,10.)*.55+vec3(1.,.7,.35)*pow(s,120.)*1.2)*(1.-night);
+      gl_FragColor=vec4(c,1.); }`,
+});
 {
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { horizon: { value: FOG.clone() }, sun: { value: sunDir } },
-    vertexShader: 'varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-    fragmentShader: `varying vec3 vP; uniform vec3 horizon; uniform vec3 sun;
-      void main(){ float h=max(vP.y,0.);
-        vec3 mid=vec3(.20,.10,.28), top=vec3(.015,.02,.07);
-        vec3 c=mix(horizon, mid, smoothstep(0.,.22,h)); c=mix(c, top, smoothstep(.15,.85,h));
-        float s=max(dot(normalize(vP),sun),0.);
-        c+=vec3(1.,.45,.15)*pow(s,10.)*.55+vec3(1.,.7,.35)*pow(s,120.)*1.2;
-        gl_FragColor=vec4(c,1.); }`,
-  }));
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), skyMat);
   sky.frustumCulled = false;
   scene.add(sky);
   const sp = new Float32Array(900);
@@ -219,26 +239,31 @@ const sunDir = new THREE.Vector3(-30, 11, -22).normalize();
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
   scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.7 })));
 }
-const sun = new THREE.DirectionalLight(0xff9a62, 1.9);
+const sun = new THREE.DirectionalLight(0xff9a62, 1.9); // the only shadow caster; hidden (no shadow pass at all) on night maps
 sun.position.copy(sunDir).multiplyScalar(45);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 5, far: 110 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0x7a68b0, 0x2a2030, 0.62));
+const hemi = new THREE.HemisphereLight(0x7a68b0, 0x2a2030, 0.62);
+scene.add(hemi);
 
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), mat.grass);
-ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
-grassTex.repeat.set(300, 300);
-scene.add(ground);
+function applyEnv(m) {
+  const f = m.fog;
+  scene.fog = f.density ? new THREE.FogExp2(f.color, f.density) : new THREE.Fog(f.color, f.near, f.far);
+  skyMat.uniforms.horizon.value.set(f.color);
+  skyMat.uniforms.night.value = m.sky === 'night' ? 1 : 0;
+  sun.visible = m.sky !== 'night';
+  hemi.color.set(m.ambient.color); hemi.groundColor.set(m.ambient.ground ?? m.ambient.color); if (m.ambient.ground == null) hemi.groundColor.multiplyScalar(0.5);
+  hemi.intensity = m.ambient.intensity;
+  bounds = m.bounds;
+}
 
-solids.push(ground);
-
-// ----- grass tufts + distant conifers (instanced)
-{
-  // grass tufts + distant conifers (instanced)
-  const tuft = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.4, 3), M(0x3f6a35, 1), 1500);
+// house-only scenery: grass tufts + distant conifers (instanced)
+function houseScenery() {
+  const own = (m) => { ownMats.push(m); return m; };
+  const tuft = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.4, 3), own(M(0x3f6a35, 1)), 1500);
   const d = new THREE.Object3D();
   for (let i = 0; i < 1500; i++) {
     let x, z;
@@ -246,35 +271,48 @@ solids.push(ground);
     d.position.set(x, 0.17, z); d.rotation.set(rnd(-0.2, 0.2), rnd(0, 6), rnd(-0.2, 0.2)); d.scale.setScalar(rnd(0.6, 1.5)); d.updateMatrix();
     tuft.setMatrixAt(i, d.matrix);
   }
-  scene.add(tuft);
-  const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 9, 7), M(0x16221f, 1), 90);
+  world.add(tuft);
+  const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 9, 7), own(M(0x16221f, 1)), 90);
   for (let i = 0; i < 90; i++) {
     const a = (i / 90) * Math.PI * 2 + rnd(-0.05, 0.05), r = rnd(30, 62);
     d.position.set(Math.cos(a) * r, 4.2, Math.sin(a) * r); d.rotation.set(0, 0, 0); d.scale.setScalar(rnd(0.8, 1.8)); d.updateMatrix();
     pines.setMatrixAt(i, d.matrix);
   }
-  scene.add(pines);
+  world.add(pines);
 }
 
-// ----- hiding spots
-const SPOTS = [
-  // house
-  { x: -7.45, z: -4.7, kind: 'house', name: 'beside bed' }, { x: -3.2, z: -5.55, kind: 'house', name: 'wardrobe' },
-  { x: 0.3, z: -5.5, kind: 'house', name: 'under desk' }, { x: 2.0, z: -2.15, kind: 'house', name: 'behind armchair' },
-  { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.4, z: -5.4, kind: 'house', name: 'crate pocket' },
-  { x: -4.6, z: 3.0, kind: 'house', name: 'under table' }, { x: -7.45, z: 5.45, kind: 'house', name: 'fridge pocket' },
-  { x: 4.0, z: -0.55, kind: 'house', name: 'behind sofa' },
-  // garden
-  { x: 12.9, z: -12.7, kind: 'garden', name: 'shed' }, { x: -11, z: 15.1, kind: 'garden', name: 'hedge A' },
-  { x: 16.1, z: 11, kind: 'garden', name: 'hedge B' }, { x: -12, z: -16.1, kind: 'garden', name: 'hedge C' },
-  { x: -20.1, z: 0, kind: 'garden', name: 'hedge D' }, { x: -14.6, z: 8.7, kind: 'garden', name: 'tree 1' },
-  { x: 18.7, z: -6.4, kind: 'garden', name: 'tree 2' }, { x: -4.1, z: -17.7, kind: 'garden', name: 'tree 3' },
-  { x: 21.0, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
-  { x: 8, z: 16.9, kind: 'garden', name: 'car' },
-];
-SPOTS.forEach((s) => { s.owner = null; });
-for (const s of SPOTS) for (const c of colliders) {
-  if (s.x > c.x0 - 0.2 && s.x < c.x1 + 0.2 && s.z > c.z0 - 0.2 && s.z < c.z1 + 0.2 && c.y0 < 0.4 && c.y1 > 0.4) console.warn('hiding spot overlaps collider', s.name);
+function clearWorld() {
+  if (!world) return;
+  scene.remove(world);
+  world.traverse((o) => { if (o.isInstancedMesh) o.dispose(); o.geometry?.dispose(); }); // world geometry is all per-map (geoCache bases are never in the scene)
+  for (const m of ownMats) { if (m.userData.ownMap) m.map.dispose(); m.dispose(); }
+  ownMats.length = 0; flickers.length = 0;
+  colliders.length = 0; props.length = 0; solids.length = 0; propMeshes.length = 0;
+  world = null; worldKey = null;
+}
+// Build map `id` (a MAPS key), replacing the current one. No-op when it is already loaded.
+function setWorld(id) {
+  if (!Object.hasOwn(MAPS, id)) id = 'house';
+  if (id === worldKey) return;
+  clearWorld();
+  const map = MAPS[id];
+  meta = map.meta;
+  for (const [n, spec] of Object.entries(map.materials)) if (!mat[n]) mat[n] = new THREE.MeshStandardMaterial({ metalness: 0, ...spec });
+  applyEnv(meta);
+  world = new THREE.Group(); scene.add(world);
+  recs = [];
+  const built = buildWorld(visual, id); // colliders + props come from the shared module; meshes via `visual`
+  colliders.push(...built.colliders); props.push(...built.props);
+  flushRecs();
+  const gm = id === 'house' ? mat.grass : M(0x14161a, 0.95); // outside the shop fence: dark verge
+  if (id !== 'house') ownMats.push(gm);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), gm);
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  world.add(ground); solids.push(ground);
+  if (id === 'house') { grassTex.repeat.set(300, 300); houseScenery(); }
+  worldKey = id;
+  buildNav();
+  setSpots(map);
 }
 
 // ======================================================================
@@ -282,13 +320,16 @@ for (const s of SPOTS) for (const c of colliders) {
 // ======================================================================
 const NG = 104, CELL = 0.5, NMIN = -26, NR = 0.3;
 const blocked = new Uint8Array(NG * NG);
-for (const c of colliders) {
-  if (c.y0 > 0.69 || c.y1 < 0.15) continue;
-  const i0 = Math.max(0, Math.floor((c.x0 - NR - NMIN) / CELL)), i1 = Math.min(NG - 1, Math.ceil((c.x1 + NR - NMIN) / CELL));
-  const j0 = Math.max(0, Math.floor((c.z0 - NR - NMIN) / CELL)), j1 = Math.min(NG - 1, Math.ceil((c.z1 + NR - NMIN) / CELL));
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const x = NMIN + (i + 0.5) * CELL, z = NMIN + (j + 0.5) * CELL;
-    if (x > c.x0 - NR && x < c.x1 + NR && z > c.z0 - NR && z < c.z1 + NR) blocked[j * NG + i] = 1;
+function buildNav() { // rasterise the current map's low colliders into the grid (rerun by setWorld)
+  blocked.fill(0);
+  for (const c of colliders) {
+    if (c.y0 > 0.69 || c.y1 < 0.15) continue;
+    const i0 = Math.max(0, Math.floor((c.x0 - NR - NMIN) / CELL)), i1 = Math.min(NG - 1, Math.ceil((c.x1 + NR - NMIN) / CELL));
+    const j0 = Math.max(0, Math.floor((c.z0 - NR - NMIN) / CELL)), j1 = Math.min(NG - 1, Math.ceil((c.z1 + NR - NMIN) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = NMIN + (i + 0.5) * CELL, z = NMIN + (j + 0.5) * CELL;
+      if (x > c.x0 - NR && x < c.x1 + NR && z > c.z0 - NR && z < c.z1 + NR) blocked[j * NG + i] = 1;
+    }
   }
 }
 const cellOf = (v) => clamp(Math.floor((v - NMIN) / CELL), 0, NG - 1);
@@ -340,6 +381,25 @@ function findPath(sx, sz, gx, gz) {
   out.push({ x: gx, z: gz });
   return out;
 }
+// AI hiding spots of the map, minus any the nav grid cannot reach from the seeker start (inside a lorry, behind a sealed gap...):
+// findPath would otherwise send a hider straight through the wall.
+function setSpots(map) {
+  const { x, z } = map.meta.seekerStart, [si, sj] = nearestFree(x, z);
+  const seen = new Uint8Array(NG * NG), q = [sj * NG + si]; seen[q[0]] = 1;
+  for (let h = 0; h < q.length; h++) {
+    const ci = q[h] % NG, cj = (q[h] / NG) | 0;
+    for (const [di, dj] of NEI.slice(0, 4)) {
+      const i = ci + di, j = cj + dj;
+      if (i < 0 || j < 0 || i >= NG || j >= NG || seen[j * NG + i] || blocked[j * NG + i]) continue;
+      seen[j * NG + i] = 1; q.push(j * NG + i);
+    }
+  }
+  SPOTS = map.spots.filter((s) => { const [i, j] = nearestFree(s.x, s.z); return seen[j * NG + i] && Math.hypot(NMIN + (i + 0.5) * CELL - s.x, NMIN + (j + 0.5) * CELL - s.z) < 0.8; }).map((s) => ({ ...s, owner: null }));
+  if (SPOTS.length < map.spots.length) console.warn(`${map.meta.id}: ${map.spots.length - SPOTS.length} hiding spots unreachable, skipped`);
+  for (const s of SPOTS) for (const c of colliders) {
+    if (s.x > c.x0 - 0.2 && s.x < c.x1 + 0.2 && s.z > c.z0 - 0.2 && s.z < c.z1 + 0.2 && c.y0 < 0.4 && c.y1 > 0.4) console.warn('hiding spot overlaps collider', s.name ?? `${s.kind} ${s.x},${s.z}`);
+  }
+}
 function follow(a, speed, dt) { // a: {x,z,path,pi,heading} -> true when done
   if (!a.path || a.pi >= a.path.length) return true;
   let rem = speed * dt;
@@ -367,6 +427,8 @@ function losClear(ax, ay, az, bx, by, bz) {
   }
   return true;
 }
+
+setWorld('house'); // initial map; the title screen / online rounds switch it
 
 // ======================================================================
 // audio (all synthesized)
@@ -479,7 +541,7 @@ function updatePlayer(dt, canMove) {
   const k = Math.min(1, dt * (P.air ? 3 : 12));
   P.vx = lerp(P.vx, tx, k); P.vz = lerp(P.vz, tz, k);
   P.x += P.vx * dt; P.z += P.vz * dt;
-  P.x = clamp(P.x, -23.5, 23.5); P.z = clamp(P.z, -23.5, 23.5);
+  P.x = clamp(P.x, bounds.x0, bounds.x1); P.z = clamp(P.z, bounds.z0, bounds.z1);
   // vertical
   let ground = 0;
   for (const co of colliders) if (P.x > co.x0 - 0.1 && P.x < co.x1 + 0.1 && P.z > co.z0 - 0.1 && P.z < co.z1 + 0.1 && co.y1 <= P.y + 0.3 && co.y1 <= 1.2) ground = Math.max(ground, co.y1);
@@ -523,7 +585,7 @@ function makeIcon(txt, col) {
 const iconTex = { q: makeIcon('?', '#ffd166'), x: makeIcon('!', '#ff4d5e') };
 
 // seeker
-const S = { x: -2.3, z: 6.9, heading: Math.PI, state: 'count', path: null, pi: 0, timer: 0, detect: 0, visited: new Set(), lastSeen: null, repath: 0, lostT: 0, stepT: 0, spot: null };
+const S = { x: 0, z: 7.8, heading: Math.PI, state: 'count', path: null, pi: 0, timer: 0, detect: 0, visited: new Set(), lastSeen: null, repath: 0, lostT: 0, stepT: 0, spot: null };
 const seekerGroup = new THREE.Group();
 {
   const body = makeChar(0xb3202e, { seeker: true }); seekerGroup.add(body); S.body = body;
@@ -567,20 +629,24 @@ function sendHider(h, spot, speed) {
 function reset(mode) {
   G.mode = mode; G.t = 0; G.found = 0; G.stats = { bolts: 0, spotted: 0, loud: 0 }; G.paused = false;
   G.phase = 'countdown'; G.cd = mode === 'seek' ? SEEK_COUNT : HIDE_COUNT; G.lastCd = -1;
-  Object.assign(P, { x: mode === 'seek' ? 0 : 3, y: 0, z: mode === 'seek' ? 12 : 11, vx: 0, vz: 0, vy: 0, yaw: 0, pitch: 0, crouch: 0, dist: 0 });
+  const map = MAPS[worldKey], ss = meta.seekerStart, away = (r) => { const f = map.spawns.filter((s) => Math.hypot(s[0] - ss.x, s[1] - ss.z) > r); return pick(f.length ? f : map.spawns); };
+  const [hx, hz] = away(6); // hide mode: you start at a spawn point, the seeker at the map's seeker start
+  Object.assign(P, { x: mode === 'seek' ? ss.x : hx, y: 0, z: mode === 'seek' ? ss.z : hz, vx: 0, vz: 0, vy: 0, yaw: mode === 'seek' ? ss.yaw : 0, pitch: 0, crouch: 0, dist: 0 });
   noises.length = 0; P.dist = 0;
   for (const h of hiders) scene.remove(h.mesh);
   hiders.length = 0; SPOTS.forEach((s) => { s.owner = null; });
   seekerGroup.visible = false;
   if (mode === 'seek') {
-    const house = shuffle(SPOTS.filter((s) => s.kind === 'house')).slice(0, 3), garden = shuffle(SPOTS.filter((s) => s.kind === 'garden')).slice(0, 2);
-    shuffle([...house, ...garden]).forEach((spot, i) => {
+    const chosen = map.mix.flatMap(([kind, n]) => shuffle(SPOTS.filter((s) => s.kind === kind)).slice(0, n)); // e.g. 3 house + 2 garden
+    if (chosen.length < N_HIDERS) chosen.push(...shuffle(SPOTS.filter((s) => !chosen.includes(s))).slice(0, N_HIDERS - chosen.length));
+    shuffle(chosen).forEach((spot, i) => {
       const mesh = makeChar(HIDER_COLORS[i], { hat: pick(HATS), pattern: pick(OUTFITS) }); scene.add(mesh);
-      const h = { mesh, x: rnd(-3, 3), z: rnd(8, 9.5), heading: Math.PI, state: 'run', s: 1, found: false, nextPeek: 0, peekT: 0, fleeCd: 4, spot: null, path: null, pi: 0, speed: 5.5, color: HIDER_COLORS[i] };
+      const [sx, sz] = away(4);
+      const h = { mesh, x: sx, z: sz, heading: Math.PI, state: 'run', s: 1, found: false, nextPeek: 0, peekT: 0, fleeCd: 4, spot: null, path: null, pi: 0, speed: 5.5, color: HIDER_COLORS[i] };
       sendHider(h, spot, 5.5); hiders.push(h);
     });
   } else {
-    Object.assign(S, { x: -2.3, z: 6.9, heading: Math.PI, state: 'count', path: null, pi: 0, timer: 0, detect: 0, lastSeen: null, lostT: 0 });
+    Object.assign(S, { x: ss.x, z: ss.z, heading: Math.PI, state: 'count', path: null, pi: 0, timer: 0, detect: 0, lastSeen: null, lostT: 0 });
     S.visited.clear(); seekerGroup.visible = true;
   }
   $('blackout').classList.toggle('on', mode === 'seek');
@@ -593,6 +659,7 @@ function reset(mode) {
 }
 function startGame(mode) {
   initAudio(); enterFull();
+  setWorld(spMap);
   reset(mode);
   show('title', false); show('end', false); show('hud', true);
   requestLock();
@@ -609,7 +676,7 @@ function endGame(win, title, sub) {
   $('endStats').innerHTML = st.map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
   show('hud', false); show('end', true);
 }
-function toMenu() { G.phase = 'menu'; G.paused = false; leaveFull(); show('end', false); show('hud', false); show('title', true); $('blackout').classList.remove('on'); document.exitPointerLock?.(); seekerGroup.visible = false; hiders.forEach((h) => { h.mesh.visible = false; }); }
+function toMenu() { setWorld(spMap); G.phase = 'menu'; G.paused = false; leaveFull(); show('end', false); show('hud', false); show('title', true); $('blackout').classList.remove('on'); document.exitPointerLock?.(); seekerGroup.visible = false; hiders.forEach((h) => { h.mesh.visible = false; }); }
 const inGame = () => G.phase === 'countdown' || G.phase === 'play';
 // Fullscreen + keyboard lock so Ctrl+W / Ctrl+T etc. reach the game instead of the browser (needs a user gesture)
 function enterFull() {
@@ -665,6 +732,17 @@ addEventListener('mousedown', () => {
 });
 addEventListener('wheel', (e) => { if (G.mode === 'online' && !G.paused) hooks.wheel?.(Math.sign(e.deltaY)); }, { passive: true });
 document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas) pause(); });
+// single-player map choice on the title screen (the lobby has its own picker in online.js)
+let spMap = 'house';
+function renderMapPick() {
+  const box = $('spMap'); box.textContent = '';
+  for (const [id, m] of Object.entries(MAPS)) {
+    const b = document.createElement('button'); b.className = 'chip' + (id === spMap ? ' on' : ''); b.textContent = m.meta.name.toUpperCase();
+    b.onclick = () => { spMap = id; setWorld(id); $('titleSub').textContent = m.meta.blurb; renderMapPick(); };
+    box.append(b);
+  }
+}
+renderMapPick();
 $('btnSeek').onclick = () => startGame('seek'); $('btnHide').onclick = () => startGame('hide');
 $('btnAgain').onclick = () => startGame(G.mode); $('btnMenu').onclick = toMenu;
 
@@ -836,6 +914,14 @@ function update(dt) {
   }
 }
 
+// fluorescent strips (lights whose colour is the map's `flicker` colour): jitter intensity, with the odd brief dropout
+function updateFlicker(dt) {
+  for (const f of flickers) {
+    f.dip -= dt;
+    if (f.dip <= 0 && Math.random() < dt * 0.25) f.dip = 0.05 + Math.random() * 0.12;
+    f.l.intensity = f.base * (f.dip > 0 ? 0.15 + Math.random() * 0.3 : 0.92 + Math.random() * 0.08);
+  }
+}
 const clock = new THREE.Clock();
 let lastErrToast = 0;
 function frame() {
@@ -853,6 +939,7 @@ function frame() {
     }
   }
   hooks.tick?.(dt);
+  updateFlicker(dt);
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i], a = f.p.geometry.attributes.position; f.life -= dt;
     for (let k = 0; k < a.count; k++) { f.vel[k * 3 + 1] -= 9 * dt; a.setXYZ(k, a.getX(k) + f.vel[k * 3] * dt, Math.max(0, a.getY(k) + f.vel[k * 3 + 1] * dt), a.getZ(k) + f.vel[k * 3 + 2] * dt); }
@@ -862,4 +949,5 @@ function frame() {
   composer.render();
 }
 frame();
-export { THREE, scene, camera, canvas, P, G, keys, colliders, props, solids, makePropClone, losClear, makeChar, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, enterFull, $ };
+const worldId = () => worldKey;
+export { THREE, renderer, setWorld, worldId, scene, camera, canvas, P, G, keys, colliders, props, solids, makePropClone, losClear, makeChar, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, enterFull, $ };

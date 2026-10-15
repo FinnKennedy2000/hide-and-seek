@@ -34,10 +34,10 @@ const MODES = ['classic', 'prophunt'];
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = 2, PICKUP_SHOTS = 6;
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
-let WD = null; // shared world: { colliders, props, rayBox } from public/worlddata.js, loaded before listening
+let WORLDS = null; // mapId -> { colliders, props, meta, spawns, rayBox } from public/worlddata.js, built before listening
+let MAPS = null;   // the map registry from public/worlddata.js
+const worldOf = (room) => WORLDS[room.map];
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-// open spots in the garden / yard that don't overlap the world's colliders
-const SPAWNS = [[0, 12], [-6, 10], [-4, 16], [6, 9], [12, 6], [-12, 8], [16, 0], [-16, -4], [0, -14], [10, -18], [-8, -10], [18, 16], [-18, 16], [-20, -14]];
 
 // ======================================================================
 // http
@@ -116,7 +116,7 @@ const seekersOf = (room) => [...room.players.values()].filter((p) => p.role === 
 
 function sendRoom(room) {
   const list = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, hat: p.hat, outfit: p.outfit, total: p.total }));
-  for (const p of room.players.values()) send(p, { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, players: list });
+  for (const p of room.players.values()) send(p, { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, map: room.map, players: list });
 }
 
 // ======================================================================
@@ -146,20 +146,21 @@ function leaveRoom(p) {
 function startRound(room) {
   const ps = shuffle([...room.players.values()]);
   const nSeek = ps.length >= 6 ? 2 : 1;
-  const spots = shuffle(SPAWNS.slice());
+  const W = worldOf(room), ss = W.meta.seekerStart;
+  const spots = shuffle(W.spawns.slice());
   const spawns = [];
   ps.forEach((p, i) => {
     p.role = i < nSeek ? 'seeker' : 'hider';
     p.score = 0; p.tags = 0; p.lastTag = 0;
     Object.assign(p, { hp: HP0, mag: MAG, res: RESERVE0, out: false, shots: 0, hits: 0, disguise: null, tint: null, lastDisguise: 0, lastTaunt: 0, lastShot: 0, lastCamo: 0, reloadEnd: 0, tagT: 0, first: i < nSeek });
-    if (p.role === 'seeker') { p.x = (i - (nSeek - 1) / 2) * 1.4; p.z = 7.8; p.yaw = 0; }
+    if (p.role === 'seeker') { p.x = ss.x + (i - (nSeek - 1) / 2) * 1.4; p.z = ss.z; p.yaw = ss.yaw; }
     else { const [x, z] = spots[(i - nSeek) % spots.length]; p.x = x; p.z = z; p.yaw = Math.random() * Math.PI * 2; }
     p.y = 0; p.pitch = 0; p.c = 0;
     spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
   });
   room.phase = 'hide';
   room.t0 = now(); room.phaseEnd = room.t0 + HIDE_SECS; room.pickup = null; room.pickupDone = false; room.pickupAt = 0;
-  broadcast(room, { t: 'round', mode: room.mode, seekers: ps.slice(0, nSeek).map((p) => p.id), spawns, hide: HIDE_SECS, seek: SEEK_SECS });
+  broadcast(room, { t: 'round', mode: room.mode, map: room.map, seekers: ps.slice(0, nSeek).map((p) => p.id), spawns, hide: HIDE_SECS, seek: SEEK_SECS });
   if (room.mode === 'prophunt') for (const p of ps.slice(0, nSeek)) sendAmmo(p);
 }
 
@@ -188,8 +189,8 @@ function checkRound(room) {
 // a seeker that can no longer shoot: out of health, or empty with no crate left to find
 const spent = (room, p) => p.hp <= 0 || (p.mag + p.res <= 0 && room.pickupDone);
 function sendAmmo(p) { send(p, { t: 'ammo', mag: p.mag, res: p.res, hp: p.hp, rl: p.reloadEnd ? 1 : 0 }); }
-function hiderBox(h) { // server-side bounding volume: the prop's footprint when disguised, else a person
-  const pr = h.disguise != null ? WD.props[h.disguise] : null;
+function hiderBox(room, h) { // server-side bounding volume: the prop's footprint when disguised, else a person
+  const pr = h.disguise != null ? worldOf(room).props[h.disguise] : null;
   const r = pr ? Math.max(0.25, Math.max(pr.w, pr.d) / 2) : 0.35, ht = pr ? Math.max(0.4, pr.h) : 1.75 * (1 - 0.35 * h.c);
   return { x0: h.x - r, x1: h.x + r, z0: h.z - r, z1: h.z + r, y0: h.y, y1: h.y + ht };
 }
@@ -203,7 +204,7 @@ function tickRoom(room, t) {
   }
   if (room.mode === 'prophunt' && room.phase === 'seek') {
     if (!room.pickup && !room.pickupDone && t >= room.pickupAt) { // one ammo crate per round, midway through the seek phase
-      const [x, z] = SPAWNS[(Math.random() * SPAWNS.length) | 0];
+      const sp = worldOf(room).spawns, [x, z] = sp[(Math.random() * sp.length) | 0];
       room.pickup = { x, z }; broadcast(room, { t: 'pickup', x, z });
     }
     for (const p of room.players.values()) if (p.reloadEnd && t >= p.reloadEnd) {
@@ -248,7 +249,7 @@ const handlers = {
   create(p, m) {
     if (p.room) leaveRoom(p);
     p.name = cleanName(m.name);
-    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode: 'classic', pickup: null, pickupDone: false, pickupAt: 0, t0: 0 };
+    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode: 'classic', map: 'house', pickup: null, pickupDone: false, pickupAt: 0, t0: 0 };
     rooms.set(room.code, room);
     joinRoom(p, room);
   },
@@ -268,6 +269,11 @@ const handlers = {
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby' || !MODES.includes(m.mode)) return;
     room.mode = m.mode; sendRoom(room);
+  },
+  map(p, m) { // host picks the map in the lobby; only registry keys are accepted
+    const room = p.room;
+    if (!room || room.hostId !== p.id || room.phase !== 'lobby' || typeof m.map !== 'string' || !Object.hasOwn(MAPS, m.map)) return;
+    room.map = m.map; sendRoom(room);
   },
   cosmetic(p, m) { // colour from the palette, hat / outfit from the enums; anything else is rejected whole
     const room = p.room;
@@ -291,7 +297,8 @@ const handlers = {
     if (room.phase === 'hide' && p.role === 'seeker') return; // frozen at the door
     const t = Date.now();
     if (t - p.lastPos < MIN_POS_MS) return;
-    const x = num(m.x, -24, 24), y = num(m.y, 0, 8), z = num(m.z, -24, 24), yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -1.6, 1.6), c = num(m.c, 0, 1);
+    const bd = worldOf(room).meta.bounds;
+    const x = num(m.x, bd.x0 - 0.5, bd.x1 + 0.5), y = num(m.y, 0, 8), z = num(m.z, bd.z0 - 0.5, bd.z1 + 0.5), yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -1.6, 1.6), c = num(m.c, 0, 1);
     if (x === null || y === null || z === null || yaw === null || pitch === null || c === null) return;
     const dt = Math.min(1, (t - p.lastPos) / 1000);
     if (Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 0.5) return;
@@ -306,8 +313,8 @@ const handlers = {
     if (t - p.lastDisguise < DISGUISE_CD - CD_SLACK) return;
     let id = null;
     if (m.propId !== null) {
-      if (!Number.isInteger(m.propId) || m.propId < 0 || m.propId >= WD.props.length) return;
-      const pr = WD.props[m.propId];
+      if (!Number.isInteger(m.propId) || m.propId < 0 || m.propId >= worldOf(room).props.length) return;
+      const pr = worldOf(room).props[m.propId];
       if (Math.hypot(p.x - pr.x, p.z - pr.z) > DISGUISE_RANGE + Math.max(pr.w, pr.d) / 2) return; // must be near the prop
       id = m.propId;
     }
@@ -341,10 +348,11 @@ const handlers = {
     if (t - p.lastShot < FIRE_GAP || p.reloadEnd || p.mag <= 0) return sendAmmo(p);
     p.lastShot = t; p.mag--; p.shots++;
     const ux = dx / len, uy = dy / len, uz = dz / len;
+    const W = worldOf(room);
     let tw = SHOT_RANGE;                                                               // nearest world occluder
-    for (const c of WD.colliders) { const d = WD.rayBox(ox, oy, oz, ux, uy, uz, c); if (d > 0.1 && d < tw) tw = d; }
+    for (const c of W.colliders) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, c); if (d > 0.1 && d < tw) tw = d; }
     let target = null, th = tw;
-    for (const h of hidersOf(room)) { const d = WD.rayBox(ox, oy, oz, ux, uy, uz, hiderBox(h)); if (d >= 0 && d < th) { th = d; target = h; } }
+    for (const h of hidersOf(room)) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, hiderBox(room, h)); if (d >= 0 && d < th) { th = d; target = h; } }
     const d = target ? th : tw;
     broadcast(room, { t: 'shot', by: p.id, hit: target ? target.id : 0, x: r2(ox + ux * d), y: r2(oy + uy * d), z: r2(oz + uz * d), ox: r2(ox), oy: r2(oy), oz: r2(oz) });
     if (target) {
@@ -430,8 +438,9 @@ setInterval(() => {
 }, 15000).unref();
 
 const port = process.env.PORT || 3000;
-// the shared world (colliders + prop table) is an ES module; load it before accepting connections
+// the shared worlds (colliders + prop table per map) are an ES module; build them all before accepting connections
 import('../public/worlddata.js').then((m) => {
-  WD = { ...m.buildWorld(), rayBox: m.rayBox };
-  server.listen(port, () => console.log(`Hide & Seek on http://localhost:${port} (${WD.colliders.length} colliders, ${WD.props.length} props)`));
+  MAPS = m.MAPS; WORLDS = {};
+  for (const [id, map] of Object.entries(MAPS)) WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
+  server.listen(port, () => console.log(`Hide & Seek on http://localhost:${port} (${Object.entries(WORLDS).map(([id, w]) => `${id}: ${w.colliders.length} colliders, ${w.props.length} props`).join('; ')})`));
 }).catch((e) => { console.error('failed to load public/worlddata.js', e); process.exit(1); });

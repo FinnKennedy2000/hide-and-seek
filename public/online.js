@@ -1,19 +1,21 @@
 // Online mode: lobby UI, round flow and HUD. The server is authoritative; this only renders its state
 // and sends our own position / tag requests. Reuses the world, player controller and audio from game.js.
-import { enterFull, THREE, camera, canvas, P, G, losClear, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, hooks, $ } from './game.js';
+import { enterFull, setWorld, worldId, THREE, camera, canvas, P, G, losClear, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, hooks, $ } from './game.js';
 import { connect } from './net.js';
 import * as R from './remote.js';
 import * as PH from './prophunt.js';
 import { HATS, OUTFITS } from './char.js';
+import { MAPS } from './worlddata.js';
 
 const NAME_KEY = 'hs-name', COS_KEY = 'hs-cos';
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b]; // server palette
 const MODE_NAMES = { classic: 'CLASSIC', prophunt: 'PROP HUNT' };
+const MAP_NAMES = Object.entries(MAPS).map(([id, m]) => [id, m.meta.name.toUpperCase()]);
 const TAG_RANGE = 3.0;   // client-side check; server accepts <= 3.5 to absorb latency
 const now = () => performance.now() / 1000;
 
 // view: menu | lobby | play | results | conn
-const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', cos: {} };
+const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', map: 'house', cos: {} };
 
 const readName = () => { try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; } };
 const readCos = () => { try { const c = JSON.parse(localStorage.getItem(COS_KEY) || '{}'); return { color: COLORS.includes(c.color) ? c.color : undefined, hat: HATS.includes(c.hat) ? c.hat : undefined, outfit: OUTFITS.includes(c.outfit) ? c.outfit : undefined }; } catch { return {}; } };
@@ -111,7 +113,7 @@ const handlers = {
   },
   room(m) {
     if (st.view === 'play') for (const p of st.players) if (!m.players.some((q) => q.id === p.id)) { feed(`${p.name} left`); R.removeRemote(p.id); }
-    st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic';
+    st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic'; st.map = m.map || 'house';
     if (st.view === 'menu' || st.view === 'conn') {
       setView('lobby'); history.replaceState(null, '', `?room=${m.code}`);
       st.cos = readCos(); if (Object.values(st.cos).some((v) => v !== undefined)) st.net?.send('cosmetic', st.cos); // push saved look
@@ -119,7 +121,8 @@ const handlers = {
     renderLobby();
   },
   round(m) {
-    G.mode = 'online'; G.paused = false; st.mode = m.mode || 'classic';
+    G.mode = 'online'; G.paused = false; st.mode = m.mode || 'classic'; st.map = m.map || 'house';
+    if (worldId() !== st.map) setWorld(st.map); // rebuild colliders / props / scenery for the room's map before anything is placed
     R.clearRemotes(); R.opts.cone = st.mode === 'classic'; R.opts.hideHiders = st.mode === 'prophunt';
     const seekers = new Set(m.seekers);
     for (const p of st.players) {
@@ -224,6 +227,8 @@ function renderLobby() {
   const me = playerOf(st.id) || {}, pick = (k) => (v) => { st.cos = { ...st.cos, [k]: v }; saveCos(); st.net?.send('cosmetic', { [k]: v }); };
   row('lobMode', Object.entries(MODE_NAMES), st.mode, (v) => host && st.net?.send('mode', { mode: v }));
   for (const b of $('lobMode').children) b.disabled = !host;
+  row('lobMap', MAP_NAMES, st.map, (v) => host && st.net?.send('map', { map: v })); // everyone sees the pick; only the host's chips are enabled
+  for (const b of $('lobMap').children) b.disabled = !host;
   row('cosColor', COLORS.map((c) => [c]), me.color, pick('color'));
   row('cosHat', HATS.map((h) => [h, h.toUpperCase()]), me.hat, pick('hat'));
   row('cosOutfit', OUTFITS.map((o) => [o, o.toUpperCase()]), me.outfit, pick('outfit'));
