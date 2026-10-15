@@ -104,7 +104,7 @@ const handlers = {
   },
   round(m) {
     G.mode = 'online'; G.paused = false; st.mode = m.mode || 'classic';
-    R.clearRemotes(); R.opts.cone = st.mode === 'classic';
+    R.clearRemotes(); R.opts.cone = st.mode === 'classic'; R.opts.hideHiders = st.mode === 'prophunt';
     const seekers = new Set(m.seekers);
     for (const p of st.players) {
       p.role = seekers.has(p.id) ? 'seeker' : 'hider';

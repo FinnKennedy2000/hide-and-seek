@@ -4,7 +4,7 @@ import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaun
 
 const INTERP = 0.1; // render remote players 100ms in the past
 export const remotes = new Map(); // id -> avatar
-export const opts = { cone: true }; // set per round by online.js
+export const opts = { cone: true, hideHiders: false }; // set per round by online.js
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 const coneH = 5;
@@ -133,6 +133,8 @@ export function updateRemotes(now, localSeeker = false, dt = 0) {
     }
     a.px = s.x; a.py = s.y; a.pz = s.z;
     animAvatar(a, dt);
+    // prop hunt: hiders can't see other hiders, so nobody hides next to a teammate or gives them away
+    a.root.visible = !(opts.hideHiders && !localSeeker && !a.seeker);
     if (a.tag) { a.tag.position.y = 2.2 - 0.6 * s.c; a.tag.visible = !a.prop && (a.seeker || !localSeeker); }
   }
 }

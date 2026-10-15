@@ -20,27 +20,27 @@ v1 is one 938-line `game.js` built from boxes and capsules. It has two single-pl
 | Audio | Howler, or plain WebAudio with real recorded SFX | |
 
 ## Characters
-- Rigged, animated glTF characters replace the capsules. Use CC0 Quaternius / Kenney character packs with idle, walk, run, crouch, jump, hit and taunt clips, played through a Three.js AnimationMixer with blend trees.
-- Customisation: outfit colours, hats and accessories, picked in the lobby and synced in multiplayer. Faces are expressive (blink, look-at).
-- Third-person camera for hiders, who need to see themselves to blend in. First-person for seekers, who need to aim.
+- [~] Done procedurally instead of glTF (no assets): chunky primitive characters with idle/walk/run/crouch/jump/taunt/hit. Original plan: rigged, animated glTF characters replace the capsules. Use CC0 Quaternius / Kenney character packs with idle, walk, run, crouch, jump, hit and taunt clips, played through a Three.js AnimationMixer with blend trees.
+- [x] Customisation: outfit colours, hats and accessories, picked in the lobby and synced in multiplayer. Faces are expressive (blink, look-at).
+- [x] Third-person camera for hiders, who need to see themselves to blend in. First-person for seekers, who need to aim.
 
 ## Core loop: disguise vs. gun (now the main mode)
 **Hiders blend in:**
-- **Copy a prop.** Look at any prop (chair, plant, bin, lamp) and press F to become it, using the same mesh, scale and material. Disguising takes about 0.5s with a puff effect and has a cooldown.
-- **Camouflage.** Press G to sample the surface you're touching and paint yourself in its colour and texture. This lets you blend into a wall or a hedge as a person.
-- **Rotate lock.** Lock your prop's rotation so it lines up with nearby real props. A wonky chair gives you away.
-- **Tells balance it.** Disguised hiders cast slightly different shadows, an idle hider "settles" now and then, and moving while disguised is slow and audible.
-- **Taunt** (bonus points, makes a sound) and **decoy:** drop a fake copy of your current prop.
+- [x] **Copy a prop.** Look at any prop (chair, plant, bin, lamp) and press F to become it, using the same mesh, scale and material. Disguising takes about 0.5s with a puff effect and has a cooldown.
+- [x] **Camouflage.** (colour only, no texture copy) Press G to sample the surface you're touching and paint yourself in its colour and texture. This lets you blend into a wall or a hedge as a person.
+- [x] **Rotate lock.** Lock your prop's rotation so it lines up with nearby real props. A wonky chair gives you away.
+- [x] **Tells balance it.** (wobble, slow and audible movement; no shadow tell) Disguised hiders cast slightly different shadows, an idle hider "settles" now and then, and moving while disguised is slow and audible.
+- [x] **Taunt** (bonus points, makes a sound); [ ] **decoy:** drop a fake copy of your current prop.
 
 **Seeker has a gun with limited ammo:**
-- A cartoon paint/dart blaster, not a realistic firearm. The magazine is small (6 shots) with a few spare mags per round, roughly 18 shots in total.
-- Shooting a hider tags them, or damages them if there's a health variant, with a paint splat that reveals them.
-- **A wrong shot costs ammo and some seeker health.** At 0 health the seeker is out for the round. This is what stops seekers spraying every object.
-- Each successful tag refunds 2 shots. An ammo pickup in the map spawns once per round.
-- Hit detection is server-authoritative. The client sends the shot ray, the server raycasts against its own collision copy with a small lag-compensation window, and broadcasts hit or miss plus the splat.
-- Seeker tools on cooldown: a sound ping and a short "scan" that makes moving props glint.
+- [x] A cartoon paint/dart blaster, not a realistic firearm. The magazine is small (6 shots) with a few spare mags per round, roughly 18 shots in total.
+- [x] Shooting a hider tags them, or damages them if there's a health variant, with a paint splat that reveals them.
+- [x] **A wrong shot costs ammo and some seeker health.** At 0 health the seeker is out for the round. This is what stops seekers spraying every object.
+- [x] Each successful tag refunds 2 shots. An ammo pickup in the map spawns once per round.
+- [x] (no lag compensation yet) Hit detection is server-authoritative. The client sends the shot ray, the server raycasts against its own collision copy with a small lag-compensation window, and broadcasts hit or miss plus the splat.
+- [ ] Seeker tools on cooldown: a sound ping and a short "scan" that makes moving props glint.
 
-**Rules:** tagged hiders join the seekers as extra guns (infection), so rounds snowball. Hiders win if anyone survives the timer or every seeker runs out of health or ammo.
+**Rules:** [x] tagged hiders join the seekers as extra guns (infection), so rounds snowball. Hiders win if anyone survives the timer or every seeker runs out of health or ammo.
 - **Maps:** the v1 house rebuilt properly, a school after hours, and a supermarket. Each map is a glTF plus a JSON file for spawns, hiding hints and a navmesh.
 - **Better bot AI:** a navmesh using recast-navigation-js, hiding-spot scoring based on cover and distance from the seeker, and memory of the last-seen position.
 
