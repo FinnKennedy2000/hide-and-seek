@@ -31,7 +31,7 @@ const HATS = ['none', 'cap', 'beanie', 'bucket', 'crown'];
 const OUTFITS = ['plain', 'stripes', 'dots', 'overalls'];
 const MODES = ['classic', 'prophunt'];
 // prop hunt tunables
-const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = 2, PICKUP_SHOTS = 6;
+const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = MAG, PICKUP_SHOTS = 6; // a hit earns a whole extra mag
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
 let WORLDS = null; // mapId -> { colliders, props, meta, spawns, rayBox } from public/worlddata.js, built before listening

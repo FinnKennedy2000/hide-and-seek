@@ -10,7 +10,7 @@ A quick 3D hide-and-seek game for Chrome. Procedural house and garden at dusk, T
 
 - **Prop Hunt** (online, host picks the mode in the lobby next to Classic): hiders are third-person and blend in; seekers are first-person with a 6-shot paint blaster.
   - Hiders: **F** look at a prop within 4m to become it (0.5s puff, 3s cooldown; F again with nothing targeted reverts), **G** camouflage (tint toward the surface you touch), **R** rotation lock + mouse wheel for 45 degree turns, **T** taunt (+2 score, 10s cooldown, everyone hears it). Tells: disguised movement is 60% speed and makes a scrape noise; idle props wobble every 20-40s.
-  - Seekers: click shoots, **R** reloads (1.2s). 6 per mag, 2 spare mags. A miss costs 8 health (100 total); at 0 you are out and spectate in free-cam. A hit tags the hider (they become a seeker with one mag), gives +3 and refunds 2 shots. One ammo crate (+6) appears mid-round. Hiders win on timeout or when every seeker is out of health, or out of ammo with no crate left.
+  - Seekers: click shoots, **R** reloads (1.2s). 6 per mag, 2 spare mags. A miss costs 8 health (100 total); at 0 you are out and spectate in free-cam. A hit tags the hider (they become a seeker with one mag), gives +3 and an extra mag (+6 shots). One ammo crate (+6) appears mid-round. Hiders win on timeout or when every seeker is out of health, or out of ammo with no crate left.
   - Everyone picks a colour, hat (none/cap/beanie/bucket/crown) and outfit (plain/stripes/dots/overalls) in the lobby; the server validates the enums.
   - Hit detection is server-side: origin within 1.5m of the seeker, unit direction, 0.25s fire gap, a box per hider sized by the prop it is copying, and the shared collider list for wall occlusion.
 
