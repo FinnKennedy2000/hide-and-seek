@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "public/bossscreen.js"
+        ],
+        "createdAt": "2026-10-15T15:12:02.666Z",
+        "reason": "assistant decision: bossscreen.js is a deliberately generic fake corporate BI dashboard (boss-key pause screen); stock enterprise-UI tells are the point"
+      }
+    ]
+  }
+}
