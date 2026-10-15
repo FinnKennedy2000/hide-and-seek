@@ -24,6 +24,7 @@ const TICK_MS = 1000 / 15;
 const TAG_RANGE = 3.5;
 const MAX_MSG = 2048;
 const MIN_POS_MS = 40;          // position updates faster than ~25Hz are dropped
+const MAX_SPEED = 9;            // m/s; sprint is 6.8, the rest is slack for jitter. Faster moves are dropped (anti-teleport)
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5];
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 // open spots in the garden / yard that don't overlap the world's colliders
@@ -230,6 +231,8 @@ const handlers = {
     if (t - p.lastPos < MIN_POS_MS) return;
     const x = num(m.x, -24, 24), y = num(m.y, 0, 8), z = num(m.z, -24, 24), yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -1.6, 1.6), c = num(m.c, 0, 1);
     if (x === null || y === null || z === null || yaw === null || pitch === null || c === null) return;
+    const dt = Math.min(1, (t - p.lastPos) / 1000);
+    if (Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 0.5) return;
     p.lastPos = t;
     p.x = x; p.y = y; p.z = z; p.yaw = yaw; p.pitch = pitch; p.c = c;
   },

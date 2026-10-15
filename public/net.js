@@ -5,9 +5,11 @@ export const RAILWAY_WS = `wss://${RAILWAY_HOST}/ws`;
 // Same origin when served by the game server itself (Railway or localhost), otherwise Railway.
 // `?server=wss://host/ws` overrides for testing.
 export function wsUrl() {
-  const override = new URLSearchParams(location.search).get('server');
-  if (override) return override;
   const h = location.hostname;
+  // Override only on local/LAN pages, so a shared link can't point players at someone else's server.
+  const local = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(h);
+  const override = local && new URLSearchParams(location.search).get('server');
+  if (override) return override;
   if (h === RAILWAY_HOST || h === 'localhost' || h === '127.0.0.1' || h === '[::1]') {
     return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
   }
