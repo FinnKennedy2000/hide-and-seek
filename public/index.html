@@ -29,9 +29,12 @@
   <div id="detectWrap"><div id="detectLabel">SPOTTED</div><div id="detectBar"><div id="detectFill"></div></div></div>
   <div id="banner"></div>
   <div id="feed"></div>
+  <div id="hints"></div>
+  <div id="ammoHud" class="hidden"><div id="hpTxt"></div><div id="hp"><div id="hpFill"></div></div><div id="ammoTxt"></div></div>
   <button id="btnLeave" class="small hidden">Leave room</button>
 </div>
 
+<div id="intro"></div>
 <div id="blackout"><div id="bigcount"></div><p id="blackmsg"></p></div>
 
 <div id="title" class="panelwrap">
@@ -43,13 +46,8 @@
       <button id="btnHide"><b>HIDE</b><small>Survive the seeker for 90s</small></button>
       <button id="btnOnline"><b>ONLINE</b><small>2-8 players, by room code</small></button>
     </div>
-    <p class="keys"><kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch &nbsp; <kbd>E</kbd>/click tag &nbsp; <kbd>Esc</kbd> pause</p>
+    <p class="keys"><kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch &nbsp; <kbd>E</kbd>/click tag (Prop Hunt: <kbd>F</kbd> disguise <kbd>G</kbd> camo <kbd>R</kbd> lock/reload <kbd>T</kbd> taunt, click to shoot) &nbsp; <kbd>Esc</kbd>/<kbd>P</kbd> pause <kbd>`</kbd> boss key</p>
   </div>
-</div>
-
-<div id="pause" class="panelwrap hidden">
-  <div class="card"><h2>PAUSED</h2><p class="sub">Click to resume</p>
-  <button id="btnQuit" class="small">Quit to menu</button></div>
 </div>
 
 <div id="end" class="panelwrap hidden">
@@ -76,6 +74,10 @@
     <p class="sub" style="margin:0">ROOM CODE</p>
     <h2 id="lobCode"></h2>
     <div class="modes linkrow"><input id="lobLink" readonly><button id="lobCopy" class="small">Copy link</button></div>
+    <p class="sub tiny">GAME MODE </p>
+    <div id="lobMode" class="chips"></div>
+    <p class="sub tiny">YOUR LOOK</p>
+    <div id="cosColor" class="chips"></div><div id="cosHat" class="chips"></div><div id="cosOutfit" class="chips"></div>
     <ul id="lobList"></ul>
     <p class="sub" id="lobHint"></p>
     <div class="modes"><button id="lobStart"><b>START</b></button><button id="lobLeave"><b>LEAVE</b></button></div>

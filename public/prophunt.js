@@ -20,7 +20,7 @@ function resetPlayerBody() { Object.assign(P, { r: 0.3, fixedPh: 0, mul: 1, mute
 // ctx: { id, role, send(t,data), colorOf(id), self: {color,hat,pattern} }
 export function begin(ctx) {
   end();
-  Object.assign(me, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, colorOf: ctx.colorOf, propId: null, rotLock: false, propRot: 0, rotY: 0, heading: 0, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: MAG, res: 12, reloading: false, lastFire: 0, phase: 'hide', self: ctx.self });
+  Object.assign(me, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, colorOf: ctx.colorOf, propId: null, rotLock: false, propRot: 0, rotY: P.yaw + Math.PI, heading: P.yaw + Math.PI, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: MAG, res: 12, reloading: false, lastFire: 0, phase: 'hide', self: ctx.self });
   R.opts.cone = false;
   setRole(ctx.role);
 }

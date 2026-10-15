@@ -7,7 +7,7 @@ const bx = (w, h, d, m, x, y, z, p) => { const o = new THREE.Mesh(new THREE.BoxG
 
 // ----- viewmodel (chunky toy: orange body, cyan barrel, magenta paint hopper, yellow grip)
 const vm = new THREE.Group();
-const VM_POS = new THREE.Vector3(0.27, -0.25, -0.55);
+const VM_POS = new THREE.Vector3(0.3, -0.27, -0.6);
 {
   bx(0.13, 0.15, 0.42, M(0xff8a1f), 0, 0, 0, vm);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.28, 12), M(0x22d3ee)); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.015, -0.33); vm.add(barrel);
@@ -16,7 +16,7 @@ const VM_POS = new THREE.Vector3(0.27, -0.25, -0.55);
   bx(0.09, 0.2, 0.1, M(0xffd23f), 0, -0.15, 0.12, vm).rotation.x = 0.25;
   bx(0.03, 0.04, 0.03, M(0xffffff), 0, 0.09, -0.2, vm);
   vm.muzzle = new THREE.Object3D(); vm.muzzle.position.set(0, 0.015, -0.5); vm.add(vm.muzzle);
-  vm.position.copy(VM_POS); vm.rotation.y = 0.06; vm.visible = false;
+  vm.scale.setScalar(0.6); vm.position.copy(VM_POS); vm.rotation.y = 0.06; vm.visible = false;
   camera.add(vm);
 }
 let kick = 0, bob = 0;

@@ -65,3 +65,21 @@ button:disabled{opacity:.4;cursor:default;transform:none;box-shadow:none}
 #resTable th{font-size:12px;letter-spacing:.2em;opacity:.6}
 #feed{position:absolute;top:18px;right:18px;text-align:right;font-size:15px;font-weight:700;text-shadow:0 2px 8px #000;display:flex;flex-direction:column;gap:4px}
 #btnLeave{position:absolute;top:18px;left:18px;pointer-events:auto;min-width:0;padding:6px 14px;font-size:13px;margin:0}
+
+#intro{position:fixed;left:0;right:0;top:34%;text-align:center;z-index:12;pointer-events:none;font-size:42px;font-weight:900;letter-spacing:.08em;text-shadow:0 4px 24px #000;opacity:0}
+#intro.show{animation:intro 4s ease-out}
+@keyframes intro{0%{opacity:0;transform:scale(1.4)}10%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0}}
+#hints{position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:13px;letter-spacing:.12em;font-weight:700;text-shadow:0 2px 8px #000;opacity:.85}
+#ammoHud{position:absolute;right:28px;bottom:48px;text-align:right;font-weight:900;text-shadow:0 2px 8px #000}
+#ammoTxt{font-size:34px;letter-spacing:.06em;color:#22d3ee;font-variant-numeric:tabular-nums}
+#hpTxt{font-size:12px;letter-spacing:.25em;opacity:.8}
+#hp{width:180px;height:10px;margin:4px 0 6px auto;border-radius:6px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.3);overflow:hidden}
+#hpFill{height:100%;width:100%;background:linear-gradient(90deg,#ff4d5e,#80ed99)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:6px 0}
+button.chip{min-width:0;padding:4px 10px;font-size:12px;letter-spacing:.1em;margin:0}
+button.chip.on{background:rgba(255,180,77,.55);border-color:#fff}
+button.chip.sw{width:26px;height:26px;padding:0;border-radius:50%}
+button.chip.sw.on{outline:3px solid #fff}
+.sub.tiny{font-size:11px;margin:12px 0 2px}
+.card{max-height:96vh;overflow-y:auto}
+#resTable td,#resTable th{padding:5px 8px!important}

@@ -24,11 +24,11 @@ const CSS = `
 #boss h1{font-size:22px;margin:0 0 2px;letter-spacing:0;text-shadow:none}
 #boss .sub{color:#7b869c;margin:0 0 16px;letter-spacing:0;opacity:1}
 #boss .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-#boss .card{background:#fff;border:1px solid #dfe3ec;border-radius:8px;padding:14px 16px}
+#boss .card{background:#fff;border:1px solid #dfe3ec;border-radius:8px;padding:14px 16px;max-width:none;max-height:none;overflow:visible;box-shadow:none;backdrop-filter:none;text-align:left}
 #boss .kpi b{display:block;font-size:26px;margin-top:4px;font-variant-numeric:tabular-nums}
 #boss .up{color:#1a9d5c;font-size:12px}#boss .dn{color:#d33f4a;font-size:12px}
 #boss .charts{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px}
-#boss canvas{width:100%;height:170px;display:block}
+#boss canvas{position:static;inset:auto;width:100%;height:170px;display:block}
 #boss table{width:100%;border-collapse:collapse;font-size:13px}
 #boss th{text-align:left;color:#7b869c;font-weight:600;padding:6px 8px;border-bottom:1px solid #dfe3ec;letter-spacing:0;opacity:1;font-size:13px}
 #boss td{padding:6px 8px;border-bottom:1px solid #eef0f5;font-weight:400}
