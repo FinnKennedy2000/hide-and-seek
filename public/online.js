@@ -220,7 +220,7 @@ hooks.update = (dt) => {
   const frozen = hide && seeker;
   st.tagCd -= dt;
   updatePlayer(dt, !frozen);
-  R.updateRemotes(t);
+  R.updateRemotes(t, st.role === 'seeker');
   st.sendT -= dt;
   if (st.sendT <= 0 && !frozen) {
     st.sendT = 1 / 15;

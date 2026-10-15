@@ -63,7 +63,8 @@ export function pushSnap(id, t, x, y, z, yaw, pitch, c) {
 const lerp = (a, b, k) => a + (b - a) * k;
 const lerpAngle = (a, b, k) => a + (((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * k;
 
-export function updateRemotes(now) {
+// Seekers only see other seekers' tags; a floating name would give a hider away.
+export function updateRemotes(now, localSeeker = false) {
   const rt = now - INTERP;
   for (const a of remotes.values()) {
     const b = a.buf;
@@ -79,5 +80,6 @@ export function updateRemotes(now) {
     a.root.rotation.y = s.yaw + Math.PI; // avatar faces +z, player forward is (-sin yaw, -cos yaw)
     a.body.scale.y = 1.3 * (1 - 0.35 * s.c);
     a.tag.position.y = 2.2 - 0.6 * s.c;
+    a.tag.visible = a.seeker || !localSeeker;
   }
 }
