@@ -205,9 +205,9 @@ export function buildWorld(v = {}, mapId = 'house') {
 export const MAPS = {
   house: {
     meta: {
-      id: 'house', name: 'House', blurb: 'A house. A garden. The last light of dusk.',
+      id: 'house', trusted: true, name: 'House', blurb: 'A house. A garden. The last light of dusk.',
       fog: { color: 0x6b4f6e, density: 0.021 }, sky: 'dusk',
-      ambient: { color: 0x7a68b0, ground: 0x2a2030, intensity: 0.62 },
+      ambient: { color: 0x8a78c0, ground: 0x3a2e44, intensity: 0.8 },
       seekerStart: { x: 0, z: 7.8, yaw: 0 },
       bounds: { x0: -23.5, x1: 23.5, z0: -23.5, z1: 23.5 },
     },

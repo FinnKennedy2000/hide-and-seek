@@ -83,3 +83,11 @@ button.chip.sw.on{outline:3px solid #fff}
 .sub.tiny{font-size:11px;margin:12px 0 2px}
 .card{max-height:96vh;overflow-y:auto}
 #resTable td,#resTable th{padding:5px 8px!important}
+
+#cues{position:absolute;left:50%;top:50%;width:0;height:0}
+.cue{position:absolute;left:0;top:0;transform-origin:0 0;font-weight:900;text-align:center;line-height:1;text-shadow:0 0 6px #000,0 0 2px #000;will-change:transform,opacity}
+.cue .cg{font-size:.7em;margin-top:2px}
+#caps{position:absolute;left:18px;bottom:46px;display:flex;flex-direction:column;gap:4px;font-size:14px;font-weight:700;text-shadow:0 2px 8px #000}
+#caps div{padding:2px 10px;border-left:4px solid #fff;background:rgba(0,0,0,.35);border-radius:3px}
+.opts{display:flex;gap:18px;align-items:center;justify-content:center;margin:10px 0 4px;font-size:12px;letter-spacing:.12em;opacity:.9}
+.opts input[type=range]{width:140px;padding:0;border:0;background:none;vertical-align:middle}

@@ -8,8 +8,8 @@ export const FLICKER = 0xd8ffe6; // b.light colour that marks a fluorescent stri
 
 export const meta = {
   id: 'lateshop', name: 'Late Shop', size: 44,
-  fog: { color: 0x07090d, near: 6, far: 46 }, sky: 'night',
-  ambient: { color: 0x2a3446, intensity: 0.5 },
+  fog: { color: 0x151c28, near: 14, far: 80 }, sky: 'night',
+  ambient: { color: 0xb4c0dc, ground: 0x646c84, intensity: 1.5 }, // hemisphere fill: lit shop at night, not a horror game
   seekerStart: { x: 0, z: 9.5, yaw: 0 }, // car park, in front of the automatic doors (server spreads seekers along x by 1.4)
   bounds: { x0: -22, x1: 22, z0: -22, z1: 22 },
   flicker: FLICKER,
@@ -18,7 +18,7 @@ export const meta = {
 // Only NEW material names (everything else used here already exists in game.js: wall roof wood metal dark white counter glass glow tv car stone leaf hedge bark).
 export const materials = {
   asphalt: { color: 0x2c2e33, roughness: 0.95 },
-  tile: { color: 0x8d9298, roughness: 0.4 },
+  tile: { color: 0x9aa0a8, roughness: 0.4, emissive: 0x39414d, emissiveIntensity: 0.6 }, // lit shop floor
   shelf: { color: 0x56677d, roughness: 0.5, metalness: 0.3 },
   goodsRed: { color: 0xa8322d, roughness: 0.7 }, goodsYellow: { color: 0xd2a82a, roughness: 0.7 },
   goodsBlue: { color: 0x2f5f9a, roughness: 0.7 }, goodsGreen: { color: 0x3f8a4a, roughness: 0.7 },
@@ -33,7 +33,7 @@ export const materials = {
   strip: { color: 0xb8d4c8, roughness: 0.3 },
   lorry: { color: 0xd9d9d4, roughness: 0.5 }, lorryBlue: { color: 0x264b7a, roughness: 0.4 },
   exitGlow: { color: 0x200000, roughness: 0.5, emissive: 0xff2a1a, emissiveIntensity: 2.2 },
-  tubeGlow: { color: 0x2a2e2a, roughness: 0.5, emissive: 0xd8ffe6, emissiveIntensity: 1.8 },
+  tubeGlow: { color: 0x2a2e2a, roughness: 0.5, emissive: 0xd8ffe6, emissiveIntensity: 3.2 },
   windowGlow: { color: 0x101810, roughness: 0.5, emissive: 0x7fb59a, emissiveIntensity: 0.9 },
   produceGreen: { color: 0x4c9a3a, roughness: 0.9 }, produceRed: { color: 0xb8352c, roughness: 0.9 }, produceOrange: { color: 0xd9822b, roughness: 0.9 },
   melon: { color: 0x2e6b35, roughness: 0.8 },
@@ -132,10 +132,12 @@ export function build(b, rnd) {
     b.mesh(['plane', 0.55, 0.2], 'exitGlow', x, 2.55, z, { cast: false, r: [0, ry, 0] });
   }
   for (const [x, z] of [[-11, -1], [-3, 4.5], [5, -1], [11, 3], [17, -2], [-8, -10], [-1, -11], [10, -7.5]]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // fluorescent tubes (visual)
-  b.light(-11.25, 2.6, 0, 24, 11, FLICKER);  // shop west (flicker)
-  b.light(11, 2.6, 0.5, 22, 11, FLICKER);    // shop east (flicker)
+  for (let x = -16; x <= 16; x += 4) for (const z of [-3, 1, 5]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // ceiling panels, shop floor
+  for (let x = -16; x <= 0; x += 4) for (const z of [-14, -10]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // stock room
+  b.light(-11.25, 2.6, 0, 40, 16, FLICKER);  // shop west (flicker)
+  b.light(11, 2.6, 0.5, 40, 16, FLICKER);    // shop east (flicker)
   b.light(0, 1.6, -2.5, 18, 8, 0x66aaff);    // freezer glow
-  b.light(-8, 2.6, -8.5, 22, 11, FLICKER);   // stock room (flicker)
+  b.light(-8, 2.6, -8.5, 36, 15, FLICKER);   // stock room (flicker)
   b.light(12, 2.4, -7.5, 10, 8, 0xff2a1a);   // corridor exit glow
   b.light(9.4, 2.5, -12.5, 16, 10, 0xffd9a0); // staff room / office
   b.light(2, 3.0, -18.5, 26, 12, 0xffb066);  // loading bay lamp

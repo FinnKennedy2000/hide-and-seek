@@ -381,7 +381,7 @@ function findPath(sx, sz, gx, gz) {
   out.push({ x: gx, z: gz });
   return out;
 }
-// AI hiding spots of the map, minus any the nav grid cannot reach from the seeker start (inside a lorry, behind a sealed gap...):
+// AI hiding spots of the map, minus any the nav grid cannot reach from the seeker start (sealed pockets):
 // findPath would otherwise send a hider straight through the wall.
 function setSpots(map) {
   const { x, z } = map.meta.seekerStart, [si, sj] = nearestFree(x, z);
@@ -394,7 +394,8 @@ function setSpots(map) {
       seen[j * NG + i] = 1; q.push(j * NG + i);
     }
   }
-  SPOTS = map.spots.filter((s) => { const [i, j] = nearestFree(s.x, s.z); return seen[j * NG + i] && Math.hypot(NMIN + (i + 0.5) * CELL - s.x, NMIN + (j + 0.5) * CELL - s.z) < 0.8; }).map((s) => ({ ...s, owner: null }));
+  // (house spots are hand-tuned and some sit in pockets the grid calls sealed, so they are kept as they always were)
+  SPOTS = map.spots.filter((s) => { if (map.meta.trusted) return true; const [i, j] = nearestFree(s.x, s.z); return seen[j * NG + i]; }).map((s) => ({ ...s, owner: null }));
   if (SPOTS.length < map.spots.length) console.warn(`${map.meta.id}: ${map.spots.length - SPOTS.length} hiding spots unreachable, skipped`);
   for (const s of SPOTS) for (const c of colliders) {
     if (s.x > c.x0 - 0.2 && s.x < c.x1 + 0.2 && s.z > c.z0 - 0.2 && s.z < c.z1 + 0.2 && c.y0 < 0.4 && c.y1 > 0.4) console.warn('hiding spot overlaps collider', s.name ?? `${s.kind} ${s.x},${s.z}`);
@@ -433,13 +434,18 @@ setWorld('house'); // initial map; the title screen / online rounds switch it
 // ======================================================================
 // audio (all synthesized)
 // ======================================================================
+// player options (remembered in localStorage): visual sound cues on/off, master volume 0..1
+const OPT_KEY = 'hs-opts', opts = { cues: true, vol: 0.8 };
+try { const o = JSON.parse(localStorage.getItem(OPT_KEY) || '{}'); if (typeof o.cues === 'boolean') opts.cues = o.cues; if (Number.isFinite(o.vol)) opts.vol = clamp(o.vol, 0, 1); } catch { /* storage blocked: defaults */ }
+const saveOpts = () => { try { localStorage.setItem(OPT_KEY, JSON.stringify(opts)); } catch { /* storage blocked: fine */ } };
 let AC = null, master = null, noiseBuf = null, muted = false;
-const setMuted = (m) => { muted = m; if (master) master.gain.value = m ? 0 : 0.8; };
+const setMuted = (m) => { muted = m; if (master) master.gain.value = m ? 0 : opts.vol; };
+const applyVol = () => { if (master && !muted) master.gain.value = opts.vol; };
 function initAudio() {
   if (AC) { AC.resume(); return; }
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(AC.destination);
+    master = AC.createGain(); master.gain.value = muted ? 0 : opts.vol; master.connect(AC.destination);
     noiseBuf = AC.createBuffer(1, AC.sampleRate * 1.5, AC.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     // ambient wind + drone + crickets
@@ -485,8 +491,8 @@ function hit(dur, o = {}) {
   src.connect(f); f.connect(g); route(g, sp.pan); src.start(t, Math.random()); src.stop(t + dur + 0.05);
 }
 const sfx = {
-  step: (vol = 0.25, pos, f = 380) => hit(0.09, { freq: f + rnd(-60, 60), vol, pos }),
-  rustle: (pos) => { hit(0.35, { freq: 3200, q: 0.8, type: 'bandpass', vol: 0.18, pos }); hit(0.2, { freq: 2200, q: 1, type: 'bandpass', vol: 0.12, pos, rate: 1.3 }); },
+  step: (vol = 0.25, pos, f = 380, kind = 'step') => { hit(0.09, { freq: f + rnd(-60, 60), vol, pos }); cueAt(kind, pos, vol); },
+  rustle: (pos) => { hit(0.35, { freq: 3200, q: 0.8, type: 'bandpass', vol: 0.18, pos }); hit(0.2, { freq: 2200, q: 1, type: 'bandpass', vol: 0.12, pos, rate: 1.3 }); cueAt('rustle', pos, 0.18); },
   tick: (hi) => tone(hi ? 880 : 520, 0.12, { type: 'square', vol: 0.07 }),
   found: () => [660, 880, 1320].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.18, delay: i * 0.07 })),
   go: () => [440, 660, 880].forEach((f, i) => tone(f, 0.3, { type: 'sawtooth', vol: 0.1, delay: i * 0.1 })),
@@ -495,18 +501,59 @@ const sfx = {
   alert: () => { tone(900, 0.25, { type: 'square', vol: 0.12, slide: 500 }); },
   hb: (v) => { tone(60, 0.12, { vol: 0.35 }); tone(55, 0.12, { vol: 0.28, delay: 0.14 }); },
   land: () => hit(0.15, { freq: 200, vol: 0.35 }),
-  puff: (pos) => { hit(0.35, { freq: 1400, q: 0.6, type: 'bandpass', vol: 0.3, pos, rate: 0.7 }); tone(300, 0.25, { vol: 0.12, slide: 500, pos }); },
-  scrape: (pos) => hit(0.22, { freq: 900, q: 1.5, type: 'bandpass', vol: 0.09, pos, rate: 0.5 }),
-  taunt: (pos) => [523, 659, 523, 784].forEach((f, i) => tone(f, 0.16, { type: 'triangle', vol: 0.3, delay: i * 0.12, pos })),
-  shoot: (pos) => { tone(720, 0.14, { type: 'square', vol: 0.14, slide: -520, pos }); hit(0.1, { freq: 1800, vol: 0.18, pos }); },
-  splat: (pos) => hit(0.14, { freq: 900, q: 0.8, type: 'bandpass', vol: 0.3, pos }),
-  thud: (pos) => hit(0.12, { freq: 500, vol: 0.25, pos }),
+  puff: (pos) => { hit(0.35, { freq: 1400, q: 0.6, type: 'bandpass', vol: 0.3, pos, rate: 0.7 }); tone(300, 0.25, { vol: 0.12, slide: 500, pos }); cueAt('puff', pos, 0.3); },
+  scrape: (pos) => { hit(0.22, { freq: 900, q: 1.5, type: 'bandpass', vol: 0.09, pos, rate: 0.5 }); cueAt('scrape', pos, 0.09); },
+  taunt: (pos) => { [523, 659, 523, 784].forEach((f, i) => tone(f, 0.16, { type: 'triangle', vol: 0.3, delay: i * 0.12, pos })); cueAt('taunt', pos, 0.3); },
+  shoot: (pos) => { tone(720, 0.14, { type: 'square', vol: 0.14, slide: -520, pos }); hit(0.1, { freq: 1800, vol: 0.18, pos }); cueAt('shot', pos, 0.18); },
+  splat: (pos) => { hit(0.14, { freq: 900, q: 0.8, type: 'bandpass', vol: 0.3, pos }); cueAt('splat', pos, 0.3); },
+  thud: (pos) => { hit(0.12, { freq: 500, vol: 0.25, pos }); cueAt('land', pos, 0.25); },
   empty: () => tone(220, 0.05, { type: 'square', vol: 0.1 }),
   reload: () => { tone(300, 0.06, { type: 'square', vol: 0.1 }); tone(450, 0.06, { type: 'square', vol: 0.1, delay: 0.5 }); tone(700, 0.1, { type: 'square', vol: 0.12, delay: 1.1 }); },
   pickup: () => [600, 800, 1000].forEach((f, i) => tone(f, 0.12, { type: 'triangle', vol: 0.2, delay: i * 0.06 })),
   hurt: () => tone(180, 0.25, { type: 'sawtooth', vol: 0.2, slide: -80 }),
   jump: () => hit(0.08, { freq: 600, vol: 0.1 }),
 };
+
+// ----- visual sound cues: every positional sfx below also shows where it came from (ring around the crosshair + caption),
+// using the same falloff as spat() so you never see a cue for something you could not hear. Own sounds (no position) get none.
+const CUE = { // type -> [caption, colour, glyph]
+  step: ['Footsteps', '#cbd5e1', '\u2022'], sprint: ['Running', '#fbbf24', '\u00bb'], land: ['Landing', '#fb923c', '\u25bc'], scrape: ['Scraping', '#a78bfa', '\u2248'],
+  taunt: ['Taunt', '#f472b6', '\u266a'], shot: ['Shot', '#ef4444', '\u2738'], rustle: ['Rustling', '#4ade80', '~'], puff: ['Disguise poof', '#67e8f9', '\u25cb'], splat: ['Paint splat', '#f87171', '\u25cf'],
+};
+const cues = [], caps = [];
+const CUE_LIFE = 1.5, CUE_MIN = 0.012; // seconds on screen; smallest (volume x falloff) loudness that is still audible
+const relAngle = (x, z) => { const dx = x - P.x, dz = z - P.z; return Math.atan2(dx * Math.cos(P.yaw) - dz * Math.sin(P.yaw), -dx * Math.sin(P.yaw) - dz * Math.cos(P.yaw)); }; // 0 ahead, + right
+const dirWord = (a) => (Math.abs(a) < Math.PI / 4 ? 'ahead' : Math.abs(a) > Math.PI * 0.75 ? 'behind' : a > 0 ? 'right' : 'left');
+function cueAt(type, pos, vol) {
+  if (!pos || !opts.cues || $('hud').classList.contains('hidden')) return;
+  const d = Math.hypot(pos.x - P.x, pos.z - P.z);
+  if (d < 1) return;
+  const loud = vol / (1 + d * 0.45);
+  if (loud < CUE_MIN) return;
+  const [label, color, glyph] = CUE[type], k = clamp(Math.sqrt(loud / 0.25), 0.3, 1);
+  let c = cues.find((q) => q.type === type && q.age < 0.3 && Math.hypot(q.x - pos.x, q.z - pos.z) < 2);
+  if (c) { c.age = 0; c.x = pos.x; c.z = pos.z; c.k = Math.max(c.k, k); } else {
+    const el = document.createElement('div'); el.className = 'cue'; el.style.color = color;
+    const arrow = document.createElement('div'); arrow.textContent = '\u25b2'; const g = document.createElement('div'); g.textContent = glyph; g.className = 'cg';
+    el.append(arrow, g); $('cues').append(el);
+    c = { el, type, x: pos.x, z: pos.z, age: 0, k }; cues.push(c);
+    if (cues.length > 10) cues.shift().el.remove();
+  }
+  const text = `${label} \u2014 ${dirWord(relAngle(pos.x, pos.z))}`, old = caps.find((q) => q.text === text);
+  if (old) old.age = 0; else {
+    const el = document.createElement('div'); el.textContent = text; el.style.borderLeftColor = color; $('caps').append(el);
+    caps.push({ el, text, age: 0 }); if (caps.length > 4) caps.shift().el.remove();
+  }
+}
+function updateCues(dt) {
+  for (let i = cues.length - 1; i >= 0; i--) {
+    const c = cues[i]; c.age += dt;
+    if (c.age >= CUE_LIFE) { c.el.remove(); cues.splice(i, 1); continue; }
+    c.el.style.transform = `rotate(${relAngle(c.x, c.z)}rad) translate(-50%, calc(-50% - ${96}px))`;
+    c.el.style.opacity = ((0.3 + 0.7 * c.k) * (1 - c.age / CUE_LIFE)).toFixed(2); c.el.style.fontSize = `${14 + 20 * c.k}px`;
+  }
+  for (let i = caps.length - 1; i >= 0; i--) { const c = caps[i]; c.age += dt; if (c.age >= 2.5) { c.el.remove(); caps.splice(i, 1); } else c.el.style.opacity = Math.min(1, (2.5 - c.age) * 2); }
+}
 
 // ======================================================================
 // player
@@ -693,6 +740,9 @@ function openBoss() {
     onResume: closeBoss,
     onQuit: () => { hideBoss(); setMuted(false); G.paused = false; toMenu(); },
     onLeave: G.mode === 'online' && hooks.leave ? () => { hideBoss(); setMuted(false); hooks.leave(); } : null,
+    labels: () => ({ cues: `Sound cues: ${opts.cues ? 'on' : 'off'}`, vol: `Volume: ${opts.vol ? Math.round(opts.vol * 100) + '%' : 'muted'}` }),
+    onCues: () => { opts.cues = !opts.cues; saveOpts(); renderOpts(); },
+    onVol: () => { opts.vol = opts.vol >= 0.99 ? 0 : Math.min(1, Math.floor(opts.vol * 4 + 1e-9) / 4 + 0.25); saveOpts(); renderOpts(); },
   });
 }
 function closeBoss() { hideBoss(); setMuted(false); G.paused = false; if (inGame()) requestLock(); }
@@ -732,6 +782,10 @@ addEventListener('mousedown', () => {
 });
 addEventListener('wheel', (e) => { if (G.mode === 'online' && !G.paused) hooks.wheel?.(Math.sign(e.deltaY)); }, { passive: true });
 document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas) pause(); });
+function renderOpts() { $('optCues').textContent = `SOUND CUES: ${opts.cues ? 'ON' : 'OFF'}`; $('optCues').classList.toggle('on', opts.cues); $('optVol').value = Math.round(opts.vol * 100); applyVol(); }
+$('optCues').onclick = () => { opts.cues = !opts.cues; saveOpts(); renderOpts(); };
+$('optVol').oninput = (e) => { opts.vol = clamp(Number(e.target.value) / 100, 0, 1); saveOpts(); applyVol(); };
+renderOpts();
 // single-player map choice on the title screen (the lobby has its own picker in online.js)
 let spMap = 'house';
 function renderMapPick() {
@@ -918,8 +972,8 @@ function update(dt) {
 function updateFlicker(dt) {
   for (const f of flickers) {
     f.dip -= dt;
-    if (f.dip <= 0 && Math.random() < dt * 0.25) f.dip = 0.05 + Math.random() * 0.12;
-    f.l.intensity = f.base * (f.dip > 0 ? 0.15 + Math.random() * 0.3 : 0.92 + Math.random() * 0.08);
+    if (f.dip <= 0 && Math.random() < dt * 0.05) f.dip = 0.05 + Math.random() * 0.1; // rare short dropout
+    f.l.intensity = f.base * (f.dip > 0 ? 0.45 + Math.random() * 0.25 : 0.96 + Math.random() * 0.04); // otherwise nearly steady
   }
 }
 const clock = new THREE.Clock();
@@ -939,7 +993,7 @@ function frame() {
     }
   }
   hooks.tick?.(dt);
-  updateFlicker(dt);
+  updateFlicker(dt); updateCues(dt);
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i], a = f.p.geometry.attributes.position; f.life -= dt;
     for (let k = 0; k < a.count; k++) { f.vel[k * 3 + 1] -= 9 * dt; a.setXYZ(k, a.getX(k) + f.vel[k * 3] * dt, Math.max(0, a.getY(k) + f.vel[k * 3 + 1] * dt), a.getZ(k) + f.vel[k * 3 + 2] * dt); }

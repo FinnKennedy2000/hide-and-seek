@@ -46,7 +46,7 @@ function build() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.append(st);
   el = document.createElement('div'); el.id = 'boss'; el.className = 'hidden';
   el.innerHTML = `<header><span class="logo">Halcyon Ledger</span><div class="search">Search reports, accounts, owners</div><span class="sp"></span><span style="color:#7b869c">Last refreshed just now</span>
-    <div class="av"><button id="bossAv">JM</button><div class="menu"><button data-a="resume">Resume</button><button data-a="quit">Quit to menu</button><button data-a="leave">Leave room</button></div></div></header>
+    <div class="av"><button id="bossAv">JM</button><div class="menu"><button data-a="resume">Resume</button><button data-a="cues"></button><button data-a="vol"></button><button data-a="quit">Quit to menu</button><button data-a="leave">Leave room</button></div></div></header>
     <div class="body"><nav><div class="on">Overview</div><div>Revenue</div><div>Pipeline</div><div>Customers</div><div>Forecast</div><div>Reports</div><div>Settings</div></nav>
     <main><h1>Q3 Revenue Dashboard</h1><p class="sub">Jul 1 – Sep 30 · All regions · USD</p>
     <div class="kpis">${['Total revenue', 'MRR growth', 'New accounts', 'Churn rate'].map((t, i) => `<div class="card kpi">${t}<b data-k="${i}"></b><span class="${i === 3 ? 'dn' : 'up'}">${i === 3 ? '▼ 0.2 pts' : '▲ vs last quarter'}</span></div>`).join('')}</div>
@@ -56,9 +56,11 @@ function build() {
   document.body.append(el);
   const menu = el.querySelector('.menu');
   el.querySelector('#bossAv').onclick = (e) => { e.stopPropagation(); menu.classList.toggle('open'); };
-  el.addEventListener('click', (e) => { if (!e.target.closest('.av')) menu.classList.remove('open'); const a = e.target.dataset?.a; if (a === 'resume') cbs.onResume?.(); else if (a === 'quit') cbs.onQuit?.(); else if (a === 'leave') cbs.onLeave?.(); });
+  el.addEventListener('click', (e) => { if (!e.target.closest('.av')) menu.classList.remove('open'); const a = e.target.dataset?.a; if (a === 'resume') cbs.onResume?.(); else if (a === 'quit') cbs.onQuit?.(); else if (a === 'leave') cbs.onLeave?.(); else if (a === 'cues') { cbs.onCues?.(); labels(); } else if (a === 'vol') { cbs.onVol?.(); labels(); } });
   el.addEventListener('mousedown', (e) => e.stopPropagation());
 }
+
+function labels() { const l = cbs.labels?.(); if (!l) return; el.querySelector('[data-a="cues"]').textContent = l.cues; el.querySelector('[data-a="vol"]').textContent = l.vol; }
 
 function draw() {
   const lc = el.querySelector('#bossLine'), g = lc.getContext('2d'), w = lc.width, h = lc.height;
@@ -85,7 +87,7 @@ export function showBoss(c) {
   if (!el) build();
   cbs = c; on = true;
   el.querySelector('[data-a="leave"]').style.display = c.onLeave ? '' : 'none';
-  el.querySelector('.menu').classList.remove('open');
+  el.querySelector('.menu').classList.remove('open'); labels();
   el.classList.remove('hidden');
   if (!saved) { saved = document.title; link = document.createElement('link'); link.rel = 'icon'; link.href = ICON; document.head.append(link); }
   document.title = TITLE;

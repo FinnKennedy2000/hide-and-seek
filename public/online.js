@@ -169,7 +169,7 @@ const handlers = {
   },
   noise(m) {
     if (st.view !== 'play') return;
-    if (m.k === 'scrape') PH.onScrape(m); else if (m.k === 'sprint') sfx.step(0.35, m, 450); else sfx.step(0.6, m, 200);
+    if (m.k === 'scrape') PH.onScrape(m); else if (m.k === 'sprint') sfx.step(0.35, m, 450, 'sprint'); else sfx.step(0.6, m, 200, 'land');
   },
   disguise(m) { PH.onDisguise(m); },
   camo(m) { PH.onCamo(m); },
