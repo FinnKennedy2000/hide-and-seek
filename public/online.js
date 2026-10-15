@@ -13,7 +13,7 @@ const TAG_RANGE = 3.0;   // client-side check; server accepts <= 3.5 to absorb l
 const now = () => performance.now() / 1000;
 
 // view: menu | lobby | play | results | conn
-const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, lastCount: -1, linkCode: '', retry: null, mode: 'classic', cos: {} };
+const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', cos: {} };
 
 const readName = () => { try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; } };
 const readCos = () => { try { const c = JSON.parse(localStorage.getItem(COS_KEY) || '{}'); return { color: COLORS.includes(c.color) ? c.color : undefined, hat: HATS.includes(c.hat) ? c.hat : undefined, outfit: OUTFITS.includes(c.outfit) ? c.outfit : undefined }; } catch { return {}; } };
@@ -52,6 +52,7 @@ function openMenu() {
 }
 
 function leave(send = true) {
+  clearTimeout(st.waitT); st.waitT = 0; st.retrying = false;
   if (send) st.net?.send('leave');
   st.net?.close(); st.net = null;
   st.code = ''; st.players = [];
@@ -65,7 +66,7 @@ function leave(send = true) {
 // ----- connection
 function open(onopen) {
   st.net?.close();
-  try { st.net = connect({ onopen, onmessage: onMsg, onclose: onClose }); } catch { onClose(); }
+  try { st.net = connect({ onopen, onmessage: onMsg, onclose: onClose }); } catch (e) { console.warn('connect failed', e); onClose('badurl'); }
 }
 function submit(action) {
   const name = cleanName($('olName').value);
@@ -76,26 +77,41 @@ function submit(action) {
   st.retry = { name, code: action === 'join' ? code : '' };
   open(() => st.net.send(action, { name, code }));
 }
-function onClose() {
+function onClose(reason) {
   st.net = null;
-  if (st.view === 'menu') return msg('Could not reach the server. Check your connection and try again.');
+  if (st.view === 'menu') return msg(reason === 'badurl' ? 'Invalid server address in the ?server= link' : reason === 'timeout' ? 'Server not responding \u2014 try again' : 'Could not reach the server. Check your connection and try again.');
   if (st.view === 'conn') return;
   st.retry = { name: st.retry?.name || readName(), code: st.code };
   st.code = ''; // forces the rejoin below to start from a clean slate
   R.clearRemotes();
-  setView('conn');
+  setConn(false); setView('conn');
+}
+// conn screen: dropped-link text, or the waiting-for-round state (auto-retrying the join)
+function setConn(waiting) {
+  $('connTitle').textContent = waiting ? 'ROUND IN PROGRESS' : 'CONNECTION LOST';
+  $('connSub').textContent = waiting ? 'Waiting for the round to finish\u2026' : 'The link to the server dropped. If you were in a round you have been removed from it; reconnecting puts you back in the room lobby.';
+  $('connRetry').classList.toggle('hidden', waiting);
+  $('connMenu').firstElementChild.textContent = waiting ? 'CANCEL' : 'MENU';
+}
+function waitForRound() {
+  const { name, code } = st.retry || {};
+  setConn(true); setView('conn');
+  clearTimeout(st.waitT);
+  st.waitT = setTimeout(() => { st.waitT = 0; open(() => st.net.send('join', { name, code })); }, 5000);
 }
 
 // ----- server messages
 const handlers = {
   err(m) {
     const text = String(m.msg || 'Error');
-    if (st.code) return void ($('lobHint').textContent = text); // e.g. host pressed Start alone
+    if (/^Round in progress/.test(text) && st.retrying && st.retry?.code && !st.code) return void waitForRound();
+    clearTimeout(st.waitT); st.waitT = 0; st.retrying = false;
+    if (st.code) return void (st.view === 'play' || st.view === 'results' ? toast(text, '#ff4d5e') : ($('lobHint').textContent = text)); // e.g. host pressed Start alone
     setView('menu'); msg(text); st.net?.close(); st.net = null;
   },
   room(m) {
     if (st.view === 'play') for (const p of st.players) if (!m.players.some((q) => q.id === p.id)) { feed(`${p.name} left`); R.removeRemote(p.id); }
-    st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic';
+    st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic';
     if (st.view === 'menu' || st.view === 'conn') {
       setView('lobby'); history.replaceState(null, '', `?room=${m.code}`);
       st.cos = readCos(); if (Object.values(st.cos).some((v) => v !== undefined)) st.net?.send('cosmetic', st.cos); // push saved look
@@ -178,7 +194,14 @@ const handlers = {
     setView('results');
   },
 };
-function onMsg(m) { if (Object.hasOwn(handlers, m.t)) handlers[m.t](m); }
+function onMsg(m) {
+  if (!Object.hasOwn(handlers, m.t)) return;
+  try { handlers[m.t](m); } catch (e) {
+    console.error('handler error', m.t, e);
+    toast('Something went wrong \u2014 rejoining lobby', '#ff4d5e');
+    if (st.code) { try { setView('lobby'); renderLobby(); } catch (e2) { console.error('lobby fallback failed', e2); } }
+  }
+}
 
 function intro(text) { const e = $('intro'); e.textContent = text; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show'); }
 
@@ -309,7 +332,7 @@ $('connMenu').onclick = () => leave(false);
 $('connRetry').onclick = () => {
   const { name, code } = st.retry || {};
   if (!name || !code) return leave(false);
-  setView('menu'); $('olName').value = name; $('olCode').value = code; msg('Reconnecting...');
+  clearTimeout(st.waitT); st.retrying = true; setView('menu'); $('olName').value = name; $('olCode').value = code; msg('Reconnecting...');
   open(() => st.net.send('join', { name, code }));
 };
 

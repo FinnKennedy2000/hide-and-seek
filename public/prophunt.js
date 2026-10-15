@@ -15,13 +15,14 @@ const r3 = (v) => Math.round(v * 1000) / 1000;
 const now = () => performance.now() / 1000;
 const MAG = 6;
 
-function resetPlayerBody() { Object.assign(P, { r: 0.3, fixedPh: 0, mul: 1, mute: false }); }
+const R_PH = 0.22; // prop hunt body radius: lets players sit flush against walls
+function resetPlayerBody(r = R_PH) { Object.assign(P, { r, fixedPh: 0, mul: 1, mute: false }); }
 
 // ctx: { id, role, send(t,data), colorOf(id), self: {color,hat,pattern} }
 export function begin(ctx) {
   end();
   Object.assign(me, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, colorOf: ctx.colorOf, propId: null, rotLock: false, propRot: 0, rotY: P.yaw + Math.PI, heading: P.yaw + Math.PI, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: MAG, res: 12, reloading: false, lastFire: 0, phase: 'hide', self: ctx.self });
-  R.opts.cone = false;
+  R.opts.cone = false; camera.near = 0.05; camera.updateProjectionMatrix();
   setRole(ctx.role);
 }
 function setRole(role) {
@@ -33,7 +34,7 @@ function setRole(role) {
 }
 export function end() {
   if (me.av) { R.disposeAvatar(me.av); me.av = null; }
-  me.on = false; resetPlayerBody(); B.showBlaster(false); B.clearFx(); R.opts.cone = true;
+  me.on = false; resetPlayerBody(0.3); camera.near = 0.08; camera.updateProjectionMatrix(); B.showBlaster(false); B.clearFx(); R.opts.cone = true;
   $('ammoHud').classList.add('hidden');
 }
 // fields sent with every position update
@@ -64,7 +65,7 @@ function hiderFrame(dt, spd, disguised) {
   _p.set(P.x, P.y + (pr ? Math.max(0.9, pr.h * 0.8) : 1.35 - 0.4 * P.crouch), P.z);
   _b.copy(_f).negate(); ray.set(_p, _b); ray.far = dist;
   const h = ray.intersectObjects(solids, false)[0];
-  camera.position.copy(_p).addScaledVector(_b, h ? Math.max(0.35, h.distance - 0.3) : dist);
+  camera.position.copy(_p).addScaledVector(_b, h ? Math.max(0.1, h.distance - 0.15) : dist);
   camera.position.y = Math.max(0.12, camera.position.y);
   camera.rotation.set(P.pitch, P.yaw, 0);
   // moving disguised makes a soft scrape everyone nearby can hear
@@ -122,10 +123,16 @@ function sampleSurface() {
 }
 
 // ---------- input
+// reloading is optimistic: cleared unless the server confirms (rl) within 1.5s
+let rlTimer = 0;
+function setReloading() {
+  me.reloading = true; clearTimeout(rlTimer);
+  rlTimer = setTimeout(() => { if (me.reloading) { me.reloading = false; updateHud(); } }, 1500);
+}
 export function onKey(code) {
   if (!me.on || me.out) return;
   if (me.role === 'seeker') {
-    if (code === 'KeyR' && !me.reloading && me.mag < MAG && me.res > 0) { me.reloading = true; me.send('reload'); sfx.reload(); }
+    if (code === 'KeyR' && !me.reloading && me.mag < MAG && me.res > 0) { setReloading(); me.send('reload'); sfx.reload(); }
     return;
   }
   if (code === 'KeyF' && me.cdDis <= 0) {
@@ -164,7 +171,7 @@ export function onDisguise(m) {
   if (m.id !== me.id) return;
   me.propId = m.propId; me.cdDis = 3.05; me.propRot = me.rotY;
   const pr = m.propId != null ? props[m.propId] : null;
-  P.r = pr ? Math.max(0.25, Math.min(0.6, Math.max(pr.w, pr.d) / 2)) : 0.3; P.fixedPh = pr ? Math.max(0.5, pr.h) : 0;
+  P.r = pr ? Math.max(0.15, Math.min(0.45, Math.min(pr.w, pr.d) / 2)) : R_PH; P.fixedPh = pr ? Math.max(0.5, pr.h) : 0;
   toast(pr ? `YOU ARE A ${pr.name.toUpperCase()}` : 'BACK TO NORMAL', '#80ed99');
 }
 export function onCamo(m) { const a = avatarOf(m.id); if (a) { R.tintAvatar(a, m.c); if (m.id === me.id) toast('CAMOUFLAGED', '#80ed99'); } }
@@ -195,6 +202,7 @@ export function onOut(m) {
 }
 export function onAmmo(m) {
   if (m.hp < me.hp && me.on) sfx.hurt();
+  clearTimeout(rlTimer);
   Object.assign(me, { mag: m.mag, res: m.res, hp: m.hp, reloading: !!m.rl }); updateHud();
 }
 export function onPickup(m) { B.spawnCrate(m.x, m.z); if (me.role === 'seeker') toast('AMMO CRATE DROPPED!', '#22d3ee'); }

@@ -45,7 +45,7 @@ export function updateTracers(dt) {
     const k = tracers[i]; k.t += dt * SPEED;
     const head = Math.min(k.t, k.d), tail = Math.max(0, head - 1.4), len = Math.max(0.1, head - tail);
     k.mesh.position.lerpVectors(k.from, k.to, (head + tail) / 2 / (k.d || 1)); k.mesh.scale.z = len;
-    if (k.t >= k.d) { scene.remove(k.mesh); k.onArrive?.(); tracers.splice(i, 1); }
+    if (k.t >= k.d) { scene.remove(k.mesh); tracers.splice(i, 1); try { k.onArrive?.(); } catch (e) { console.error('tracer onArrive', e); } }
   }
 }
 

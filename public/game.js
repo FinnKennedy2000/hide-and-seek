@@ -837,6 +837,7 @@ function update(dt) {
 }
 
 const clock = new THREE.Clock();
+let lastErrToast = 0;
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -845,7 +846,12 @@ function frame() {
     camera.position.set(Math.cos(G.orbit) * 30, 8 + Math.sin(G.orbit * 2), Math.sin(G.orbit) * 30);
     camera.lookAt(0, 2.5, 0); camera.fov = 60; camera.updateProjectionMatrix();
     if (G.phase === 'end') { for (const h of hiders) if (!h.found) h.mesh.visible = true; }
-  } else if (!G.paused) (G.mode === 'online' ? hooks.update : update)(dt);
+  } else if (!G.paused) {
+    try { (G.mode === 'online' ? hooks.update : update)(dt); } catch (e) {
+      console.error('update error', e);
+      const t = performance.now(); if (t - lastErrToast > 5000) { lastErrToast = t; toast('Something went wrong', '#ff4d5e'); }
+    }
+  }
   hooks.tick?.(dt);
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i], a = f.p.geometry.attributes.position; f.life -= dt;

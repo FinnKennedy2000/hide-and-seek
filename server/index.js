@@ -32,7 +32,7 @@ const OUTFITS = ['plain', 'stripes', 'dots', 'overalls'];
 const MODES = ['classic', 'prophunt'];
 // prop hunt tunables
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = 2, PICKUP_SHOTS = 6;
-const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5, PICKUP_RANGE = 2.5;
+const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
 let WD = null; // shared world: { colliders, props, rayBox } from public/worlddata.js, loaded before listening
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -71,6 +71,7 @@ const server = http.createServer((req, res) => {
   }
   fs.readFile(file, (err, data) => {
     if (err) {
+      if (err.code !== 'ENOENT') console.error('readFile', file, err);
       res.writeHead(404);
       return res.end('Not Found');
     }
@@ -222,7 +223,21 @@ function tickRoom(room, t) {
     p: [...room.players.values()].map((p) => [p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), r2(p.c)]),
   });
 }
-setInterval(() => { const t = now(); for (const room of rooms.values()) tickRoom(room, t); }, TICK_MS);
+setInterval(() => {
+  const t = now();
+  for (const room of rooms.values()) {
+    try { tickRoom(room, t); } catch (e) {
+      console.error('tick error', room.code, e);
+      try { endRound(room, 'hiders'); } catch (e2) { // could not end cleanly: force the room back to the lobby
+        console.error('endRound failed, resetting room', room.code, e2);
+        room.phase = 'lobby'; for (const p of room.players.values()) p.role = null;
+        try { sendRoom(room); } catch { /* ignore */ }
+      }
+    }
+  }
+}, TICK_MS);
+process.on('uncaughtException', (e) => console.error('uncaughtException', e));
+process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 
 // ======================================================================
 // websocket
@@ -241,7 +256,7 @@ const handlers = {
     const code = typeof m.code === 'string' ? m.code.toUpperCase() : '';
     const room = /^[A-Z]{4}$/.test(code) ? rooms.get(code) : null;
     if (!room) return send(p, { t: 'err', msg: 'Room not found' });
-    if (p.room === room) return;
+    if (p.room === room) return sendRoom(room);
     if (room.phase !== 'lobby') return send(p, { t: 'err', msg: 'Round in progress, try again in a moment' });
     if (room.players.size >= MAX_PLAYERS) return send(p, { t: 'err', msg: 'Room is full' });
     if (p.room) leaveRoom(p);
@@ -321,9 +336,9 @@ const handlers = {
     if ([ox, oy, oz, dx, dy, dz].includes(null)) return;
     const len = Math.hypot(dx, dy, dz);
     if (Math.abs(len - 1) > 0.05) return;                                              // direction must be a unit vector
-    if (Math.hypot(ox - p.x, oz - p.z) > ORIGIN_TOL || oy < p.y || oy > p.y + 2.2) return; // origin near where the seeker really is
+    if (Math.hypot(ox - p.x, oz - p.z) > ORIGIN_TOL || oy < p.y || oy > p.y + 2.2) return sendAmmo(p); // origin near where the seeker really is
     const t = now();
-    if (t - p.lastShot < FIRE_GAP || p.reloadEnd || p.mag <= 0) return;
+    if (t - p.lastShot < FIRE_GAP || p.reloadEnd || p.mag <= 0) return sendAmmo(p);
     p.lastShot = t; p.mag--; p.shots++;
     const ux = dx / len, uy = dy / len, uz = dz / len;
     let tw = SHOT_RANGE;                                                               // nearest world occluder
@@ -345,7 +360,8 @@ const handlers = {
   },
   reload(p) {
     const room = p.room;
-    if (!room || room.mode !== 'prophunt' || room.phase !== 'seek' || p.role !== 'seeker' || p.out || p.reloadEnd || p.mag >= MAG || p.res <= 0) return;
+    if (!room || room.mode !== 'prophunt' || room.phase !== 'seek' || p.role !== 'seeker' || p.out) return;
+    if (p.reloadEnd || p.mag >= MAG || p.res <= 0) return sendAmmo(p);
     p.reloadEnd = now() + RELOAD_S; sendAmmo(p);
   },
   grab(p) { // pick up the ammo crate when close enough
@@ -386,8 +402,8 @@ wss.on('connection', (ws) => {
   };
   ws.alive = true;
   ws.on('pong', () => { ws.alive = true; });
-  ws.on('error', () => {});
-  ws.on('close', () => leaveRoom(p));
+  ws.on('error', (e) => console.warn('ws error', e.message));
+  ws.on('close', () => { try { leaveRoom(p); } catch (e) { console.error('close handler error', e); } });
   ws.on('message', (raw, isBinary) => {
     ws.alive = true;
     // token bucket: 60 msgs/s sustained, bursts of 120
