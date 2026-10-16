@@ -21,10 +21,13 @@
 ## Global Constraints
 
 - Runs in desktop Chrome from a URL with no install. Client on Vercel (`hide-and-seek-red.vercel.app`), server on Railway EU West, **1 replica** (rooms are in memory).
+- **Reference low-end device (the user's own laptop):** Intel Core Ultra 7 265U (power-limited U-series) with built-in "Intel(R) Graphics" (4 Xe cores, shared memory), a 1920×1200 display, and Chrome on Windows. **Every map must hold ≥ 60 fps on it with the auto-detected preset, and ≥ 45 fps on battery.** No preset may be a slideshow.
 - **Performance budget:**
-  - "High" preset: ≥60 fps at 1080p on an integrated GPU (Intel Iris Xe class). "Low" preset: ≥60 fps on a 2018 laptop.
-  - ≤ 300 draw calls in the worst view on either map.
-  - First load ≤ 15 MB over the wire, and the menu interactive in ≤ 4 s on a fast connection.
+  - "Potato" and "Low" presets: ≤ 120 draw calls, ≤ 250k triangles, and ≤ 6 ms GPU frame at 1080p on the reference device.
+  - "High" preset: ≥ 60 fps at 1080p on Iris Xe / Arc-class integrated.
+  - "Ultra" is for discrete GPUs only.
+  - ≤ 300 draw calls in the worst view on any map on any preset. JS frame time ≤ 4 ms with 8 players on the reference device (4× CPU throttle in CI as a proxy).
+  - First load ≤ 15 MB over the wire, and the menu interactive in ≤ 4 s on a fast connection. Each map loads lazily (≤ 5 MB per map).
 - **Assets:** CC0 or MIT only, each logged in `ASSETS.md` with source URL and licence. No Mixamo or other restricted licences. No brand names or logos. The fake work dashboard keeps its fictional company.
 - **Keep existing behaviour:** the classic/prophunt rules, the server-authoritative tagging and shooting, the anti-teleport check (9 m/s), the 10 s connect timeout, the boss key (backtick), and visual sound cues for every positional sound, with no cue beyond audible range. Also keep:
   - Hiders never see other hiders in Prop Hunt.
@@ -90,7 +93,7 @@ export const PROTOCOL = 3; // bumped whenever messages change
 
 ---
 
-## Phase 1: Parallel workstreams (6 Sonnet agents, each in its own worktree on branch `ws/<name>`)
+## Phase 1: Parallel workstreams (9 Sonnet agents, each in its own worktree on branch `ws/<name>`)
 
 Each workstream owns only the listed folders. Changes outside them must be requested from the integrator (me) and are not made directly. Each agent rebases on `main` and runs `npm run smoke` before handing back. The integrator merges one branch at a time, smoke-tests and pushes.
 
@@ -117,6 +120,41 @@ Each workstream owns only the listed folders. Changes outside them must be reque
 - [ ] The smoke test asserts the frame-average draw calls stay ≤ 300 on both maps for each preset (log to `perf.json`).
 - [ ] A forced context loss (`WEBGL_lose_context`) restores within 2 s with no `pageerror` (Review Focus 2).
 - [ ] With the FPS mocked low for 3 s, `settings.quality` drops one level and `'quality'` fires.
+
+### Task 2b: Performance and scalability (Agent P)
+
+**Skills:** threejs-performance, threejs-ops, threejs-geometry, chrome-devtools-mcp:debug-optimize-lcp (load-time work).
+
+**Files:** owns `src/perf/**` (governor, profiler, LOD, instancing helpers), `tests/perf/**` and `vite.config.js` chunking.
+
+**Interfaces:**
+- Consumes: `render.stats()`, `settings`, `bus`, the world build output, and the character LOD hooks.
+- Produces:
+  - `perf.governor`, the single owner of `settings.quality` auto-changes and the resolution scale.
+  - `perf.instanceStatic(group)` and `perf.mergeByMaterial(group)`, the helpers Agents W and M must use for static geometry.
+  - `perf.lod(object, [{dist, obj}])`.
+  - `perf.budget`, the per-preset caps that Agents R, C, W and M read.
+
+**Deliver:**
+- **GPU tiering at boot:** `WEBGL_debug_renderer_info` plus a 2 s micro-benchmark picks potato, low, med, high or ultra. "Intel(R) Graphics" / UHD / Iris and anything under 4 GB shared memory start on **Low**, and a measured 60 fps upgrades the tier.
+- **Potato and Low tiers:**
+  - MeshLambert/Phong materials (no PBR) and no real-time shadows. Use baked AO plus blob shadows under characters and props.
+  - No post except FXAA, at render scale 0.67 (potato) or 0.8 (low).
+  - At most 2 dynamic lights, with fake light via emissive and lightmap.
+  - Fog distance culls at 35 m, textures capped at 512 px, and characters at 2 m+ drop to a 1-bone rigid LOD.
+  - Particles capped at 64, decals at 20, and audio voices at 16.
+- **Dynamic resolution:** a frame-time governor with a 1 s window. Over 18 ms it steps the render scale down by 0.1 (floor 0.5); under 13 ms for 5 s it steps up. Steps along the quality ladder have hysteresis so it never thrashes.
+- **Draw-call reduction:** static world merged per material, repeated props as `InstancedMesh` (disguise clones still built from the source geometry), shelves and grass instanced, frustum culling and per-room visibility culling (portal-lite: each `meta.zones` room hides the zones you can't see), and shadow casters limited to characters plus big props.
+- **CPU:** mixers paused off-screen, AI and nav updates at 10 Hz, raycasts against a BVH (`three-mesh-bvh`), and zero per-frame allocations in the hot loops (pooled vectors).
+- **Load:** code-split per map and per mode, KTX2 textures, Draco or meshopt models, lazy audio, and a cached service-worker asset cache for repeat visits.
+- **Battery:** cap at 60 fps (no 120 Hz burn) and an "eco 30 fps" option. Pause rendering when the tab is hidden.
+- **Debug HUD:** F3 shows fps, frame ms, calls, tris, the tier and the scale.
+
+**Tests:**
+- [ ] `tests/perf/budget.spec.js` (Playwright, SwiftShader, 4× CPU throttle via CDP `Emulation.setCPUThrottlingRate`): for every map × {potato, low, high}, fly the camera through 6 fixed waypoints and assert calls and triangles are under `perf.budget` and JS frame time p95 ≤ 4 ms. Results go to `perf.json`.
+- [ ] Governor unit test: feed 3 s of 25 ms frames and the scale drops to ≤ 0.8. Feed 10 s of 10 ms frames and it climbs back. No more than 1 tier change per 5 s.
+- [ ] Tier detection unit test: renderer string "Intel(R) Graphics" → low, "NVIDIA GeForce RTX 3060" → high, unknown → med.
+- [ ] Manual check on the reference laptop before Phase 2 sign-off: on each map, with the F3 HUD, the fps holds ≥ 60 on the auto tier. Screenshot it into `docs/perf/`.
 
 ### Task 3: Characters and animation (Agent C)
 
@@ -168,6 +206,31 @@ Each workstream owns only the listed folders. Changes outside them must be reque
 - [ ] `tests/world/reachability.test.mjs`: a flood fill from `seekerStart` reaches every spot and spawn on both maps, no spot or spawn sits inside a collider, and `build` is deterministic (two builds deep-equal).
 - [ ] `tests/world/propids.test.mjs`: the prop ids and names of `main`'s first N props are unchanged (a snapshot file).
 - [ ] The smoke draw calls on both maps stay within budget.
+
+### Task 4b: New maps (Agent M)
+
+**Skills:** threejs-geometry, threejs-scenes, threejs-materials, threejs-lighting.
+
+**Files:** owns `src/shared/maps/{school,museum,funfair,office}.js` and their textures. It registers new entries in `MAPS` (an append-only block in `src/shared/worlddata.js`; this one-line-per-map edit is agreed with Agent W).
+
+**Interfaces:**
+- Consumes: the builder `b`, `perf.instanceStatic` / `perf.mergeByMaterial`, `perf.budget`, and the `meta.zones` contract from Task 4.
+- Produces: per map, `meta` (with `zones`, `seekerStart`, `bounds`, `fog`, `sky`, `ambient`), `spots`, `spawns`, `materials`, `build(b, rnd)` and a `thumbnail` (a 320×180 webp rendered offline) for the map picker.
+
+**Deliver:** four new maps, each built for hide and seek and prop hunt. Each has 40+ AI spots, 18+ spawns, 60+ disguisable props in at least 20 kinds, a layout with loops (no dead-end-only areas), and different sizes so lobbies of 2 and 8 both work.
+
+1. **"After Hours" (school):** classrooms with desks to crouch under, a gym with stacked mats and bleachers, lockers you can stand in, a cafeteria, a library with tall stacks, and a two-floor stairwell. Stairs use autostep; at most one upper floor.
+2. **"Night at the Museum":** a dinosaur hall with skeleton props, Egyptian sarcophagi, suits of armour and statues as disguise props, a gift shop, and dark, cramped storage. It's moody but readable: emissive display cases do the lighting.
+3. **"Funfair":** outdoors at dusk, with stalls, a ghost-train interior (dark, lit by emissives only), a teacup ride, prize-booth plushies as props, hay bales and a hedge maze. It's the largest map, for 6–8 players.
+4. **"Open Plan" (office floor):** cubicles, a meeting-room glass maze, a kitchen, a server room with blinking emissives, and plants, printers and water coolers as props. It's the smallest map, for 2–4 players.
+
+- Each map ships within `perf.budget` on potato and low. It uses at most 4 dynamic lights and lights everything else with emissives and baked vertex AO.
+- The lobby and title map picker gains thumbnails, a recommended player count, and a "Random" option.
+
+**Tests:**
+- [ ] Extend `tests/world/reachability.test.mjs` to all maps. Every spot and spawn is reachable, none sits inside a collider, `build` is deterministic, and prop counts are ≥ 60.
+- [ ] Extend `tests/perf/budget.spec.js` to all maps (it picks up `MAPS` automatically).
+- [ ] Server test: the host sets each map, `round.map` matches, spawns come from that map, and a wall on that map blocks a shot.
 
 ### Task 5: Movement, camera and gunplay feel (Agent G)
 
@@ -280,18 +343,20 @@ Each workstream owns only the listed folders. Changes outside them must be reque
 
 ### Task 9: Merge, review, perf pass
 
-- [ ] Merge the branches in this order: W → R → C → G → A → N → U. After each merge, run `npm run build && npm run smoke && npm run test:server`, then push to `main` so it deploys.
+- [ ] Merge the branches in this order: P → W → R → M → C → G → A → N → U. After each merge, run `npm run build && npm run smoke && npm run test:server`, then push to `main` so it deploys.
 - [ ] Run the `pr-review-toolkit:silent-failure-hunter` and `code-review` agents on the full diff (per CLAUDE.md), and fix the findings that matter.
 - [ ] Performance pass: `perf.json` within budget on both maps for each preset.
 - [ ] A live check on the deployed URLs: a 2-page online Prop Hunt round on each map with no console errors.
 - [ ] Update `README.md`, `ASSETS.md` and `docs/PLAN-v2.md`.
 
-## Agent split (8 Sonnet agents: 1 foundation, then 7 in parallel)
+## Agent split (10 Sonnet agents: 1 foundation, then 9 in parallel)
 
 | Agent | Workstream | Starts |
 |---|---|---|
 | F | Foundation (Task 1) | now |
 | R | Rendering and lighting (Task 2) | after F merges |
+| P | Performance and scalability (Task 2b) | after F |
+| M | New maps: school, museum, funfair, office (Task 4b) | after F (uses P's helpers via stubs until P merges) |
 | C | Characters and animation (Task 3) | after F |
 | W | World art and maps (Task 4) | after F |
 | G | Movement, camera, gunplay (Task 5) | after F |
@@ -299,4 +364,4 @@ Each workstream owns only the listed folders. Changes outside them must be reque
 | N | Netcode and server (Task 7) | after F |
 | U | UI/UX (Task 8) | after F |
 
-Phase 1 runs 7 agents in parallel, each in its own worktree. Expected wall clock: about 1–2 h for Foundation, then about 2–4 h for the parallel phase. Merge and ship happen continuously as branches land.
+Phase 1 runs 9 agents in parallel, each in its own worktree. Expected wall clock: about 1–2 h for Foundation, then about 2–4 h for the parallel phase. Merge and ship happen continuously as branches land.
