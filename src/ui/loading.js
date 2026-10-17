@@ -5,14 +5,13 @@ import { bus } from '../core/bus.js';
 import { loadGroup } from '../core/assets.js';
 
 const groups = new Map(); // name -> {done,total}
-let shown = 0, hideT = 0, label = 'Loading', inertEls = [];
+let shown = 0, hideT = 0, label = 'Loading';
 
 export function loading(progress, text) { // progress 0..1 shows / updates; null|false hides
   const el = $('loading');
-  if (progress == null || progress === false) { clearTimeout(hideT); el.classList.add('hidden'); inertEls.forEach((n) => { n.inert = false; }); inertEls = []; shown = 0; return; }
+  if (progress == null || progress === false) { clearTimeout(hideT); el.classList.add('hidden'); shown = 0; return; }
   if (el.classList.contains('hidden')) {
-    el.classList.remove('hidden'); shown = 0;
-    inertEls = [...document.querySelectorAll('.panelwrap:not(#loading), #hud')].filter((n) => { const was = n.inert; n.inert = true; return !was; }); // keyboard cannot reach what is underneath
+    el.classList.remove('hidden'); shown = 0; // (the overlay covers the pointer; nav.js ignores keys while it shows)
   }
   clearTimeout(hideT);
   shown = Math.max(shown, Math.min(1, progress)); // monotonic
@@ -21,7 +20,7 @@ export function loading(progress, text) { // progress 0..1 shows / updates; null
   const pct = Math.round(shown * 100);
   $('loadBar').setAttribute('aria-valuenow', String(pct));
   $('loadPct').textContent = `${pct}%`; $('loadLabel').textContent = label;
-  if (progress >= 1) hideT = setTimeout(() => { loading(null); focusMenu(); }, 350);
+  if (progress >= 1) hideT = setTimeout(() => { loading(null); focusMenu(); }, 120); // short debounce: back-to-back groups do not flicker the overlay
 }
 const focusMenu = () => { const t = document.querySelector('.panelwrap:not(.hidden) button:not(:disabled), .panelwrap:not(.hidden) input'); t?.focus({ preventScroll: true }); };
 

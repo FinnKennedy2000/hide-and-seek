@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   await page.goto('/');
   await page.waitForSelector('#btnSeek');
+  await page.waitForSelector('#loading', { state: 'hidden', timeout: 120000 }); // boot asset loading (audio samples) shows the loading screen first
 });
 test.afterEach(() => expect(errors, errors.join('\n')).toEqual([]));
 
