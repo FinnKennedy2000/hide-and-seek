@@ -7,20 +7,36 @@ export const meta = {
   ambient: { color: 0x8a78c0, ground: 0x3a2e44, intensity: 0.8 },
   seekerStart: { x: 0, z: 7.8, yaw: 0 },
   bounds: { x0: -23.5, x1: 23.5, z0: -23.5, z1: 23.5 },
+  // Audio zones: the FIRST zone whose box contains the listener wins, so the last entry is the catch-all.
+  // reverb: 'small' (furnished room) | 'hall' (big open interior) | 'outdoor'. box is {x0,x1,y0,y1,z0,z1} in world metres.
+  zones: [
+    { name: 'Bedroom', box: { x0: -8, x1: -2, y0: -1, y1: 4, z0: -6, z1: 0 }, reverb: 'small' },
+    { name: 'Study', box: { x0: -2, x1: 3, y0: -1, y1: 4, z0: -6, z1: -1.5 }, reverb: 'small' },
+    { name: 'Guest room', box: { x0: 3, x1: 8, y0: -1, y1: 4, z0: -6, z1: -1.5 }, reverb: 'small' },
+    { name: 'Kitchen', box: { x0: -8, x1: -2, y0: -1, y1: 4, z0: 0, z1: 6 }, reverb: 'small' },
+    { name: 'Living room', box: { x0: -2, x1: 8, y0: -1, y1: 4, z0: -1.5, z1: 6 }, reverb: 'small' },
+    { name: 'Garden', box: { x0: -24, x1: 24, y0: -1, y1: 60, z0: -24, z1: 24 }, reverb: 'outdoor' },
+  ],
+  // Light probes: sampled bounce colour of each interior, for the renderer's ambient / IBL tint (x, y, z, colour, intensity, radius).
+  lightProbes: [
+    { x: -5, y: 1.5, z: -3, color: 0xffc58a, intensity: 0.5, radius: 6 }, { x: 0.5, y: 1.5, z: -3.5, color: 0xffc58a, intensity: 0.45, radius: 5 },
+    { x: 5.5, y: 1.5, z: -3.5, color: 0xffb27a, intensity: 0.4, radius: 5 }, { x: -5, y: 1.5, z: 3, color: 0xffc58a, intensity: 0.5, radius: 6 },
+    { x: 3, y: 1.5, z: 2.2, color: 0xffc58a, intensity: 0.55, radius: 7 }, { x: 0, y: 2, z: 12, color: 0x8a78c0, intensity: 0.8, radius: 40 },
+  ],
 };
 export const materials = {};
 export const mix = [['house', 3], ['garden', 2]];
 export const spots = [
   { x: -7.45, z: -4.7, kind: 'house', name: 'beside bed' }, { x: -3.2, z: -5.55, kind: 'house', name: 'wardrobe' },
   { x: 0.3, z: -5.5, kind: 'house', name: 'under desk' }, { x: 2.0, z: -2.15, kind: 'house', name: 'behind armchair' },
-  { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.4, z: -5.4, kind: 'house', name: 'crate pocket' },
+  { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.55, z: -5.4, kind: 'house', name: 'crate pocket' },
   { x: -4.6, z: 3.0, kind: 'house', name: 'under table' }, { x: -7.45, z: 5.45, kind: 'house', name: 'fridge pocket' },
   { x: 4.0, z: -0.55, kind: 'house', name: 'behind sofa' },
   { x: 12.9, z: -12.7, kind: 'garden', name: 'shed' }, { x: -11, z: 15.1, kind: 'garden', name: 'hedge A' },
   { x: 16.1, z: 11, kind: 'garden', name: 'hedge B' }, { x: -12, z: -16.1, kind: 'garden', name: 'hedge C' },
   { x: -20.1, z: 0, kind: 'garden', name: 'hedge D' }, { x: -14.6, z: 8.7, kind: 'garden', name: 'tree 1' },
   { x: 18.7, z: -6.4, kind: 'garden', name: 'tree 2' }, { x: -4.1, z: -17.7, kind: 'garden', name: 'tree 3' },
-  { x: 21.0, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
+  { x: 21.5, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
   { x: 8, z: 16.9, kind: 'garden', name: 'car' },
 ];
 // open spots in the garden / yard that don't overlap the world's colliders
@@ -101,26 +117,26 @@ export function build(b, rnd) {
   for (let i = 0; i < 5; i++) b.box(-3.55 + i * 0.18, -5.45, 0.08, 0.04, 0.7, ['fabricRed', 'fabricGreen', 'fabricBlue'][i % 3], { y0: 0.95, collide: false });
   // study
   b.prop('desk', () => {
-    b.box(0.3, -5.5, 1.6, 0.7, 0.07, 'wood', { y0: 0.7 });
-    b.box(-0.5, -5.5, 0.05, 0.7, 0.7, 'wood'); b.box(1.1, -5.5, 0.05, 0.7, 0.7, 'wood');
-    b.box(0.3, -5.8, 1.5, 0.04, 0.7, 'wood');
-    b.box(0.9, -5.5, 0.35, 0.02, 0.25, 'tv', { y0: 0.77, collide: false, cast: false });
+    b.box(0.3, -5.5, 1.6, 0.7, 0.07, 'wood', { y0: 1.1 }); // top at 1.1: crouch-under clearance (the 'under desk' spot)
+    b.box(-0.5, -5.5, 0.05, 0.7, 1.1, 'wood'); b.box(1.1, -5.5, 0.05, 0.7, 1.1, 'wood');
+    b.box(0.3, -5.8, 1.5, 0.04, 1.1, 'wood');
+    b.box(0.9, -5.5, 0.35, 0.02, 0.25, 'tv', { y0: 1.17, collide: false, cast: false });
   });
-  chair(0.3, -4.4);
+  chair(0.3, -3.9);
   bookshelf(-1.7, -5.0, 1.4);
   b.prop('armchair', () => { b.box(2.0, -3.2, 1.0, 1.0, 0.45, 'fabricGreen'); b.box(2.0, -3.52, 1.0, 0.25, 0.9, 'fabricGreen'); });
   b.box(0.5, -3.0, 1.6, 1.0, 0.02, 'rug', { y0: 0.02, collide: false, cast: false });
   // bedroom 2
   bed(6.3, -4.85, 'fabricRed');
-  crate(4.2, -5.2, 1.0); crate(4.9, -5.4, 0.8); crate(4.2, -5.2, 0.7, 1.0);
+  crate(4.6, -5.2, 1.0); crate(5.2, -5.4, 0.8); crate(4.6, -5.2, 0.7, 1.0); // pushed east so the 'crate pocket' by the wall is walkable
   cabinet('side table', 7.65, -2.4, 0.5, 1.0, 0.9, 'wood');
   plant(3.5, -2.1);
   // kitchen
   b.box(-7.55, 2.5, 0.7, 3.4, 0.9, 'counter');
   b.box(-7.55, 2.5, 0.72, 3.42, 0.04, 'dark', { y0: 0.9, collide: false });
   cabinet('fridge', -6.6, 5.45, 0.8, 0.8, 1.9, 'metal');
-  table(-4.6, 3.0, 1.6, 0.9);
-  chair(-4.6, 2.0); chair(-4.6, 4.0); chair(-5.75, 3.0); chair(-3.45, 3.0);
+  table(-4.6, 3.0, 1.6, 0.9, 1.1); // tall enough to crouch under
+  chair(-4.6, 1.8); chair(-4.6, 4.2); chair(-5.95, 3.0); chair(-3.25, 3.0);
   b.box(-4.6, 3.0, 2.4, 1.8, 0.02, 'rug', { y0: 0.02, collide: false, cast: false });
   // living room
   sofa(4.0, 0.8, 2.4, true, 'fabricBlue');

@@ -13,6 +13,25 @@ export const meta = {
   seekerStart: { x: 0, z: 9.5, yaw: 0 }, // car park, in front of the automatic doors (server spreads seekers along x by 1.4)
   bounds: { x0: -22, x1: 22, z0: -22, z1: 22 },
   flicker: FLICKER,
+  // Audio zones: the FIRST zone whose box contains the listener wins, so the last entry is the catch-all.
+  // reverb: 'small' (furnished room) | 'hall' (big open interior) | 'outdoor'. box is {x0,x1,y0,y1,z0,z1} in world metres.
+  zones: [
+    { name: 'Staff room', box: { x0: 4, x1: 9.5, y0: -1, y1: 4, z0: -16, z1: -9 }, reverb: 'small' },
+    { name: 'Office', box: { x0: 9.5, x1: 14.5, y0: -1, y1: 4, z0: -16, z1: -9 }, reverb: 'small' },
+    { name: 'Toilets', box: { x0: 14.5, x1: 20, y0: -1, y1: 4, z0: -16, z1: -9 }, reverb: 'small' },
+    { name: 'Corridor', box: { x0: 4, x1: 20, y0: -1, y1: 4, z0: -9, z1: -6 }, reverb: 'small' },
+    { name: 'Stock room', box: { x0: -20, x1: 4, y0: -1, y1: 4, z0: -16, z1: -6 }, reverb: 'hall' },
+    { name: 'Shop floor', box: { x0: -20, x1: 20, y0: -1, y1: 4, z0: -6, z1: 8 }, reverb: 'hall' },
+    { name: 'Loading bay', box: { x0: -22, x1: 22, y0: -1, y1: 5, z0: -22, z1: -16 }, reverb: 'hall' },
+    { name: 'Car park', box: { x0: -22, x1: 22, y0: -1, y1: 60, z0: -22, z1: 22 }, reverb: 'outdoor' },
+  ],
+  // Light probes: sampled bounce colour per area, for the renderer's ambient / IBL tint (x, y, z, colour, intensity, radius).
+  lightProbes: [
+    { x: -11, y: 1.6, z: 0, color: 0xd8ffe6, intensity: 0.9, radius: 9 }, { x: 11, y: 1.6, z: 0.5, color: 0xd8ffe6, intensity: 0.9, radius: 9 },
+    { x: 0, y: 1.2, z: -2.5, color: 0x66aaff, intensity: 0.7, radius: 5 }, { x: -8, y: 1.6, z: -10, color: 0xd8ffe6, intensity: 0.6, radius: 10 },
+    { x: 9.4, y: 1.6, z: -12.5, color: 0xffd9a0, intensity: 0.6, radius: 6 }, { x: 2, y: 2, z: -18.5, color: 0xffb066, intensity: 0.6, radius: 8 },
+    { x: -8, y: 2, z: 13, color: 0xffc27a, intensity: 0.7, radius: 14 },
+  ],
 };
 
 // Only NEW material names (everything else used here already exists in game.js: wall roof wood metal dark white counter glass glow tv car stone leaf hedge bark).
@@ -90,14 +109,14 @@ export const spots = [
   { x: -18.3, z: 8.7, kind: 'outside', crouch: false },  // behind recycling bins
   { x: -6.0, z: 21.3, kind: 'outside', crouch: false },  // behind hedge line
   { x: 10.0, z: 21.3, kind: 'outside', crouch: false },  // behind hedge line 2
-  { x: 20.5, z: -2.3, kind: 'outside', crouch: false },  // side corridor, between bales
+  { x: 20.65, z: -2.3, kind: 'outside', crouch: false },  // side corridor, between bales
   { x: 3.2, z: 17.2, kind: 'outside', crouch: false },   // beside van
 ];
 
 export const spawns = [
   [0, 12.5], [-7, 12.5], [9.5, 12.5], [-19, 13.5], [19.5, 12.5], [-1, 3.2],
   [-16.25, 1.0], [-11.25, -1.5], [0, -2.0], [9.5, 1.0], [12.2, -2.1],
-  [12, -7.6], [-9.5, -8.0], [-4, -9.5], [-20.9, -2.0], [20.9, -12.0], [0.5, -20.0], [-19, -19.5],
+  [12, -7.6], [-11.5, -8.6], [-4, -9.5], [-20.9, -2.0], [20.9, -12.0], [0.5, -20.0], [-19, -19.5],
 ];
 
 export function build(b, rnd) {
@@ -244,8 +263,8 @@ export function build(b, rnd) {
   });
   [[5.2, -3.4], [8.2, -3.4], [11.2, -3.4], [14.2, -3.4], [6.7, -0.8], [9.7, -0.8], [12.7, -0.8], [15.7, -0.8]].forEach(([x, z]) => produceStand(x, z));
   melons(17.2, -1.4); melons(17.2, -0.5); melons(18.6, -3.8); melons(4.3, 0.3);
-  crateStack(18.4, -2.3, 2); crateStack(18.4, -4.6, 1); crateStack(3.6, -4.8, 3); crateStack(17.2, 0.9, 1);
-  cardboard(5.0, 1.6, 0.5); cardStack(16.5, 1.8); cardboard(11.0, 1.9, 0.6);
+  crateStack(18.4, -2.3, 2); crateStack(18.4, -4.6, 1); crateStack(3.6, -4.8, 3); crateStack(16.2, 0.55, 1);
+  cardboard(5.0, 1.6, 0.5); cardStack(15.9, 2.0); cardboard(11.0, 1.9, 0.6);
   wetSign(-1.2, 5.3); wetSign(10.0, 1.8); wetSign(-14.0, 5.5); wetSign(7.0, -4.8);
   cone(1.2, 2.8); cone(-14.0, -5.5); cone(14.5, 7.5);
   baskets(5.4, 7.4); baskets(-18.8, 5.4); baskets(2.8, 3.6);
@@ -314,27 +333,28 @@ export function build(b, rnd) {
     b.box(x, -15.8, 0.35, 0.2, 0.5, 'white', { y0: 0.4, collide: false });
     b.box(x + (ry > 0 ? -0.35 : 0.35), -14.5, 0.8, 0.04, 1.7, 'locker', { y0: 0.15, collide: false, ry }); // half-open stall door
   });
-  b.box(19.6, -12.2, 0.5, 3.0, 0.9, 'counter'); b.box(19.88, -12.2, 0.04, 2.6, 1.0, 'glass', { y0: 1.1, collide: false, cast: false });
+  b.box(19.6, -11.7, 0.5, 2.0, 0.9, 'counter'); b.box(19.88, -11.7, 0.04, 1.8, 1.0, 'glass', { y0: 1.1, collide: false, cast: false });
   wetSign(16.8, -10.4); bin(14.9, -9.5); mopBucket(19.4, -10.0); cardboard(19.5, -9.6, 0.4);
 
-  // ----- loading bay (z -22 .. -16): lorry with open back + 2-step ramp, roll cages, skip
-  // game.js has no auto step-up: a collider only lets you walk onto it when your feet are within 0.05 of its top, so the
-  // ramp rises 0.045 per tread (10 treads, 4 m long) up to the 0.45 load bed. Jumping (apex ~0.9) also gets you up.
-  for (let k = 1; k <= 10; k++) b.box(3.0 + (k - 0.5) * 0.4, -19.5, 0.4, 1.6, 0.045 * k, 'dark');
-  b.box(11, -19.5, 8, 2.6, 0.45, 'lorry');                           // load bed
-  b.box(11, -20.75, 8, 0.1, 2.35, 'lorry', { y0: 0.45 }); b.box(11, -18.25, 8, 0.1, 2.35, 'lorry', { y0: 0.45 });
-  b.box(14.95, -19.5, 0.1, 2.4, 2.35, 'lorry', { y0: 0.45 });
+  // ----- loading bay (z -22 .. -16): lorry with open back + 3-step ramp, roll cages, skip
+  // The load bed is 0.14 high so the AI nav grid (which ignores anything under 0.15) treats the lorry as floor and hiders can path
+  // inside; the ramp rises 0.045 per tread (the player steps up <= 0.3 anyway).
+  const BED = 0.14;
+  for (let k = 1; k <= 3; k++) b.box(5.6 + (k - 0.5) * 0.47, -19.5, 0.47, 1.6, 0.045 * k, 'dark');
+  b.box(11, -19.5, 8, 2.6, BED, 'lorry');                            // load bed
+  b.box(11, -20.75, 8, 0.1, 2.5, 'lorry', { y0: BED }); b.box(11, -18.25, 8, 0.1, 2.5, 'lorry', { y0: BED });
+  b.box(14.95, -19.5, 0.1, 2.4, 2.5, 'lorry', { y0: BED });
   b.box(11, -19.5, 8.1, 2.7, 0.1, 'lorry', { y0: 2.8, collide: false });
   b.box(16.1, -19.5, 2.2, 2.6, 2.3, 'lorryBlue'); b.box(17.22, -19.5, 0.03, 2.0, 0.9, 'glass', { y0: 1.3, collide: false, cast: false });
   for (const [x, z] of [[8.5, -21.0], [13.5, -21.0], [8.5, -18.0], [13.5, -18.0], [16.4, -21.0], [16.4, -18.0]]) b.mesh(['cyl', 0.5, 0.5, 0.35, 14], 'dark', x, 0.5, z, { r: [Math.PI / 2, 0, 0] });
-  cage(14.3, -20.2, 0.45); cage(11.4, -18.75, 0.45); cardboard(12.4, -20.3, 0.6, 0.45); cardStack(8.6, -20.2, 0.8, 0.45); // lorry cargo (y0 follows the bed)
+  cage(14.3, -20.2, BED); cage(11.4, -18.75, BED); cardboard(12.4, -20.45, 0.6, BED); cardStack(8.6, -20.2, 0.8, BED); // lorry cargo (y0 follows the bed)
   b.prop('skip', () => { b.box(-12, -19.2, 3.2, 1.6, 1.3, 'binGreen'); b.box(-12, -19.2, 3.3, 1.7, 0.06, 'dark', { y0: 1.3, collide: false }); });
   cage(-5.5, -18.8); cage(-3.9, -19.4); cage(-7.2, -17.3); cage(-4.4, -17.2); cage(5.5, -17.2);
   palletStack(-15.0, -17.4, 1.0); palletStack(-19.4, -18.2, 1.4); cardboard(-9.4, -17.6, 0.55); cardStack(-14.5, -20.9);
   bin(0.6, -17.4); bin(3.8, -17.2); wetSign(2.0, -17.0); cone(-1.4, -17.6); cone(4.8, -18.6); mopBucket(-2.4, -20.6); extinguisher(-0.4, -15.75);
 
   // ----- outside: side corridors, car park
-  bale(-21.3, -6.0); bale(-21.3, -4.8); bale(21.3, -3.0); bale(21.3, -1.7); cardStack(-21.2, 6.0);
+  bale(-21.3, -6.0); bale(-21.3, -4.8); bale(21.6, -3.0); bale(21.6, -1.7); cardStack(-21.2, 6.0);
   const car = (x, z, along, mat) => {
     const w = along ? 1.8 : 4.2, d = along ? 4.2 : 1.8;
     b.prop('car', () => {
