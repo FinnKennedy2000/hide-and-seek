@@ -19,7 +19,7 @@ const SETS = {
 };
 // per-map colour multipliers on top of the (neutral) textures
 const TINT = {
-  house: { wall: 0xe3d3bc, floor: 0xffffff, wood: 0xe8d4bb, metal: 0xc4cad4, grass: 0xc9d9b8 },
+  house: { wall: 0xe3d3bc, floor: 0xffffff, wood: 0xe8d4bb, metal: 0xc4cad4, grass: 0xffffff },
   lateshop: { wall: 0xe4e8ee, wood: 0xdcc8ac, metal: 0xd4dae4, tile: 0xffffff, asphalt: 0xb8bcc4 },
 };
 
