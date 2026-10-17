@@ -3,12 +3,18 @@ import { createNav } from '../shared/nav.js';
 
 // Client-side wrapper over the shared nav (src/shared/nav.js, also used by the server bots) bound to the current map's colliders.
 export const SPOTS = []; // AI hiding spots of the current map (refilled in place by setSpots)
-const nav = createNav(colliders); // colliders is refilled in place by setWorld, so this stays valid
-export const { buildNav, findPath, follow, losClear } = nav;
+// built on first use: world/build.js imports this module, so `colliders` is not initialised yet while this module evaluates.
+// (colliders is refilled in place by setWorld, so the nav built from it stays valid.)
+let _nav = null;
+const nav = () => (_nav ||= createNav(colliders));
+export const buildNav = () => nav().buildNav();
+export const findPath = (...a) => nav().findPath(...a);
+export const follow = (...a) => nav().follow(...a);
+export const losClear = (...a) => nav().losClear(...a);
 // AI hiding spots of the map, minus any the nav grid cannot reach from the seeker start (sealed pockets):
 // findPath would otherwise send a hider straight through the wall.
 export function setSpots(map) {
-  const reach = nav.reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);
+  const reach = nav().reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);
   // (house spots are hand-tuned and some sit in pockets the grid calls sealed, so they are kept as they always were)
   const list = map.spots.filter((s) => { if (map.meta.trusted) return true; return reach(s.x, s.z); }).map((s) => ({ ...s, owner: null }));
   SPOTS.length = 0; SPOTS.push(...list);
