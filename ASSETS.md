@@ -31,3 +31,8 @@ converted to WebP (colour, OpenGL normal, roughness; 1024 and 512). The `tile` c
 | tile | Tiles108 | shop floor |
 | grass | Grass004 | house garden ground |
 | asphalt | Asphalt031 | car park |
+
+## Environment lighting (Task 2)
+
+- public/env/dusk.hdr: Venice Sunset 1k HDRI (Greg Zaal), https://polyhaven.com/a/venice_sunset, CC0
+- public/env/night.hdr: St Peters Square Night 1k HDRI, https://polyhaven.com/a/st_peters_square_night, CC0
