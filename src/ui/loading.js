@@ -5,6 +5,10 @@ import { bus } from '../core/bus.js';
 import { loadGroup } from '../core/assets.js';
 
 const groups = new Map(); // name -> {done,total}
+// The overlay blocks input, so it only shows for boot-time loads (before the first click / key) and for explicit ui.preload() groups.
+// Loads the engine kicks off after a gesture (audio samples for the map, ...) stay in the background.
+let booting = true; const forced = new Set();
+for (const t of ['pointerdown', 'keydown']) addEventListener(t, () => { booting = false; }, { capture: true, once: true });
 let shown = 0, hideT = 0, label = 'Loading';
 
 export function loading(progress, text) { // progress 0..1 shows / updates; null|false hides
@@ -22,9 +26,11 @@ export function loading(progress, text) { // progress 0..1 shows / updates; null
   $('loadPct').textContent = `${pct}%`; $('loadLabel').textContent = label;
   if (progress >= 1) hideT = setTimeout(() => { loading(null); focusMenu(); }, 120); // short debounce: back-to-back groups do not flicker the overlay
 }
+const el = () => $('loading');
 const focusMenu = () => { const t = document.querySelector('.panelwrap:not(.hidden) button:not(:disabled), .panelwrap:not(.hidden) input'); t?.focus({ preventScroll: true }); };
 
 bus.on('progress', ({ group, done, total }) => {
+  if (!booting && !forced.has(group) && el().classList.contains('hidden')) return; // background load: no overlay
   groups.set(group, { done, total });
   let d = 0, t = 0;
   for (const g of groups.values()) { d += g.done; t += g.total; }
@@ -33,4 +39,4 @@ bus.on('progress', ({ group, done, total }) => {
 });
 
 // preload(name, entries): convenience for boot code, loadGroup + overlay. Returns the loaded Map.
-export const preload = (name, entries) => loadGroup(name, entries);
+export const preload = (name, entries) => { forced.add(name); return loadGroup(name, entries); };
