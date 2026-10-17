@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { G, hooks } from './core/state.js';
 import { addSystem, start } from './core/loop.js';
 import { renderer, scene, camera, composer } from './render/renderer.js';
+import { render } from './render/index.js';
 import { updateFx } from './render/fx.js';
 import { setWorld, updateFlicker } from './world/build.js';
 import { toast } from './ui/hud.js';
@@ -34,7 +35,7 @@ addSystem({
   },
 });
 addSystem({ name: 'anim', order: 40, update(dt) { updateFlicker(dt); updateFx(dt); } });
-addSystem({ name: 'render', order: 100, update(dt) { if (!skipRender(dt)) composer.render(); } });
+addSystem({ name: 'render', order: 100, update(dt) { if (!skipRender(dt)) render.frame(dt); } });
 start();
 
-window.__hs = { THREE, renderer, scene, camera, composer, G }; // debugging + tests/smoke.spec.js (draw-call counts)
+window.__hs = { THREE, renderer, scene, camera, composer, render, G }; // debugging + tests/smoke.spec.js (draw-call counts)

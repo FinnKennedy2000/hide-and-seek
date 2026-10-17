@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { rnd } from '../core/util.js';
 import { scene } from '../render/renderer.js';
+import { render } from '../render/index.js';
 
 // ----- sky, sun, ambient (persistent; setWorld retunes them per map)
 const sunDir = new THREE.Vector3(-30, 11, -22).normalize();
@@ -46,4 +47,5 @@ export function applyEnv(m) {
   sun.visible = m.sky !== 'night';
   hemi.color.set(m.ambient.color); hemi.groundColor.set(m.ambient.ground ?? m.ambient.color); if (m.ambient.ground == null) hemi.groundColor.multiplyScalar(0.5);
   hemi.intensity = m.ambient.intensity;
+  render.setMap(m);
 }

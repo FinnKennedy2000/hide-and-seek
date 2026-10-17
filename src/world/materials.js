@@ -65,3 +65,27 @@ export const mat = {
   car: M(0x1d5c63, 0.35, { metalness: 0.4 }), glass: M(0x10161c, 0.1, { metalness: 0.6 }),
   slate: M(0x777b86, 0.9),
 };
+
+// ----- potato/low: cheap Lambert twins of the Standard materials (no PBR, no env). Cached both ways so swapping is allocation-free.
+const toLam = new WeakMap(), toStd = new WeakMap();
+const COPY = ['color', 'map', 'emissive', 'emissiveIntensity', 'emissiveMap', 'alphaMap', 'alphaTest', 'transparent', 'opacity', 'side', 'vertexColors', 'flatShading', 'fog', 'depthWrite', 'name'];
+function lambertOf(m) {
+  let l = toLam.get(m);
+  if (!l) {
+    l = new THREE.MeshLambertMaterial();
+    for (const k of COPY) if (m[k] !== undefined) l[k]?.copy ? l[k].copy(m[k]) : (l[k] = m[k]);
+    toLam.set(m, l); toStd.set(l, m);
+  }
+  return l;
+}
+const swap = (m, lambert) => (lambert ? (m.isMeshStandardMaterial ? lambertOf(m) : m) : (toStd.get(m) ?? m));
+// Swap every mesh under `root` to Lambert (true) or back to the original (false). Returns the number of meshes changed.
+export function useLambert(root, lambert) {
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const cur = o.material, next = Array.isArray(cur) ? cur.map((m) => swap(m, lambert)) : swap(cur, lambert);
+    if (Array.isArray(cur) ? next.some((m, i) => m !== cur[i]) : next !== cur) { o.material = next; n++; }
+  });
+  return n;
+}
