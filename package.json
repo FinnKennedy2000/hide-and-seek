@@ -13,7 +13,9 @@
     "test:audio": "node --test tests/audio/cues.test.mjs",
     "test:chars": "node --test tests/chars/rig.test.mjs",
     "test:player": "node tests/player/controller.test.mjs",
-    "test:world": "node --test tests/world/*.test.mjs"
+    "test:world": "node --test tests/world/*.test.mjs",
+    "test:perf": "node --test tests/perf/*.test.mjs && playwright test -c playwright.perf.config.js",
+    "test:perf:unit": "node --test tests/perf/*.test.mjs"
   },
   "engines": {
     "node": ">=20.19"
@@ -23,6 +25,7 @@
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@fontsource-variable/fraunces": "^5.3.0",
     "three": "0.170.0",
+    "three-mesh-bvh": "^0.9.16",
     "ws": "^8.18"
   },
   "devDependencies": {
