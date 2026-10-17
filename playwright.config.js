@@ -17,7 +17,7 @@ module.exports = defineConfig({
   },
   webServer: process.env.SMOKE_URL ? undefined : {
     command: 'npm run build --silent && node server/index.js',
-    env: { PORT: process.env.SMOKE_PORT },
+    env: { PORT: process.env.SMOKE_PORT, HIDE_SECS: '2' }, // short hiding phase so online specs reach SEEK quickly
     url: `${url}/health`,
     timeout: 120_000,
     reuseExistingServer: false,

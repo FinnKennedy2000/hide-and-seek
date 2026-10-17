@@ -4,6 +4,8 @@ import { scene, camera } from '../render/renderer.js';
 import { solids } from '../world/build.js';
 import { burst } from '../render/fx.js';
 import { splatMat } from '../characters/index.js';
+import { applyViewmodel, kick } from '../fx/gun.js';
+import { P } from '../core/state.js';
 
 const M = (color, e = 0.3) => new THREE.MeshStandardMaterial({ color, roughness: 0.4, emissive: color, emissiveIntensity: e });
 const bx = (w, h, d, m, x, y, z, p) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); p.add(o); return o; };
@@ -22,15 +24,10 @@ const VM_POS = new THREE.Vector3(0.3, -0.27, -0.6);
   vm.scale.setScalar(0.6); vm.position.copy(VM_POS); vm.rotation.y = 0.06; vm.visible = false;
   camera.add(vm);
 }
-let kick = 0, bob = 0;
 export const showBlaster = (on) => { vm.visible = on; };
-export function updateBlaster(dt, moving) {
-  kick = Math.max(0, kick - dt * 7); bob += dt * (moving ? 9 : 1.5);
-  vm.position.set(VM_POS.x + Math.sin(bob * 0.5) * (moving ? 0.008 : 0.002), VM_POS.y + Math.abs(Math.sin(bob)) * (moving ? 0.01 : 0.002), VM_POS.z + kick * 0.09);
-  vm.rotation.x = kick * 0.22;
-}
+export function updateBlaster(dt) { applyViewmodel(vm, VM_POS, dt, Math.hypot(P.vx, P.vz), P.airborne); } // spring sway / bob / ADS live in fx/gun.js
 export function muzzleWorld(out = new THREE.Vector3()) { camera.updateMatrixWorld(true); return vm.muzzle.getWorldPosition(out); }
-export function recoil() { kick = 1; const p = muzzleWorld(); burst(p.x, p.y, p.z, 0xffe9a0, 10, 0.25, 0.8, 0.09); }
+export function recoil() { kick(); const p = muzzleWorld(); burst(p.x, p.y, p.z, 0xffe9a0, 10, 0.25, 0.8, 0.09); }
 
 // ----- tracers
 const tracers = [];
