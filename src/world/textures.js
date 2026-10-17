@@ -24,9 +24,9 @@ const TINT = {
 };
 
 const loader = new THREE.TextureLoader(), cache = new Map(), reported = new Set();
-function load(set, kind, size) {
-  const url = `/textures/${set}/${kind}_${size}.webp`;
-  let t = cache.get(url);
+function load(set, kind, size, rep = 0) { // rep > 0: its own instance with that repeat (the ground plane tiles by UV, not by world UV)
+  const url = `/textures/${set}/${kind}_${size}.webp`, ck = `${url}#${rep}`;
+  let t = cache.get(ck);
   if (t) return t;
   t = loader.load(url, undefined, undefined, () => {
     if (reported.has(url)) return; reported.add(url);
@@ -35,10 +35,10 @@ function load(set, kind, size) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = kind === 'c' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = small() ? 1 : 4;
-  cache.set(url, t);
+  if (rep) t.repeat.set(rep, rep);
+  cache.set(ck, t);
   return t;
 }
-const sized = (t, rep) => { if (!rep) return t; const c = t.clone(); c.repeat.set(rep, rep); c.needsUpdate = true; return c; }; // clones share the image
 
 let last = null;
 export function applyPBR(mat, mapId, mapMaterials = []) {
@@ -50,9 +50,9 @@ export function applyPBR(mat, mapId, mapMaterials = []) {
     const tint = TINT[mapId]?.[name];
     if (tint != null) m.color.setHex(tint); else if (!m.userData.pbr) m.color.setHex(0xffffff);
     const rep = cfg.ground ? cfg.ground / (TILE[name] ?? 1) : 0;
-    m.map = sized(load(cfg.dir, 'c', size), rep);
-    m.normalMap = normals ? sized(load(cfg.dir, 'n', size), rep) : null;
-    m.roughnessMap = rough ? sized(load(cfg.dir, 'r', size), rep) : null;
+    m.map = load(cfg.dir, 'c', size, rep);
+    m.normalMap = normals ? load(cfg.dir, 'n', size, rep) : null;
+    m.roughnessMap = rough ? load(cfg.dir, 'r', size, rep) : null;
     if (!m.userData.pbr) { m.userData.pbr = true; m.userData.baseRough = m.roughness; }
     m.roughness = rough ? cfg.rough : Math.min(1, m.userData.baseRough * 1.1);
     m.needsUpdate = true;

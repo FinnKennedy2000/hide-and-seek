@@ -57,6 +57,15 @@ export const materials = {
   produceGreen: { color: 0x4c9a3a, roughness: 0.9 }, produceRed: { color: 0xb8352c, roughness: 0.9 }, produceOrange: { color: 0xd9822b, roughness: 0.9 },
   melon: { color: 0x2e6b35, roughness: 0.8 },
   carRed: { color: 0x8b2a2a, roughness: 0.35, metalness: 0.4 }, carGrey: { color: 0x6a6f78, roughness: 0.35, metalness: 0.4 },
+  // remaster (src/world/textures.js draws the sign_* / decal_* canvases)
+  trim: { color: 0xd9dde3, roughness: 0.5 }, ceiling: { color: 0xdfe3e8, roughness: 0.95 }, fitting: { color: 0x7d8590, roughness: 0.4, metalness: 0.5 },
+  glassPane: { color: 0x9fc0e0, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false },
+  shelfBoard: { color: 0x8794a6, roughness: 0.45, metalness: 0.4 }, goods: { color: 0xffffff, roughness: 0.7 }, // goods: tinted per instance
+  sign_fresh: { color: 0xffffff }, sign_checkout: { color: 0xffffff }, sign_exit: { color: 0xffffff }, sign_staff: { color: 0xffffff }, sign_chilled: { color: 0xffffff },
+  sign_bay: { color: 0xffffff }, sign_wc: { color: 0xffffff }, sign_office: { color: 0xffffff }, sign_open: { color: 0xffffff }, sign_stock: { color: 0xffffff },
+  sign_a1: { color: 0xffffff }, sign_a2: { color: 0xffffff }, sign_a3: { color: 0xffffff }, sign_a4: { color: 0xffffff }, sign_a5: { color: 0xffffff }, sign_a6: { color: 0xffffff },
+  decal_stain: { color: 0xffffff, roughness: 1 }, decal_scuff: { color: 0xffffff, roughness: 1 }, decal_hazard: { color: 0xffffff, roughness: 0.7 },
+  decal_arrow: { color: 0xffffff, roughness: 0.7 }, decal_puddle: { color: 0xffffff, roughness: 0.15, metalness: 0.2 },
 };
 
 // AI hiding spots. crouch:true = best/only reachable crouched (under something, or a low gap).
@@ -122,16 +131,26 @@ export const spawns = [
 export function build(b, rnd) {
   const T = 0.2, H = 3;
   const deco = { collide: false, cast: false };
+  const mini = (() => { let a = 7; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })(); // own RNG: never touches `rnd`
+  // skirting on both faces of every wall run and a frame (jambs + head) at each opening: non-colliding trim
+  const trim = (cx, cz, len, alongX) => {
+    for (const s of [-1, 1]) { const o = s * (T / 2 + 0.015); if (alongX) b.box(cx, cz + o, len, 0.03, 0.1, 'trim', deco); else b.box(cx + o, cz, 0.03, len, 0.1, 'trim', deco); }
+  };
+  const frame = (c, g0, g1, alongX) => {
+    const m = (g0 + g1) / 2, w = g1 - g0;
+    if (alongX) { for (const x of [g0 + 0.03, g1 - 0.03]) b.box(x, c, 0.06, T + 0.08, 2.2, 'trim', deco); b.box(m, c, w, T + 0.08, 0.06, 'trim', { ...deco, y0: 2.14 }); }
+    else { for (const z of [g0 + 0.03, g1 - 0.03]) b.box(c, z, T + 0.08, 0.06, 2.2, 'trim', deco); b.box(c, m, T + 0.08, w, 0.06, 'trim', { ...deco, y0: 2.14 }); }
+  };
   function wallH(z, x0, x1, gaps = []) {
     let c = x0;
-    const seg = (a, e) => { if (e - a > 0.01) b.box((a + e) / 2, z, e - a, T, H, 'wall'); };
-    for (const [g0, g1] of gaps) { seg(c, g0); b.box((g0 + g1) / 2, z, g1 - g0, T, 0.8, 'wall', { y0: 2.2, collide: false }); c = g1; }
+    const seg = (a, e) => { if (e - a > 0.01) { b.box((a + e) / 2, z, e - a, T, H, 'wall'); trim((a + e) / 2, z, e - a, true); } };
+    for (const [g0, g1] of gaps) { seg(c, g0); b.box((g0 + g1) / 2, z, g1 - g0, T, 0.8, 'wall', { y0: 2.2, collide: false }); frame(z, g0, g1, true); c = g1; }
     seg(c, x1);
   }
   function wallV(x, z0, z1, gaps = []) {
     let c = z0;
-    const seg = (a, e) => { if (e - a > 0.01) b.box(x, (a + e) / 2, T, e - a, H, 'wall'); };
-    for (const [g0, g1] of gaps) { seg(c, g0); b.box(x, (g0 + g1) / 2, T, g1 - g0, 0.8, 'wall', { y0: 2.2, collide: false }); c = g1; }
+    const seg = (a, e) => { if (e - a > 0.01) { b.box(x, (a + e) / 2, T, e - a, H, 'wall'); trim(x, (a + e) / 2, e - a, false); } };
+    for (const [g0, g1] of gaps) { seg(c, g0); b.box(x, (g0 + g1) / 2, T, g1 - g0, 0.8, 'wall', { y0: 2.2, collide: false }); frame(x, g0, g1, false); c = g1; }
     seg(c, z1);
   }
 
@@ -151,9 +170,14 @@ export function build(b, rnd) {
   for (const [x, z, ry] of [[0, 7.85, Math.PI], [17, 7.85, Math.PI], [8.9, -5.85, 0], [2, -15.85, 0], [19.85, -7.45, -Math.PI / 2], [11.7, -8.85, Math.PI]]) {
     b.mesh(['plane', 0.55, 0.2], 'exitGlow', x, 2.55, z, { cast: false, r: [0, ry, 0] });
   }
-  for (const [x, z] of [[-11, -1], [-3, 4.5], [5, -1], [11, 3], [17, -2], [-8, -10], [-1, -11], [10, -7.5]]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // fluorescent tubes (visual)
-  for (let x = -16; x <= 16; x += 4) for (const z of [-3, 1, 5]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // ceiling panels, shop floor
-  for (let x = -16; x <= 0; x += 4) for (const z of [-14, -10]) b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false }); // stock room
+  const tube = (x, z) => { // fluorescent tube (visual) in a fitting: back plate and two end caps
+    b.box(x, z, 1.3, 0.1, 0.06, 'tubeGlow', { y0: 2.9, collide: false, cast: false });
+    b.box(x, z, 1.42, 0.16, 0.03, 'fitting', { y0: 2.96, ...deco });
+    for (const e of [-0.68, 0.68]) b.box(x + e, z, 0.05, 0.12, 0.1, 'fitting', { y0: 2.88, ...deco });
+  };
+  for (const [x, z] of [[-11, -1], [-3, 4.5], [5, -1], [11, 3], [17, -2], [-8, -10], [-1, -11], [10, -7.5]]) tube(x, z);
+  for (let x = -16; x <= 16; x += 4) for (const z of [-3, 1, 5]) tube(x, z); // ceiling panels, shop floor
+  for (let x = -16; x <= 0; x += 4) for (const z of [-14, -10]) tube(x, z); // stock room
   b.light(-11.25, 2.6, 0, 40, 16, FLICKER);  // shop west (flicker)
   b.light(11, 2.6, 0.5, 40, 16, FLICKER);    // shop east (flicker)
   b.light(0, 1.6, -2.5, 18, 8, 0x66aaff);    // freezer glow
@@ -210,16 +234,23 @@ export function build(b, rnd) {
   const bale = (x, z) => b.prop('cardboard bale', () => b.box(x, z, 0.9, 1.0, 1.0, 'cardboard'));
 
   // ----- shop floor: gondola aisles along z (x = -17.5 .. -5), 3 units each with slip-through gaps; some units on legs (crouch under)
-  const goods = ['goodsRed', 'goodsYellow', 'goodsBlue', 'goodsGreen'];
+  // products: a board plus a row of small boxes per shelf level. The boxes are `inst` (one InstancedMesh for the whole shop, tinted per
+  // instance via o.color); the boards are plain merged trim. Neither collides: the shelf body is the collider.
+  const PAL = [0xa8322d, 0xd2a82a, 0x2f5f9a, 0x3f8a4a, 0xe6e1d3, 0xc96a2b, 0x7a4a9a, 0x2b2d33, 0x58a6b8];
+  function stock(fx, z0, z1, face, y0, hmax = 0.34) { // fx: x of the shelf face; face +1 / -1: which way the products stick out
+    b.box(fx + face * 0.14, (z0 + z1) / 2, 0.3, z1 - z0, 0.03, 'shelfBoard', deco);
+    for (let z = z0 + 0.12; z < z1 - 0.08; z += 0.2) {
+      if (mini() < 0.07) continue; // a gap: the shelf is not perfectly stocked
+      b.box(fx + face * 0.14, z, 0.2, 0.17, hmax * (0.7 + mini() * 0.3), 'goods', { collide: false, cast: false, inst: true, color: PAL[(mini() * PAL.length) | 0], y0: y0 + 0.03 });
+    }
+  }
   function unit(cx, z0, z1, legs) {
     const cz = (z0 + z1) / 2, len = z1 - z0;
     if (legs) {
       b.box(cx, cz, 0.9, len, 0.8, 'shelf', { y0: 1.1 });
       for (const px of [-0.4, 0.4]) for (const pz of [z0 + 0.06, z1 - 0.06]) b.box(cx + px, pz, 0.08, 0.08, 1.1, 'shelf');
     } else b.box(cx, cz, 0.9, len, 1.9, 'shelf');
-    for (const s of [-1, 1]) for (const y0 of legs ? [1.15, 1.55] : [0.2, 0.8, 1.4]) {
-      b.box(cx + s * 0.46, cz, 0.04, len - 0.1, 0.4, goods[(rnd(0, 4)) | 0], { y0, collide: false, cast: false });
-    }
+    for (const s of [-1, 1]) for (const y0 of legs ? [1.12, 1.5] : [0.2, 0.8, 1.4]) stock(cx + s * 0.45, z0 + 0.05, z1 - 0.05, s, y0, legs ? 0.3 : 0.34);
   }
   const layoutA = [[-5.0, -2.4], [-1.6, 1.0], [1.8, 4.4]], layoutB = [[-5.0, -3.4], [-2.6, 0.2], [1.0, 4.4]];
   [-17.5, -15.0, -12.5, -10.0, -7.5, -5.0].forEach((cx, i) => {
@@ -229,7 +260,7 @@ export function build(b, rnd) {
   });
   for (const [z0, z1] of [[-5.0, -0.7], [0.4, 4.4]]) { // west-wall shelf with one gap
     b.box(-19.6, (z0 + z1) / 2, 0.5, z1 - z0, 1.9, 'shelf');
-    b.box(-19.33, (z0 + z1) / 2, 0.04, z1 - z0 - 0.1, 1.4, goods[(rnd(0, 4)) | 0], { y0: 0.3, collide: false, cast: false });
+    for (const y0 of [0.3, 0.75, 1.2, 1.6]) stock(-19.35, z0 + 0.05, z1 - 0.05, 1, y0, 0.3);
   }
   cereal(-17.5, 4.75); cereal(-12.5, 4.75); cereal(-7.5, 4.75);
 
@@ -376,4 +407,48 @@ export function build(b, rnd) {
 
   // ----- decoration: parking bay lines
   for (const x of [-18.9, -15.2, -11.5, 11.2, 14.8, 18.4]) b.box(x, 15.4, 0.08, 4.8, 0.02, 'white', { y0: 0.02, collide: false, cast: false });
+
+  // ===== remaster detail (adds no props until the appended ones; ids 193+ are new)
+  b.box(0, -4, 40, 24, 0.03, 'ceiling', { y0: 2.96, ...deco }); // suspended ceiling under the roof slab
+  for (const x of [-20, -10, 0, 10, 20]) b.box(x, -4, 0.06, 24, 0.04, 'fitting', { y0: 2.93, ...deco }); // ceiling grid rails
+  // shop windows: frame + glass + inside plane, on both faces (the outside glow planes above stay)
+  for (const x of [-16, -12, -8, 8, 12, 16]) {
+    for (const side of [1, -1]) {
+      const z = 8 + side * (T / 2 + 0.025);
+      for (const dy of [-0.55, 0.55]) b.box(x, z, 2.5, 0.05, 0.06, 'trim', { ...deco, y0: 1.7 + dy - 0.03 });
+      for (const dx of [-1.22, 0, 1.22]) b.box(x + dx, z, 0.06, 0.05, 1.1, 'trim', { ...deco, y0: 1.15 });
+      b.mesh(['plane', 2.4, 1.1], 'glassPane', x, 1.7, 8 + side * (T / 2 + 0.005), { cast: false, r: [0, side > 0 ? 0 : Math.PI, 0] });
+    }
+    b.mesh(['plane', 2.4, 1.1], 'windowGlow', x, 1.7, 8 - (T / 2 + 0.003), { cast: false, r: [0, Math.PI, 0] });
+  }
+  // signage (no brands: plain wayfinding). hang(): a board on two rods, readable from both sides.
+  const sign = (name, x, y, z, w, h, ry = 0) => b.mesh(['plane', w, h], name, x, y, z, { cast: false, r: [0, ry, 0] });
+  const hang = (name, x, y, z, w = 1.3, h = 0.33) => {
+    sign(name, x, y, z + 0.02, w, h); sign(name, x, y, z - 0.02, w, h, Math.PI);
+    for (const dx of [-w * 0.4, w * 0.4]) b.box(x + dx, z, 0.02, 0.02, 2.96 - (y + h / 2), 'fitting', { y0: y + h / 2, ...deco });
+  };
+  [-17.5, -15, -12.5, -10, -7.5, -5].forEach((cx, i) => hang(`sign_a${i + 1}`, cx, 2.45, 4.8));
+  hang('sign_fresh', 11, 2.35, -4.9, 2.6, 0.65); hang('sign_chilled', 0, 2.4, -1.3, 1.5, 0.38); hang('sign_checkout', 11, 2.45, 2.6, 2.2, 0.55);
+  sign('sign_staff', 8.9, 2.0, -5.89, 0.9, 0.22); sign('sign_stock', -11.35, 2.45, -5.89, 1.4, 0.35); sign('sign_stock', -3.35, 2.45, -5.89, 1.4, 0.35);
+  sign('sign_bay', 2, 2.6, -15.89, 2.0, 0.5); sign('sign_wc', 16.8, 2.45, -8.89, 0.9, 0.22); sign('sign_office', 11.7, 2.45, -8.89, 0.9, 0.22);
+  sign('sign_open', 0, 2.6, 8.13, 2.6, 0.65);
+  // lorry interior: ribbed walls, a light strip, a hazard edge on the load bed and the tail
+  for (let x = 7.6; x < 14.8; x += 0.8) for (const z of [-20.68, -18.32]) b.box(x, z, 0.08, 0.04, 2.3, 'fitting', { y0: BED, ...deco });
+  b.box(11, -19.5, 6, 0.14, 0.03, 'tubeGlow', { y0: 2.77, ...deco });
+  b.mesh(['plane', 0.5, 2.4], 'decal_hazard', 7.2, BED + 0.004, -19.5, { cast: false, r: [-Math.PI / 2, 0, 0] });
+  b.mesh(['plane', 3.2, 0.5], 'decal_hazard', 2.0, 0.047, -16.45, { cast: false, r: [-Math.PI / 2, 0, 0] }); // dock door threshold
+  // floor decals: grime, scuffs along the aisles, rain by the front doors, loading-bay arrows
+  for (const [x, z, k] of [[-1.9, -2.6, 0.3], [1.9, -0.8, 1.2], [11, 0.8, 2.1], [-6, -9, 0.7], [-8.5, 6, 0.1]]) b.mesh(['plane', 2.2, 2.2], 'decal_stain', x, 0.047, z, { cast: false, r: [-Math.PI / 2, 0, k] });
+  for (const [x, z, k] of [[-11.25, 0, 0], [0, 1.5, 1.4], [11, -2.2, 0.5], [-14, -10, 2.2], [4, -7.5, 1.1]]) b.mesh(['plane', 2.8, 2.8], 'decal_scuff', x, 0.047, z, { cast: false, r: [-Math.PI / 2, 0, k] });
+  b.mesh(['plane', 2.4, 1.6], 'decal_puddle', -1.0, 0.047, 6.6, { cast: false, r: [-Math.PI / 2, 0, 0.3] }); b.mesh(['plane', 1.6, 1.2], 'decal_puddle', 1.6, 0.047, 6.2, { cast: false, r: [-Math.PI / 2, 0, 1] });
+  for (const [x, z] of [[0, -18.8], [6, -18.8]]) b.mesh(['plane', 1.4, 0.9], 'decal_arrow', x, 0.025, z, { cast: false, r: [-Math.PI / 2, 0, 0] });
+  b.mesh(['plane', 1.4, 0.9], 'decal_arrow', -2.0, 0.025, -20.4, { cast: false, r: [-Math.PI / 2, 0, Math.PI] });
+
+  // ----- appended props (ids 193+): new disguise options, never insert above this line
+  b.prop('vending machine', () => { b.box(13.0, -8.6, 0.9, 0.8, 1.9, 'redPlastic'); b.box(13.0, -8.18, 0.7, 0.02, 1.2, 'freezerGlow', { y0: 0.5, collide: false, cast: false }); b.box(13.0, -8.18, 0.7, 0.03, 0.2, 'dark', { y0: 0.2, collide: false, cast: false }); });
+  b.prop('pallet jack', () => { b.box(-0.2, -19.8, 0.5, 1.5, 0.12, 'redPlastic', { y0: 0.08 }); b.box(-0.2, -20.65, 0.1, 0.1, 1.0, 'dark', { collide: false }); });
+  b.prop('gas cylinder', () => { b.mesh(['cyl', 0.13, 0.13, 1.2, 12], 'metal', -17.4, 0.6, -20.7); b.mesh(['sphere', 0.13, 10, 6], 'metal', -17.4, 1.2, -20.7); b.collider({ x0: -17.53, x1: -17.27, z0: -20.83, z1: -20.57, y0: 0, y1: 1.3 }); });
+  b.prop('gas cylinder', () => { b.mesh(['cyl', 0.13, 0.13, 1.2, 12], 'metal', -17.0, 0.6, -20.7); b.mesh(['sphere', 0.13, 10, 6], 'metal', -17.0, 1.2, -20.7); b.collider({ x0: -17.13, x1: -16.87, z0: -20.83, z1: -20.57, y0: 0, y1: 1.3 }); });
+  b.prop('ladder', () => { b.box(-19.7, -7.4, 0.1, 0.5, 1.8, 'rackOrange'); for (let k = 0; k < 5; k++) b.box(-19.66, -7.4, 0.04, 0.46, 0.04, 'metal', { y0: 0.25 + k * 0.32, collide: false }); });
+  b.prop('hand truck', () => { b.box(-1.5, -17.0, 0.4, 0.06, 1.1, 'rackBlue'); b.box(-1.5, -16.88, 0.4, 0.2, 0.03, 'dark', { y0: 0.02 }); });
 }
