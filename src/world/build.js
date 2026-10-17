@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildWorld } from '../shared/worlddata.js';
 import { MAPS } from '../shared/maps/index.js';
-import { rnd } from '../core/util.js';
 import { scene } from '../render/renderer.js';
-import { mat, M, grassTex, bookTex } from './materials.js';
+import { mat, M, bookTex } from './materials.js';
+import { worldUV, bakeAO, boxGeometry } from './bake.js';   // world workstream (W): UVs, baked AO, bevelled / subdivided boxes
+import { applyPBR, tier } from './textures.js';
+import { buildGarden } from './garden.js';
 import { applyEnv } from './env.js';
 import { buildNav, setSpots } from '../ai/nav.js';
 
@@ -21,6 +23,8 @@ const GEO = {
 };
 const geoOf = (spec) => { const k = spec.join(); let g = geoCache.get(k); if (!g) { g = GEO[spec[0]](...spec.slice(1)); geoCache.set(k, g); } return g; };
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const insts = new Map();       // W: matName -> [{m: Matrix4, color}] boxes flagged `inst` (shelf products), flushed as one InstancedMesh per material
+let gardenOff = null;
 function track(m, propId, solid = true) {
   m.userData.propId = propId;
   if (propId >= 0) (propMeshes[propId] ||= []).push(m);
@@ -37,29 +41,41 @@ function addRec(base, matName, cast, recv, propId, solid) {
   if (!mat[matName]) { console.warn('unknown material', matName); matName = 'dark'; }
   const g = base.index ? base.toNonIndexed() : base.clone(); // one attribute layout for every piece, so they can merge
   g.applyMatrix4(_m4);
+  worldUV(g, matName); // W: world-space UVs for the PBR sets
   recs.push({ g, matName, cast, recv, propId, solid });
 }
 // Draw calls: every box / mesh is baked into world space and merged per (prop, material, shadow flags). All static scenery of
 // one material becomes ONE mesh; each disguisable prop keeps its own mesh(es) so it stays addressable (picking, makePropClone).
 function flushRecs() {
+  bakeAO(recs.map((r) => r.g), colliders); // W: vertex-colour AO, needs every collider of the map
   const groups = new Map();
   for (const r of recs) { const k = `${r.propId}|${r.matName}|${r.cast}|${r.recv}|${r.solid}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   for (const list of groups.values()) {
     const r = list[0], g = mergeGeometries(list.map((x) => x.g));
     if (!g) throw new Error('geometry merge failed for ' + r.matName);
     for (const x of list) x.g.dispose();
+    if (!mat[r.matName].vertexColors) { mat[r.matName].vertexColors = true; mat[r.matName].needsUpdate = true; }
     const m = new THREE.Mesh(g, mat[r.matName]);
     m.castShadow = r.cast; m.receiveShadow = r.recv; m.matrixAutoUpdate = false; // identity matrix: geometry is already in world space
     world.add(m); track(m, r.propId, r.solid);
   }
   recs = null;
+  for (const [name, list] of insts) { // W: instanced shelf products, one draw call per material
+    const im = new THREE.InstancedMesh(boxGeo, mat[name], list.length), c = new THREE.Color();
+    list.forEach((x, i) => { im.setMatrixAt(i, x.m); im.setColorAt(i, c.setHex(x.color)); });
+    im.castShadow = false; im.receiveShadow = false; world.add(im);
+  }
+  insts.clear();
 }
 // visual callbacks for worlddata.js: the layout (and colliders / props) lives there, shared with the server
 const visual = {
   box(cx, cz, w, d, h, matName, o, propId) {
     const { y0 = 0, cast = true, ry = 0, recv = true } = o;
     _m4.compose(_p.set(cx, y0 + h / 2, cz), _q.setFromEuler(_e.set(0, ry, 0)), _s.set(w, h, d));
-    addRec(boxGeo, matName, cast, recv, propId, true);
+    if (o.inst) { (insts.get(matName) ?? insts.set(matName, []).get(matName)).push({ m: _m4.clone(), color: o.color ?? 0xffffff }); return; } // W
+    const { geo, scaled } = boxGeometry(w, h, d, propId >= 0 ? ({ med: 1, high: 1, ultra: 2 }[tier()] ?? 0) : 0); // W: bevelled props
+    if (!scaled) _m4.compose(_p, _q, _s.set(1, 1, 1));
+    addRec(geo, matName, cast, recv, propId, true);
   },
   mesh(spec, matName, x, y, z, o, propId) {
     _m4.compose(_p.set(x, y, z), _q.setFromEuler(o.r ? _e.set(...o.r) : _e.set(0, 0, 0)), o.s ? _s.set(...o.s) : _s.set(1, 1, 1));
@@ -90,30 +106,10 @@ export function makePropClone(id) {
   return g;
 }
 
-// house-only scenery: grass tufts + distant conifers (instanced)
-function houseScenery() {
-  const own = (m) => { ownMats.push(m); return m; };
-  const tuft = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.4, 3), own(M(0x3f6a35, 1)), 1500);
-  const d = new THREE.Object3D();
-  for (let i = 0; i < 1500; i++) {
-    let x, z;
-    do { x = rnd(-23, 23); z = rnd(-23, 23); } while (Math.abs(x) < 8.8 && Math.abs(z) < 6.8);
-    d.position.set(x, 0.17, z); d.rotation.set(rnd(-0.2, 0.2), rnd(0, 6), rnd(-0.2, 0.2)); d.scale.setScalar(rnd(0.6, 1.5)); d.updateMatrix();
-    tuft.setMatrixAt(i, d.matrix);
-  }
-  world.add(tuft);
-  const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 9, 7), own(M(0x16221f, 1)), 90);
-  for (let i = 0; i < 90; i++) {
-    const a = (i / 90) * Math.PI * 2 + rnd(-0.05, 0.05), r = rnd(30, 62);
-    d.position.set(Math.cos(a) * r, 4.2, Math.sin(a) * r); d.rotation.set(0, 0, 0); d.scale.setScalar(rnd(0.8, 1.8)); d.updateMatrix();
-    pines.setMatrixAt(i, d.matrix);
-  }
-  world.add(pines);
-}
-
 function clearWorld() {
   if (!world) return;
   scene.remove(world);
+  gardenOff?.(); gardenOff = null;
   world.traverse((o) => { if (o.isInstancedMesh) o.dispose(); o.geometry?.dispose(); }); // world geometry is all per-map (geoCache bases are never in the scene)
   for (const m of ownMats) { if (m.userData.ownMap) m.map.dispose(); m.dispose(); }
   ownMats.length = 0; flickers.length = 0;
@@ -128,6 +124,7 @@ export function setWorld(id) {
   const map = MAPS[id];
   meta = map.meta;
   for (const [n, spec] of Object.entries(map.materials)) if (!mat[n]) mat[n] = new THREE.MeshStandardMaterial({ metalness: 0, ...spec });
+  applyPBR(mat, id, Object.keys(map.materials)); // W: PBR sets, per-map tint, canvas signs / decals
   applyEnv(meta); bounds = meta.bounds;
   world = new THREE.Group(); scene.add(world);
   recs = [];
@@ -138,8 +135,9 @@ export function setWorld(id) {
   if (id !== 'house') ownMats.push(gm);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), gm);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  ground.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(4 * 3).fill(1), 3)); // W: the shared mats read vertex colours
   world.add(ground); solids.push(ground);
-  if (id === 'house') { grassTex.repeat.set(300, 300); houseScenery(); }
+  if (id === 'house') gardenOff = buildGarden(world, ownMats); // W: instanced grass, flowers, pines
   worldKey = id;
   buildNav();
   setSpots(map);
