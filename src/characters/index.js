@@ -7,8 +7,10 @@ import * as chars from './char.js';
 export * from './char.js';
 
 lod.camera = camera;
-const warn = () => ui.toast('Character models failed to load, using simple ones', '#ffb84d');
-bus.on(EV.ASSET_FAIL, (e) => { if (e.group === 'characters') warn(); });
-bus.on(EV.ROUND, () => { if (rigStatus() === 'failed') warn(); }); // the toast is easy to miss at page load, so say it again when a round starts
+let warned = false; // one toast per session, and only for a genuine load failure
+bus.on(EV.ASSET_FAIL, (e) => {
+  if (e.group !== 'characters' || warned) return;
+  warned = true; ui.toast('Character models failed to load, using simple ones', '#ffb84d');
+});
 loadRig();
 if (typeof window !== 'undefined') window.__chars = { ...chars, rigStatus }; // tests/chars.spec.js
