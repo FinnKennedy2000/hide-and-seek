@@ -10,14 +10,15 @@ export const meta = {
   ambient: { color: 0x9aa4c8, ground: 0x4a4658, intensity: 1.25 },
   seekerStart: { x: 0, z: 14.5, yaw: 0 }, // atrium (server spreads seekers along x by 1.4)
   bounds: { x0: -21, x1: 21, z0: -18, z1: 18 },
-  zones: [ // rooms for culling + audio. box = {x0,x1,z0,z1}; reverb = 'dead' | 'small' | 'medium' | 'large' | 'hall'
-    { name: 'dinosaur hall', box: { x0: -21, x1: -4, z0: -18, z1: -3 }, reverb: 'hall' },
-    { name: 'storage', box: { x0: -4, x1: 4, z0: -18, z1: -3 }, reverb: 'dead' },
-    { name: 'egyptian wing', box: { x0: 4, x1: 21, z0: -18, z1: -3 }, reverb: 'large' },
-    { name: 'grand hall', box: { x0: -21, x1: 21, z0: -3, z1: 5 }, reverb: 'hall' },
-    { name: 'armour gallery', box: { x0: -21, x1: -6, z0: 5, z1: 18 }, reverb: 'large' },
-    { name: 'atrium', box: { x0: -6, x1: 6, z0: 5, z1: 18 }, reverb: 'hall' },
-    { name: 'gift shop', box: { x0: 6, x1: 21, z0: 5, z1: 18 }, reverb: 'small' },
+  outdoor: { reverb: 'outdoor', surface: 'concrete' }, // anywhere outside a zone
+  zones: [ // rooms for culling + audio (first match wins, see src/audio/zones.js): flat x0..z1 (audio) and the same rectangle as `box` (culling); reverb room|hall|outdoor; surface wood|tile|grass|concrete
+    { name: 'dinosaur hall', x0: -21, x1: -4, z0: -18, z1: -3, box: { x0: -21, x1: -4, z0: -18, z1: -3 }, reverb: 'hall', surface: 'wood' },
+    { name: 'storage', x0: -4, x1: 4, z0: -18, z1: -3, box: { x0: -4, x1: 4, z0: -18, z1: -3 }, reverb: 'room', surface: 'concrete' },
+    { name: 'egyptian wing', x0: 4, x1: 21, z0: -18, z1: -3, box: { x0: 4, x1: 21, z0: -18, z1: -3 }, reverb: 'hall', surface: 'concrete' },
+    { name: 'grand hall', x0: -21, x1: 21, z0: -3, z1: 5, box: { x0: -21, x1: 21, z0: -3, z1: 5 }, reverb: 'hall', surface: 'tile' },
+    { name: 'armour gallery', x0: -21, x1: -6, z0: 5, z1: 18, box: { x0: -21, x1: -6, z0: 5, z1: 18 }, reverb: 'hall', surface: 'wood' },
+    { name: 'atrium', x0: -6, x1: 6, z0: 5, z1: 18, box: { x0: -6, x1: 6, z0: 5, z1: 18 }, reverb: 'hall', surface: 'tile' },
+    { name: 'gift shop', x0: 6, x1: 21, z0: 5, z1: 18, box: { x0: 6, x1: 21, z0: 5, z1: 18 }, reverb: 'room', surface: 'wood' },
   ],
 };
 

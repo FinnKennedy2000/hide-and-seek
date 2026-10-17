@@ -35,15 +35,16 @@ export const meta = {
   ambient: { color: 0xa090c8, ground: 0x4a3a5a, intensity: 1.2 },
   seekerStart: { x: 0, z: 21.5, yaw: 0 }, // entrance plaza (server spreads seekers along x by 1.4)
   bounds: { x0: -25, x1: 25, z0: -25, z1: 25 },
-  zones: [ // rooms for culling + audio. box = {x0,x1,z0,z1}; reverb = 'dead' | 'small' | 'medium' | 'large' | 'outdoor'
-    { name: 'hedge maze', box: { x0: -25, x1: -5, z0: -25, z1: -7 }, reverb: 'outdoor' },
-    { name: 'ghost train', box: { x0: -3, x1: 11, z0: -23, z1: -9 }, reverb: 'dead' },
-    { name: 'ferris wheel', box: { x0: 12, x1: 25, z0: -25, z1: -8 }, reverb: 'outdoor' },
-    { name: 'teacups', box: { x0: -25, x1: -8, z0: -6, z1: 7 }, reverb: 'outdoor' },
-    { name: 'midway', box: { x0: -8, x1: 25, z0: -8, z1: 9 }, reverb: 'outdoor' },
-    { name: 'hay pen', box: { x0: -25, x1: -8, z0: 8, z1: 25 }, reverb: 'small' },
-    { name: 'food court', box: { x0: 8, x1: 25, z0: 9, z1: 25 }, reverb: 'outdoor' },
-    { name: 'plaza', box: { x0: -8, x1: 8, z0: 9, z1: 25 }, reverb: 'outdoor' },
+  outdoor: { reverb: 'outdoor', surface: 'grass' }, // anywhere outside a zone
+  zones: [ // rooms for culling + audio (first match wins, see src/audio/zones.js): flat x0..z1 (audio) and the same rectangle as `box` (culling); reverb room|hall|outdoor; surface wood|tile|grass|concrete
+    { name: 'hedge maze', x0: -25, x1: -5, z0: -25, z1: -7, box: { x0: -25, x1: -5, z0: -25, z1: -7 }, reverb: 'outdoor', surface: 'grass' },
+    { name: 'ghost train', x0: -3, x1: 11, z0: -23, z1: -9, box: { x0: -3, x1: 11, z0: -23, z1: -9 }, reverb: 'room', surface: 'wood' },
+    { name: 'ferris wheel', x0: 12, x1: 25, z0: -25, z1: -8, box: { x0: 12, x1: 25, z0: -25, z1: -8 }, reverb: 'outdoor', surface: 'grass' },
+    { name: 'teacups', x0: -25, x1: -8, z0: -6, z1: 7, box: { x0: -25, x1: -8, z0: -6, z1: 7 }, reverb: 'outdoor', surface: 'grass' },
+    { name: 'midway', x0: -8, x1: 25, z0: -8, z1: 9, box: { x0: -8, x1: 25, z0: -8, z1: 9 }, reverb: 'outdoor', surface: 'concrete' },
+    { name: 'hay pen', x0: -25, x1: -8, z0: 8, z1: 25, box: { x0: -25, x1: -8, z0: 8, z1: 25 }, reverb: 'outdoor', surface: 'grass' },
+    { name: 'food court', x0: 8, x1: 25, z0: 9, z1: 25, box: { x0: 8, x1: 25, z0: 9, z1: 25 }, reverb: 'outdoor', surface: 'concrete' },
+    { name: 'plaza', x0: -8, x1: 8, z0: 9, z1: 25, box: { x0: -8, x1: 8, z0: 9, z1: 25 }, reverb: 'outdoor', surface: 'concrete' },
   ],
 };
 

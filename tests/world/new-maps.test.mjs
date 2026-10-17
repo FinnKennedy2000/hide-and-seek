@@ -71,7 +71,7 @@ for (const id of IDS) {
   ok(map.spots.length >= 40, `${id}: ${map.spots.length} AI spots (>= 40)`);
   ok(map.spawns.length >= 18, `${id}: ${map.spawns.length} spawns (>= 18)`);
   const m = map.meta;
-  ok(m.zones?.length >= 4 && m.zones.every((z) => z.name && z.box && z.box.x1 > z.box.x0 && z.box.z1 > z.box.z0 && z.reverb), `${id}: meta.zones well formed`);
+  ok(m.zones?.length >= 4 && m.zones.every((z) => z.name && z.x1 > z.x0 && z.z1 > z.z0 && z.box && z.box.x0 === z.x0 && ['room', 'hall', 'outdoor'].includes(z.reverb) && ['wood', 'tile', 'grass', 'concrete'].includes(z.surface)), `${id}: meta.zones well formed`);
   ok(m.thumbnail && m.fog && m.sky && m.ambient && m.bounds && m.seekerStart, `${id}: meta has thumbnail, fog, sky, ambient, bounds, seekerStart`);
   ok(m.bounds.x0 >= NMIN && m.bounds.x1 <= -NMIN && m.bounds.z0 >= NMIN && m.bounds.z1 <= -NMIN, `${id}: bounds fit the AI nav grid (+-26 m)`);
   const mixKinds = new Set(map.spots.map((s) => s.kind));

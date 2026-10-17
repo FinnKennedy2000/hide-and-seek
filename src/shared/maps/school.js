@@ -12,17 +12,18 @@ export const meta = {
   seekerStart: { x: -6, z: 0, yaw: 0 }, // hallway centre (server spreads seekers along x by 1.4)
   bounds: { x0: -20, x1: 20, z0: -17, z1: 17 },
   floors: [{ name: 'upper', y: 3.0, box: { x0: 8, x1: 13, z0: -17, z1: -7.4 } }], // the single upper floor (stairwell deck)
-  zones: [ // rooms for culling + audio. box = {x0,x1,z0,z1}; reverb = 'dead' | 'small' | 'medium' | 'large' | 'hall'
-    { name: 'hallway', box: { x0: -20, x1: 20, z0: -2, z1: 2 }, reverb: 'hall' },
-    { name: 'classroom A', box: { x0: -20, x1: -12, z0: -17, z1: -2 }, reverb: 'small' },
-    { name: 'classroom B', box: { x0: -12, x1: -4, z0: -17, z1: -2 }, reverb: 'small' },
-    { name: 'library', box: { x0: -4, x1: 8, z0: -17, z1: -2 }, reverb: 'medium' },
-    { name: 'stairwell', box: { x0: 8, x1: 13, z0: -17, z1: -2 }, reverb: 'large' },
-    { name: 'admin', box: { x0: 13, x1: 20, z0: -17, z1: -2 }, reverb: 'small' },
-    { name: 'gym', box: { x0: -20, x1: -4, z0: 2, z1: 17 }, reverb: 'large' },
-    { name: 'cafeteria', box: { x0: -4, x1: 10, z0: 2, z1: 17 }, reverb: 'large' },
-    { name: 'science room', box: { x0: 10, x1: 20, z0: 2, z1: 9.5 }, reverb: 'small' },
-    { name: 'toilets', box: { x0: 10, x1: 20, z0: 9.5, z1: 17 }, reverb: 'dead' },
+  outdoor: { reverb: 'outdoor', surface: 'concrete' }, // anywhere outside a zone
+  zones: [ // rooms for culling + audio (first match wins, see src/audio/zones.js): flat x0..z1 (audio) and the same rectangle as `box` (culling); reverb room|hall|outdoor; surface wood|tile|grass|concrete
+    { name: 'hallway', x0: -20, x1: 20, z0: -2, z1: 2, box: { x0: -20, x1: 20, z0: -2, z1: 2 }, reverb: 'hall', surface: 'tile' },
+    { name: 'classroom A', x0: -20, x1: -12, z0: -17, z1: -2, box: { x0: -20, x1: -12, z0: -17, z1: -2 }, reverb: 'room', surface: 'tile' },
+    { name: 'classroom B', x0: -12, x1: -4, z0: -17, z1: -2, box: { x0: -12, x1: -4, z0: -17, z1: -2 }, reverb: 'room', surface: 'tile' },
+    { name: 'library', x0: -4, x1: 8, z0: -17, z1: -2, box: { x0: -4, x1: 8, z0: -17, z1: -2 }, reverb: 'room', surface: 'wood' },
+    { name: 'stairwell', x0: 8, x1: 13, z0: -17, z1: -2, box: { x0: 8, x1: 13, z0: -17, z1: -2 }, reverb: 'hall', surface: 'concrete' },
+    { name: 'admin', x0: 13, x1: 20, z0: -17, z1: -2, box: { x0: 13, x1: 20, z0: -17, z1: -2 }, reverb: 'room', surface: 'tile' },
+    { name: 'gym', x0: -20, x1: -4, z0: 2, z1: 17, box: { x0: -20, x1: -4, z0: 2, z1: 17 }, reverb: 'hall', surface: 'wood' },
+    { name: 'cafeteria', x0: -4, x1: 10, z0: 2, z1: 17, box: { x0: -4, x1: 10, z0: 2, z1: 17 }, reverb: 'hall', surface: 'tile' },
+    { name: 'science room', x0: 10, x1: 20, z0: 2, z1: 9.5, box: { x0: 10, x1: 20, z0: 2, z1: 9.5 }, reverb: 'room', surface: 'tile' },
+    { name: 'toilets', x0: 10, x1: 20, z0: 9.5, z1: 17, box: { x0: 10, x1: 20, z0: 9.5, z1: 17 }, reverb: 'room', surface: 'tile' },
   ],
 };
 

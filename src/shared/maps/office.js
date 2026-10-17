@@ -11,13 +11,14 @@ export const meta = {
   seekerStart: { x: 9, z: 6.4, yaw: 0 }, // lobby (server spreads seekers along x by 1.4)
   bounds: { x0: -15, x1: 15, z0: -11, z1: 11 },
   blink: ['of_ledG', 'of_ledR'], // emissive materials the client may pulse (server-room LEDs)
-  zones: [ // rooms for culling + audio. box = {x0,x1,z0,z1}; reverb = 'dead' | 'small' | 'medium' | 'large'
-    { name: 'open plan', box: { x0: -15, x1: 3.5, z0: -3, z1: 11 }, reverb: 'medium' },
-    { name: 'kitchen', box: { x0: -15, x1: -6, z0: -11, z1: -3 }, reverb: 'small' },
-    { name: 'print room', box: { x0: -6, x1: 5, z0: -11, z1: -3 }, reverb: 'small' },
-    { name: 'server room', box: { x0: 5, x1: 15, z0: -11, z1: -3 }, reverb: 'dead' },
-    { name: 'glass maze', box: { x0: 3.5, x1: 15, z0: -3, z1: 4.5 }, reverb: 'medium' },
-    { name: 'lobby', box: { x0: 3.5, x1: 15, z0: 4.5, z1: 11 }, reverb: 'large' },
+  outdoor: { reverb: 'outdoor', surface: 'concrete' }, // anywhere outside a zone
+  zones: [ // rooms for culling + audio (first match wins, see src/audio/zones.js): flat x0..z1 (audio) and the same rectangle as `box` (culling); reverb room|hall|outdoor; surface wood|tile|grass|concrete
+    { name: 'open plan', x0: -15, x1: 3.5, z0: -3, z1: 11, box: { x0: -15, x1: 3.5, z0: -3, z1: 11 }, reverb: 'room', surface: 'wood' },
+    { name: 'kitchen', x0: -15, x1: -6, z0: -11, z1: -3, box: { x0: -15, x1: -6, z0: -11, z1: -3 }, reverb: 'room', surface: 'tile' },
+    { name: 'print room', x0: -6, x1: 5, z0: -11, z1: -3, box: { x0: -6, x1: 5, z0: -11, z1: -3 }, reverb: 'room', surface: 'tile' },
+    { name: 'server room', x0: 5, x1: 15, z0: -11, z1: -3, box: { x0: 5, x1: 15, z0: -11, z1: -3 }, reverb: 'room', surface: 'concrete' },
+    { name: 'glass maze', x0: 3.5, x1: 15, z0: -3, z1: 4.5, box: { x0: 3.5, x1: 15, z0: -3, z1: 4.5 }, reverb: 'room', surface: 'wood' },
+    { name: 'lobby', x0: 3.5, x1: 15, z0: 4.5, z1: 11, box: { x0: 3.5, x1: 15, z0: 4.5, z1: 11 }, reverb: 'hall', surface: 'tile' },
   ],
 };
 
