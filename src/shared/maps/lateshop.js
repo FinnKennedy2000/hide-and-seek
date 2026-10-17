@@ -61,11 +61,7 @@ export const materials = {
   trim: { color: 0xd9dde3, roughness: 0.5 }, ceiling: { color: 0xdfe3e8, roughness: 0.95 }, fitting: { color: 0x7d8590, roughness: 0.4, metalness: 0.5 },
   glassPane: { color: 0x9fc0e0, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false },
   shelfBoard: { color: 0x8794a6, roughness: 0.45, metalness: 0.4 }, goods: { color: 0xffffff, roughness: 0.7 }, // goods: tinted per instance
-  sign_fresh: { color: 0xffffff }, sign_checkout: { color: 0xffffff }, sign_exit: { color: 0xffffff }, sign_staff: { color: 0xffffff }, sign_chilled: { color: 0xffffff },
-  sign_bay: { color: 0xffffff }, sign_wc: { color: 0xffffff }, sign_office: { color: 0xffffff }, sign_open: { color: 0xffffff }, sign_stock: { color: 0xffffff },
-  sign_a1: { color: 0xffffff }, sign_a2: { color: 0xffffff }, sign_a3: { color: 0xffffff }, sign_a4: { color: 0xffffff }, sign_a5: { color: 0xffffff }, sign_a6: { color: 0xffffff },
-  decal_stain: { color: 0xffffff, roughness: 1 }, decal_scuff: { color: 0xffffff, roughness: 1 }, decal_hazard: { color: 0xffffff, roughness: 0.7 },
-  decal_arrow: { color: 0xffffff, roughness: 0.7 }, decal_puddle: { color: 0xffffff, roughness: 0.15, metalness: 0.2 },
+  signs: { color: 0xffffff }, decals: { color: 0xffffff, roughness: 0.9 }, // canvas atlases (src/world/textures.js)
 };
 
 // AI hiding spots. crouch:true = best/only reachable crouched (under something, or a low gap).
@@ -422,7 +418,7 @@ export function build(b, rnd) {
     b.mesh(['plane', 2.4, 1.1], 'windowGlow', x, 1.7, 8 - (T / 2 + 0.003), { cast: false, r: [0, Math.PI, 0] });
   }
   // signage (no brands: plain wayfinding). hang(): a board on two rods, readable from both sides.
-  const sign = (name, x, y, z, w, h, ry = 0) => b.mesh(['plane', w, h], name, x, y, z, { cast: false, r: [0, ry, 0] });
+  const sign = (name, x, y, z, w, h, ry = 0) => b.mesh(['plane', w, h], 'signs', x, y, z, { cast: false, atlas: name, r: [0, ry, 0] });
   const hang = (name, x, y, z, w = 1.3, h = 0.33) => {
     sign(name, x, y, z + 0.02, w, h); sign(name, x, y, z - 0.02, w, h, Math.PI);
     for (const dx of [-w * 0.4, w * 0.4]) b.box(x + dx, z, 0.02, 0.02, 2.96 - (y + h / 2), 'fitting', { y0: y + h / 2, ...deco });
@@ -435,14 +431,14 @@ export function build(b, rnd) {
   // lorry interior: ribbed walls, a light strip, a hazard edge on the load bed and the tail
   for (let x = 7.6; x < 14.8; x += 0.8) for (const z of [-20.68, -18.32]) b.box(x, z, 0.08, 0.04, 2.3, 'fitting', { y0: BED, ...deco });
   b.box(11, -19.5, 6, 0.14, 0.03, 'tubeGlow', { y0: 2.77, ...deco });
-  b.mesh(['plane', 0.5, 2.4], 'decal_hazard', 7.2, BED + 0.004, -19.5, { cast: false, r: [-Math.PI / 2, 0, 0] });
-  b.mesh(['plane', 3.2, 0.5], 'decal_hazard', 2.0, 0.047, -16.45, { cast: false, r: [-Math.PI / 2, 0, 0] }); // dock door threshold
+  b.mesh(['plane', 0.5, 2.4], 'decals', 7.2, BED + 0.004, -19.5, { cast: false, atlas: 'decal_hazard', r: [-Math.PI / 2, 0, 0] });
+  b.mesh(['plane', 3.2, 0.5], 'decals', 2.0, 0.047, -16.45, { cast: false, atlas: 'decal_hazard', r: [-Math.PI / 2, 0, 0] }); // dock door threshold
   // floor decals: grime, scuffs along the aisles, rain by the front doors, loading-bay arrows
-  for (const [x, z, k] of [[-1.9, -2.6, 0.3], [1.9, -0.8, 1.2], [11, 0.8, 2.1], [-6, -9, 0.7], [-8.5, 6, 0.1]]) b.mesh(['plane', 2.2, 2.2], 'decal_stain', x, 0.047, z, { cast: false, r: [-Math.PI / 2, 0, k] });
-  for (const [x, z, k] of [[-11.25, 0, 0], [0, 1.5, 1.4], [11, -2.2, 0.5], [-14, -10, 2.2], [4, -7.5, 1.1]]) b.mesh(['plane', 2.8, 2.8], 'decal_scuff', x, 0.047, z, { cast: false, r: [-Math.PI / 2, 0, k] });
-  b.mesh(['plane', 2.4, 1.6], 'decal_puddle', -1.0, 0.047, 6.6, { cast: false, r: [-Math.PI / 2, 0, 0.3] }); b.mesh(['plane', 1.6, 1.2], 'decal_puddle', 1.6, 0.047, 6.2, { cast: false, r: [-Math.PI / 2, 0, 1] });
-  for (const [x, z] of [[0, -18.8], [6, -18.8]]) b.mesh(['plane', 1.4, 0.9], 'decal_arrow', x, 0.025, z, { cast: false, r: [-Math.PI / 2, 0, 0] });
-  b.mesh(['plane', 1.4, 0.9], 'decal_arrow', -2.0, 0.025, -20.4, { cast: false, r: [-Math.PI / 2, 0, Math.PI] });
+  for (const [x, z, k] of [[-1.9, -2.6, 0.3], [1.9, -0.8, 1.2], [11, 0.8, 2.1], [-6, -9, 0.7], [-8.5, 6, 0.1]]) b.mesh(['plane', 2.2, 2.2], 'decals', x, 0.047, z, { cast: false, atlas: 'decal_stain', r: [-Math.PI / 2, 0, k] });
+  for (const [x, z, k] of [[-11.25, 0, 0], [0, 1.5, 1.4], [11, -2.2, 0.5], [-14, -10, 2.2], [4, -7.5, 1.1]]) b.mesh(['plane', 2.8, 2.8], 'decals', x, 0.047, z, { cast: false, atlas: 'decal_scuff', r: [-Math.PI / 2, 0, k] });
+  b.mesh(['plane', 2.4, 1.6], 'decals', -1.0, 0.047, 6.6, { cast: false, atlas: 'decal_puddle', r: [-Math.PI / 2, 0, 0.3] }); b.mesh(['plane', 1.6, 1.2], 'decals', 1.6, 0.047, 6.2, { cast: false, atlas: 'decal_puddle', r: [-Math.PI / 2, 0, 1] });
+  for (const [x, z] of [[0, -18.8], [6, -18.8]]) b.mesh(['plane', 1.4, 0.9], 'decals', x, 0.025, z, { cast: false, atlas: 'decal_arrow', r: [-Math.PI / 2, 0, 0] });
+  b.mesh(['plane', 1.4, 0.9], 'decals', -2.0, 0.025, -20.4, { cast: false, atlas: 'decal_arrow', r: [-Math.PI / 2, 0, Math.PI] });
 
   // ----- appended props (ids 193+): new disguise options, never insert above this line
   b.prop('vending machine', () => { b.box(13.0, -8.6, 0.9, 0.8, 1.9, 'redPlastic'); b.box(13.0, -8.18, 0.7, 0.02, 1.2, 'freezerGlow', { y0: 0.5, collide: false, cast: false }); b.box(13.0, -8.18, 0.7, 0.03, 0.2, 'dark', { y0: 0.2, collide: false, cast: false }); });

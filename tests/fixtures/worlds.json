@@ -1,6 +1,6 @@
 {
   "house": {
-    "colliders": 127,
+    "colliders": 122,
     "props": [
       "bed",
       "nightstand",
@@ -37,16 +37,12 @@
       "coat stand",
       "umbrella stand",
       "floor lamp",
-      "laundry basket",
       "garden bench",
       "bird bath",
-      "wheelbarrow",
       "barrel",
-      "flower pot",
-      "garden gnome",
       "wheelie bin"
     ],
-    "sha": "5944a33de033590156088ef7730a5a998f5de8d33e68b75465156353e48c5469"
+    "sha": "e1d9235df73f02c714376621fdf98afc7dcab344352f645652a47aac7d59cfdc"
   },
   "lateshop": {
     "colliders": 390,

@@ -99,19 +99,41 @@ function sign([text, bg], g, w, h) {
   while (g.measureText(text).width > w - 60 && px > 20) { px -= 4; g.font = `bold ${px}px system-ui, sans-serif`; }
   g.fillText(text, w / 2, h / 2 + 4);
 }
+// One atlas texture per kind so all the signs / pictures / decals of a map cost one draw call each: material `signs`, `art`, `decals`.
+// A mesh picks its cell with o.atlas = '<key>' (build.js remaps the plane's UVs through atlasUV).
+const ATLAS = {
+  signs: { keys: Object.keys(SIGNS), cols: 2, cw: 512, ch: 128, draw: (k, g, w, h) => sign(SIGNS[k], g, w, h) },
+  art: { keys: Object.keys(ART), cols: 3, cw: 256, ch: 256, draw: (k, g, w, h) => ART[k](g, w, h) },
+  decals: { keys: Object.keys(DECALS), cols: 4, cw: 256, ch: 256, draw: (k, g, w, h) => DECALS[k](g, w, h) },
+};
+const rows = (a) => Math.ceil(a.keys.length / a.cols);
+export const ATLAS_MATS = new Set(Object.keys(ATLAS));
+export function atlasUV(key) { // -> [u0, v0, u1, v1] of the cell (canvas row 0 is the top, so v counts from the bottom)
+  for (const a of Object.values(ATLAS)) {
+    const i = a.keys.indexOf(key);
+    if (i < 0) continue;
+    const c = i % a.cols, r = (i / a.cols) | 0, R = rows(a);
+    return [c / a.cols, 1 - (r + 1) / R, (c + 1) / a.cols, 1 - r / R];
+  }
+  console.warn('unknown atlas key', key);
+  return [0, 0, 1, 1];
+}
 const drawnCache = new Map();
 function drawn(m, name) {
-  if (!m || m.userData.drawn) return;
+  const a = ATLAS[name];
+  if (!m || !a || m.userData.drawn) return;
   let t = drawnCache.get(name);
   if (!t) {
-    if (SIGNS[name]) t = canvasTex(512, 128, (g, w, h) => sign(SIGNS[name], g, w, h));
-    else if (ART[name]) t = canvasTex(256, 256, ART[name]);
-    else if (DECALS[name]) t = canvasTex(256, 256, DECALS[name]);
-    if (t) drawnCache.set(name, t);
+    t = canvasTex(a.cw * a.cols, a.ch * rows(a), (g) => {
+      a.keys.forEach((k, i) => {
+        const x = (i % a.cols) * a.cw, y = ((i / a.cols) | 0) * a.ch;
+        g.save(); g.beginPath(); g.rect(x + 3, y + 3, a.cw - 6, a.ch - 6); g.clip(); g.translate(x, y); a.draw(k, g, a.cw, a.ch); g.restore(); // 3 px gutter: no bleed between cells
+      });
+    });
+    drawnCache.set(name, t);
   }
-  if (!t) return;
   m.userData.drawn = true; m.map = t; m.color.setHex(0xffffff);
-  if (SIGNS[name]) { m.emissiveMap = t; m.emissive.setHex(0xffffff); m.emissiveIntensity = 0.28; }
-  if (DECALS[name]) { Object.assign(m, { transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); }
+  if (name === 'signs') { m.emissiveMap = t; m.emissive.setHex(0xffffff); m.emissiveIntensity = 0.28; }
+  if (name === 'decals') Object.assign(m, { transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.needsUpdate = true;
 }

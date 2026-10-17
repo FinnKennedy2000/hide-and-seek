@@ -29,10 +29,8 @@ export const materials = {
   trim: { color: 0xece6da, roughness: 0.5 }, ceiling: { color: 0xe9e2d4, roughness: 0.95 },
   glassPane: { color: 0x9fc0e0, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false },
   windowIn: { color: 0x101626, roughness: 1, emissive: 0x3a4c86, emissiveIntensity: 0.9 },
-  curtain: { color: 0x8a4a55, roughness: 1 }, lampshade: { color: 0xf0d9b0, roughness: 0.9, emissive: 0xffc477, emissiveIntensity: 1.1 },
-  doormat: { color: 0x3a2c22, roughness: 1 }, pot: { color: 0xa55a3a, roughness: 0.9 }, bloom: { color: 0xe85a6a, roughness: 0.9 },
-  art_hills: { color: 0xffffff, roughness: 0.8 }, art_sea: { color: 0xffffff, roughness: 0.8 }, art_abstract: { color: 0xffffff, roughness: 0.8 },
-  decal_leaves: { color: 0xffffff, roughness: 1 }, decal_stain: { color: 0xffffff, roughness: 1 }, decal_scuff: { color: 0xffffff, roughness: 1 },
+  lampshade: { color: 0xf0d9b0, roughness: 0.9, emissive: 0xffc477, emissiveIntensity: 1.1 },
+  art: { color: 0xffffff, roughness: 0.8 }, decals: { color: 0xffffff, roughness: 1 }, // canvas atlases (src/world/textures.js)
 };
 // ----- hedge maze, north-east corner of the garden: a perfect maze (every cell reachable) from a fixed seed, entrance in the south wall, east end (the hedge row at x 15 closes the west end).
 const MZ = { x0: 14.0, z0: 14.8, n: 4, cell: 2.2, wall: 0.35 };
@@ -240,7 +238,7 @@ export function build(b, rnd) {
     }
     b.box(x, wz + sign * (T / 2 + 0.07), 1.35, 0.16, 0.04, 'trim', { ...deco, y0: 1.06 }); // outside sill
     b.mesh(['plane', 1.1, 1.0], 'windowIn', x, 1.6, wz - sign * (T / 2 + 0.003), { cast: false, r: [0, sign > 0 ? Math.PI : 0, 0] });
-    for (const dx of [-0.82, 0.82]) b.box(x + dx, wz - sign * (T / 2 + 0.07), 0.3, 0.1, 1.55, 'curtain', { ...deco, y0: 0.9 });
+    for (const dx of [-0.82, 0.82]) b.box(x + dx, wz - sign * (T / 2 + 0.07), 0.3, 0.1, 1.55, 'fabricRed', { ...deco, y0: 0.9 });
     b.box(x, wz - sign * (T / 2 + 0.07), 1.9, 0.03, 0.03, 'dark', { ...deco, y0: 2.5 });
   };
   for (const x of [-5, -3, 3, 5]) windowAt(x, 6, 1);
@@ -249,7 +247,7 @@ export function build(b, rnd) {
   const picture = (x, z, face, art, w = 0.8, h = 0.6, y = 1.7) => {
     const ry = { '+z': 0, '-z': Math.PI, '+x': Math.PI / 2, '-x': -Math.PI / 2 }[face], f = face.endsWith('z'), s = face[0] === '+' ? 1 : -1;
     b.box(x, z, f ? w + 0.1 : 0.04, f ? 0.04 : w + 0.1, h + 0.1, 'wood', { ...deco, y0: y - h / 2 - 0.05 });
-    b.mesh(['plane', w, h], art, f ? x : x + s * 0.025, y, f ? z + s * 0.025 : z, { cast: false, r: [0, ry, 0] });
+    b.mesh(['plane', w, h], 'art', f ? x : x + s * 0.025, y, f ? z + s * 0.025 : z, { cast: false, atlas: art, r: [0, ry, 0] });
   };
   picture(-7.88, -3.4, '+x', 'art_hills'); picture(-6.2, -5.88, '+z', 'art_sea', 0.9, 0.6, 1.9); picture(6.3, -5.88, '+z', 'art_abstract', 0.9, 0.6, 1.9);
   picture(2.7, 5.88, '-z', 'art_hills', 0.9, 0.55, 1.75); picture(5.8, 5.88, '-z', 'art_sea'); picture(-1.88, -0.6, '+x', 'art_abstract', 0.5, 0.7, 1.6);
@@ -262,16 +260,16 @@ export function build(b, rnd) {
   b.box(-7.55, 3.4, 0.5, 0.6, 0.02, 'metal', { ...deco, y0: 0.9 });
   // living room / study: books and objects on shelves and surfaces, TV glare
   for (let i = 0; i < 9; i++) b.box(2.2 + i * 0.14, 5.55, 0.08, 0.14, 0.12 + mini() * 0.1, ['fabricRed', 'fabricBlue', 'fabricGreen', 'white'][i % 4], { ...deco, y0: 1.0 });
-  b.mesh(['cyl', 0.07, 0.05, 0.14, 10], 'white', 4.0, 0.47, 2.4, { cast: false }); b.mesh(['cyl', 0.05, 0.05, 0.1, 10], 'pot', -4.3, 0.8, 2.8, { cast: false });
+  b.mesh(['cyl', 0.07, 0.05, 0.14, 10], 'white', 4.0, 0.47, 2.4, { cast: false }); b.mesh(['cyl', 0.05, 0.05, 0.1, 10], 'rug', -4.3, 0.8, 2.8, { cast: false });
   // front door: mat, trim post and the porch lamp bracket; wall lights either side
-  b.box(0, 6.6, 1.0, 0.5, 0.015, 'doormat', { y0: 0.12, ...deco });
+  b.box(0, 6.6, 1.0, 0.5, 0.015, 'dark', { y0: 0.12, ...deco });
   for (const x of [-1.5, 1.5]) { b.box(x, 6.18, 0.08, 0.08, 0.14, 'dark', { y0: 2.1, ...deco }); b.mesh(['sphere', 0.09, 10, 8], 'glow', x, 2.28, 6.2, { cast: false }); }
   // floor decals: grime by the kitchen counter, scuffs at the front door and in the hall, leaf litter under the garden trees
-  b.mesh(['plane', 2.2, 2.2], 'decal_stain', -6.6, 0.026, 4.3, { cast: false, r: [-Math.PI / 2, 0, 0.4] });
-  b.mesh(['plane', 2.4, 2.4], 'decal_scuff', 0, 0.026, 5.0, { cast: false, r: [-Math.PI / 2, 0, 0.2] });
-  b.mesh(['plane', 2.4, 2.4], 'decal_scuff', 5.5, 0.026, 3.8, { cast: false, r: [-Math.PI / 2, 0, 1.9] });
-  for (const [x, z] of [[-14, 8], [18, -6], [-4, -17], [10, 19], [-18, 19], [20, -18], [0, -20]]) b.mesh(['plane', 4.2, 4.2], 'decal_leaves', x, 0.015, z, { cast: false, r: [-Math.PI / 2, 0, x] });
-  b.mesh(['plane', 3, 3], 'decal_leaves', 0, 0.135, 6.7, { cast: false, r: [-Math.PI / 2, 0, 1] });
+  b.mesh(['plane', 2.2, 2.2], 'decals', -6.6, 0.026, 4.3, { cast: false, atlas: 'decal_stain', r: [-Math.PI / 2, 0, 0.4] });
+  b.mesh(['plane', 2.4, 2.4], 'decals', 0, 0.026, 5.0, { cast: false, atlas: 'decal_scuff', r: [-Math.PI / 2, 0, 0.2] });
+  b.mesh(['plane', 2.4, 2.4], 'decals', 5.5, 0.026, 3.8, { cast: false, atlas: 'decal_scuff', r: [-Math.PI / 2, 0, 1.9] });
+  for (const [x, z] of [[-14, 8], [18, -6], [-4, -17], [10, 19], [-18, 19], [20, -18], [0, -20]]) b.mesh(['plane', 4.2, 4.2], 'decals', x, 0.015, z, { cast: false, atlas: 'decal_leaves', r: [-Math.PI / 2, 0, x] });
+  b.mesh(['plane', 3, 3], 'decals', 0, 0.135, 6.7, { cast: false, atlas: 'decal_leaves', r: [-Math.PI / 2, 0, 1] });
   // hedge maze (north-east corner): cell walls from the generated maze, outer ring closed except the south entrance in the last column
   const mz = (i, j) => [MZ.x0 + i * MZ.cell, MZ.z0 + j * MZ.cell];
   const mazeWall = (cx, cz, w, d) => { b.box(cx, cz, w, d, 1.9, 'hedge'); b.box(cx, cz, w - 0.15, d - 0.15, 0.3, 'hedge', { y0: 1.8, collide: false }); };
@@ -290,13 +288,9 @@ export function build(b, rnd) {
   b.prop('coat stand', () => { b.box(-1.3, 5.65, 0.34, 0.34, 0.05, 'dark'); b.box(-1.3, 5.65, 0.05, 0.05, 1.7, 'wood'); b.mesh(['sphere', 0.12, 8, 6], 'fabricRed', -1.3, 1.6, 5.65, { s: [1, 0.7, 1] }); });
   b.prop('umbrella stand', () => { b.mesh(['cyl', 0.14, 0.12, 0.5, 12], 'metal', 1.3, 0.25, 5.65); b.box(1.3, 5.65, 0.03, 0.03, 0.9, 'dark', { y0: 0.4, collide: false }); b.collider({ x0: 1.14, x1: 1.46, z0: 5.49, z1: 5.81, y0: 0, y1: 0.5 }); });
   b.prop('floor lamp', () => { b.box(6.4, 5.5, 0.3, 0.3, 0.04, 'dark'); b.box(6.4, 5.5, 0.04, 0.04, 1.5, 'dark', { y0: 0.04 }); b.mesh(['cyl', 0.14, 0.24, 0.3, 14], 'lampshade', 6.4, 1.65, 5.5, { cast: false }); });
-  b.prop('laundry basket', () => { b.mesh(['cyl', 0.24, 0.2, 0.5, 14], 'wood', -3.2, 0.25, -0.6); b.collider({ x0: -3.44, x1: -2.96, z0: -0.84, z1: -0.36, y0: 0, y1: 0.5 }); });
   b.prop('garden bench', () => { b.box(3.0, 9.0, 1.4, 0.45, 0.06, 'wood', { y0: 0.42 }); b.box(3.0, 8.82, 1.4, 0.05, 0.4, 'wood', { y0: 0.48 }); for (const dx of [-0.6, 0.6]) b.box(3.0 + dx, 9.0, 0.06, 0.4, 0.42, 'dark'); });
   b.prop('bird bath', () => { b.mesh(['cyl', 0.1, 0.16, 0.7, 10], 'stone', -3.5, 0.35, 13.5); b.mesh(['cyl', 0.42, 0.18, 0.12, 14], 'stone', -3.5, 0.76, 13.5); b.collider({ x0: -3.92, x1: -3.08, z0: 13.08, z1: 13.92, y0: 0, y1: 0.82 }); });
-  b.prop('wheelbarrow', () => { b.box(10.5, -9.6, 0.7, 0.9, 0.3, 'metal', { y0: 0.35 }); b.box(10.5, -9.0, 0.06, 0.06, 0.3, 'dark', { y0: 0.2 }); b.mesh(['cyl', 0.2, 0.2, 0.06, 12], 'dark', 10.5, 0.2, -10.1, { r: [0, 0, Math.PI / 2] }); });
   b.prop('barrel', () => b.mesh(['cyl', 0.34, 0.3, 0.9, 14], 'wood', 16.5, 0.45, -9.2)); // collider below
   b.collider({ x0: 16.16, x1: 16.84, z0: -9.54, z1: -8.86, y0: 0, y1: 0.9 });
-  b.prop('flower pot', () => { b.mesh(['cyl', 0.2, 0.15, 0.36, 12], 'pot', -1.3, 0.3, 6.9); b.mesh(['ico', 0.2, 1], 'leaf', -1.3, 0.55, 6.9); b.mesh(['sphere', 0.07, 6, 5], 'bloom', -1.25, 0.72, 6.9); b.collider({ x0: -1.5, x1: -1.1, z0: 6.7, z1: 7.1, y0: 0, y1: 0.6 }); });
-  b.prop('garden gnome', () => { b.mesh(['cyl', 0.1, 0.13, 0.3, 8], 'fabricBlue', -7.5, 0.27, 7.5); b.mesh(['sphere', 0.09, 8, 6], 'white', -7.5, 0.5, 7.5); b.mesh(['cyl', 0.0, 0.1, 0.22, 8], 'fabricRed', -7.5, 0.66, 7.5); b.collider({ x0: -7.65, x1: -7.35, z0: 7.35, z1: 7.65, y0: 0, y1: 0.77 }); });
   b.prop('wheelie bin', () => { b.box(9.2, -2.0, 0.55, 0.65, 1.0, 'leaf'); b.box(9.2, -2.0, 0.6, 0.7, 0.05, 'dark', { y0: 1.0, collide: false }); });
 }

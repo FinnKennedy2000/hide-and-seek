@@ -10,6 +10,7 @@ export const TILE = { wall: 2.2, floor: 2.4, wood: 1.2, metal: 1.5, tile: 3.2, a
 // Box-project the UVs from world position: the dominant normal axis picks the plane. Texture seams between boxes never show
 // because every box samples the same world-space grid. Geometry must already be in world space and non-indexed.
 export function worldUV(g, matName) {
+  if (matName === 'signs' || matName === 'art' || matName === 'decals') return; // atlas cells keep the plane's own UVs
   const k = 1 / (TILE[matName] ?? 1), p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
   for (let i = 0; i < p.count; i++) {
     const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));

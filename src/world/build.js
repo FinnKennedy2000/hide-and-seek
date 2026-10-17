@@ -5,7 +5,7 @@ import { MAPS } from '../shared/maps/index.js';
 import { scene } from '../render/renderer.js';
 import { mat, M, bookTex } from './materials.js';
 import { worldUV, bakeAO, boxGeometry } from './bake.js';   // world workstream (W): UVs, baked AO, bevelled / subdivided boxes
-import { applyPBR, tier } from './textures.js';
+import { applyPBR, tier, atlasUV } from './textures.js';
 import { buildGarden } from './garden.js';
 import { applyEnv } from './env.js';
 import { buildNav, setSpots } from '../ai/nav.js';
@@ -80,6 +80,7 @@ const visual = {
   mesh(spec, matName, x, y, z, o, propId) {
     _m4.compose(_p.set(x, y, z), _q.setFromEuler(o.r ? _e.set(...o.r) : _e.set(0, 0, 0)), o.s ? _s.set(...o.s) : _s.set(1, 1, 1));
     addRec(geoOf(spec), matName, o.cast ?? true, true, propId, o.cast !== false);
+    if (o.atlas) { const [u0, v0, u1, v1] = atlasUV(o.atlas), uv = recs[recs.length - 1].g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); } // W: atlas cell
   },
   light(x, y, z, intensity, dist, color) {
     const l = new THREE.PointLight(color, intensity, dist, 2); l.position.set(x, y, z); world.add(l);
