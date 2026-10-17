@@ -59,7 +59,7 @@ export const spots = [
   { x: -10.5, z: 8.2, kind: 'cubicle', crouch: false }, { x: 1.5, z: 8.2, kind: 'cubicle', crouch: false }, { x: -14.5, z: -2.2, kind: 'cubicle', crouch: false },
   // kitchen
   { x: -14.4, z: -7.6, kind: 'kitchen', crouch: false }, { x: -9.5, z: -7.0, kind: 'kitchen', crouch: true }, { x: -12.4, z: -5.0, kind: 'kitchen', crouch: false },
-  { x: -7.0, z: -9.8, kind: 'kitchen', crouch: false }, { x: -6.6, z: -4.2, kind: 'kitchen', crouch: true },
+  { x: -7, z: -9.55, kind: 'kitchen', crouch: false }, { x: -6.6, z: -4.45, kind: 'kitchen', crouch: true },
   // print room
   { x: -4.9, z: -9.8, kind: 'print', crouch: false }, { x: -1.0, z: -9.6, kind: 'print', crouch: true }, { x: 3.9, z: -10.0, kind: 'print', crouch: false }, { x: 3.9, z: -4.0, kind: 'print', crouch: true },
   { x: -2.8, z: -6.4, kind: 'print', crouch: true },

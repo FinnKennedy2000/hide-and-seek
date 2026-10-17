@@ -86,13 +86,13 @@ export const spots = [
   { x: -22.0, z: 12.0, kind: 'hay', crouch: false }, { x: -17.0, z: 14.5, kind: 'hay', crouch: false }, { x: -13.0, z: 11.0, kind: 'hay', crouch: false }, { x: -19.5, z: 18.0, kind: 'hay', crouch: false },
   { x: -14.0, z: 19.5, kind: 'hay', crouch: false }, { x: -22.5, z: 22.5, kind: 'hay', crouch: false }, { x: -10.5, z: 22.5, kind: 'hay', crouch: false },
   // stalls (behind counters, beside plush stacks) and midway
-  { x: 15, z: -6.55, kind: 'stall', crouch: false }, { x: 20, z: -6.55, kind: 'stall', crouch: false }, { x: 15.0, z: 7.8, kind: 'stall', crouch: false }, { x: 20.0, z: 7.8, kind: 'stall', crouch: false },
+  { x: 15, z: -6.3, kind: 'stall', crouch: false }, { x: 20, z: -6.3, kind: 'stall', crouch: false }, { x: 15, z: 8.05, kind: 'stall', crouch: false }, { x: 20, z: 8.05, kind: 'stall', crouch: false },
   { x: 11.0, z: -1.0, kind: 'stall', crouch: false }, { x: 23.5, z: 1.0, kind: 'stall', crouch: false }, { x: 8.0, z: 5.5, kind: 'stall', crouch: false },
   // rides
   { x: -15.75, z: 0, kind: 'ride', crouch: false }, { x: -11.0, z: -3.5, kind: 'ride', crouch: false }, { x: 1.25, z: 2, kind: 'ride', crouch: false }, { x: -3.0, z: 6.0, kind: 'ride', crouch: false },
   { x: 18.5, z: -13.0, kind: 'ride', crouch: false }, { x: 22.5, z: -18.5, kind: 'ride', crouch: false }, { x: 14.0, z: -20.0, kind: 'ride', crouch: false },
   // food court + plaza + fence line
-  { x: 12.0, z: 13.0, kind: 'food', crouch: true }, { x: 17.0, z: 13.0, kind: 'food', crouch: true }, { x: 22, z: 16, kind: 'food', crouch: false }, { x: 14.5, z: 19.5, kind: 'food', crouch: false },
+  { x: 12.0, z: 13.0, kind: 'food', crouch: true }, { x: 17.0, z: 13.0, kind: 'food', crouch: true }, { x: 22, z: 15.75, kind: 'food', crouch: false }, { x: 14.5, z: 19.5, kind: 'food', crouch: false },
   { x: 23.5, z: 23.0, kind: 'food', crouch: false }, { x: 9.5, z: 23.0, kind: 'plaza', crouch: false }, { x: -9.5, z: 14.0, kind: 'plaza', crouch: false }, { x: 6.0, z: 12.0, kind: 'plaza', crouch: false },
   { x: -6.5, z: 18.5, kind: 'plaza', crouch: false }, { x: 24.0, z: -3.0, kind: 'fence', crouch: false }, { x: -24.0, z: 0.5, kind: 'fence', crouch: false }, { x: 8.0, z: -7.5, kind: 'fence', crouch: false },
 ];
@@ -103,9 +103,9 @@ export const spawns = [
 
 export function build(b, rnd) {
   const deco = { collide: false, cast: false };
-  const one = (name, mat, x, z, w, d, h, y0 = 0) => b.prop(name, () => b.box(x, z, w, d, h, mat, { y0 }));
-  const lamp = (x, z) => b.prop('lamp post', () => { b.box(x, z, 0.14, 0.14, 3.0, 'ff_dark'); b.mesh(['sphere', 0.22, 10, 8], 'ff_bulb', x, 3.1, z, { cast: false }); });
-  const bench = (x, z, alongX = true) => b.prop('bench', () => b.box(x, z, alongX ? 1.6 : 0.5, alongX ? 0.5 : 1.6, 0.45, 'ff_wood'));
+  const one = (name, mat, x, z, w, d, h, y0 = 0) => b.prop(name, () => b.box(x, z, w, d, h, mat, { y0, cast: false })); // small props do not cast sun shadows (halves their draw cost)
+  const lamp = (x, z) => { b.prop('lamp post', () => b.box(x, z, 0.14, 0.14, 3.0, 'ff_dark')); b.mesh(['sphere', 0.22, 10, 8], 'ff_bulb', x, 3.1, z, { cast: false }); }; // bulb is shared static glow, not part of the prop
+  const bench = (x, z, alongX = true) => b.prop('bench', () => b.box(x, z, alongX ? 1.6 : 0.5, alongX ? 0.5 : 1.6, 0.45, 'ff_wood', { cast: false }));
   const bin = (x, z) => one('bin', 'ff_dark', x, z, 0.45, 0.45, 0.8);
 
   // ----- ground + fence
@@ -125,7 +125,7 @@ export function build(b, rnd) {
     for (let c = 0; c <= cols; c++) { let r0 = -1; for (let a = 0; a <= rows; a++) { const on = a < rows && V[a][c]; if (on && r0 < 0) r0 = a; if (!on && r0 >= 0) { b.box(m.x + 2 * c, m.z + (r0 + a), thick, 2 * (a - r0) + thick, h, mat); r0 = -1; } } }
   };
   hedgeRuns(HEDGE, 'ff_hedge', 0.5, 1.9);
-  b.prop('topiary', () => { b.box(-4.0, -9.0, 0.7, 0.7, 0.5, 'ff_stone'); b.mesh(['ico', 0.6, 1], 'ff_leaf', -4.0, 1.2, -9.0); });
+  b.prop('topiary', () => { b.box(-4.0, -9.0, 0.7, 0.7, 1.4, 'ff_leaf'); b.mesh(['ico', 0.6, 1], 'ff_leaf', -4.0, 1.2, -9.0); });
   b.prop('garden gnome', () => { b.box(-4.4, -12.0, 0.3, 0.3, 0.5, 'ff_red'); });
   for (const [x, z] of [[-4.2, -15.0], [-4.2, -19.0]]) bench(x, z, false);
 
@@ -149,13 +149,13 @@ export function build(b, rnd) {
     const a = (k / 6) * Math.PI * 2, x = -15 + Math.cos(a) * 3.3, z = Math.sin(a) * 3.3, mat = k % 2 ? 'ff_cup2' : 'ff_cup';
     b.prop('teacup', () => { b.mesh(['cyl', 0.8, 0.5, 0.7, 14], mat, x, 0.45, z); b.collider({ x0: x - 0.7, x1: x + 0.7, z0: z - 0.7, z1: z + 0.7, y0: 0.1, y1: 0.8 }); });
   }
-  b.prop('ticket booth', () => { b.box(-8.6, 4.5, 1.4, 1.4, 2.2, 'ff_teal'); b.box(-8.6, 3.8, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, collide: false }); });
+  b.prop('ticket booth', () => b.box(-8.6, 4.5, 1.4, 1.4, 2.2, 'ff_teal')); b.box(-8.6, 3.8, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, ...deco });
 
   // ----- carousel (centre (2, 2)): lit platform, six horses
   b.box(2, 2, 9.0, 9.0, 0.12, 'ff_wood', deco); b.box(2, 2, 0.9, 0.9, 3.2, 'ff_red');
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * Math.PI * 2, x = 2 + Math.cos(a) * 2.6, z = 2 + Math.sin(a) * 2.6;
-    b.prop('carousel horse', () => { b.box(x, z, 0.5, 1.1, 0.8, 'ff_horse', { y0: 0.4 }); b.box(x, z, 0.1, 0.1, 1.2, 'ff_steel', { collide: false }); });
+    b.prop('carousel horse', () => { b.box(x, z, 0.5, 1.1, 0.8, 'ff_horse', { y0: 0.4 }); b.box(x, z, 0.1, 0.1, 1.2, 'ff_horse', { collide: false }); });
   }
   b.box(2, 2, 10, 10, 0.3, 'ff_red', { y0: 3.6, ...deco }); b.box(2, 2, 10.2, 10.2, 0.12, 'ff_bulb', { y0: 3.5, ...deco });
   for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; b.box(2 + Math.cos(a) * 4.6, 2 + Math.sin(a) * 4.6, 0.12, 0.12, 3.5, 'ff_steel', { collide: false, cast: false }); }
@@ -176,22 +176,21 @@ export function build(b, rnd) {
     const f = face; // +1 faces +z
     b.box(x, z - f * 0.9, 4.0, 0.2, 2.6, mat);                       // back wall
     b.box(x, z + f * 0.8, 1.6, 0.6, 1.0, 'ff_wood');                 // counter (leaves 1.2 m open each side)
-    b.box(x, z + f * 0.8, 1.7, 0.7, 0.06, 'ff_white', { y0: 1.0, collide: false });
-    for (const dx of [-1.0, 1.0]) b.box(x + dx, z + f * 0.7, 0.4, 0.4, 0.8, prizeMat, { collide: false });
-    for (const dx of [-1.9, 1.9]) b.box(x + dx, z + f * 0.9, 0.12, 0.12, 2.6, 'ff_steel', { collide: false });
+    for (const dx of [-1.9, 1.9]) b.box(x + dx, z + f * 0.9, 0.12, 0.12, 2.6, 'ff_wood', { collide: false });
     b.box(x, z + f * 0.4, 4.2, 2.4, 0.15, mat, { y0: 2.6, collide: false }); // awning
+    for (const dx of [-1.0, 1.0]) b.box(x + dx, z + f * 0.7, 0.4, 0.4, 0.8, mat, { y0: 1.0, collide: false }); // prizes (the prizeMat arg is unused: one fewer material per stall)
   });
   stall('ring toss', 15, -6, 1, 'ff_red', 'ff_plush'); stall('shooting gallery', 20, -6, 1, 'ff_blue', 'ff_plush2');
   stall('prize booth', 15, 8, -1, 'ff_yellow', 'ff_plush3'); stall('coconut shy', 20, 8, -1, 'ff_teal', 'ff_plush');
   for (const [x, z, m] of [[13.2, -2.5, 'ff_plush'], [24.0, -2.0, 'ff_plush2'], [13.2, 4.0, 'ff_plush3'], [24.0, 3.5, 'ff_plush']]) b.prop('giant plush bear', () => { b.box(x, z, 0.9, 0.8, 1.0, m); b.mesh(['ico', 0.35, 1], m, x, 1.35, z); });
   for (const x of [10.5, 17.5, 22.5]) b.box(x, 0.8, 0.3, 0.3, 3.0, 'ff_bulb', { collide: false, cast: false });
-  b.prop('balloon stand', () => { b.box(23.0, 5.5, 0.5, 0.5, 1.6, 'ff_steel'); b.mesh(['ico', 0.45, 1], 'ff_red', 23.0, 2.1, 5.5); });
+  b.prop('balloon stand', () => { b.box(23.0, 5.5, 0.5, 0.5, 1.6, 'ff_red'); b.mesh(['ico', 0.45, 1], 'ff_red', 23.0, 2.1, 5.5); });
   b.prop('speaker tower', () => b.box(9.0, -3.0, 0.7, 0.7, 2.4, 'ff_dark'));
   lamp(12.0, 4.5); lamp(12.0, -4.5); lamp(-6.0, 7.5); lamp(-6.0, -4.0); lamp(2.0, 8.5); lamp(8.5, 21.5); lamp(-8.5, 21.5);
   bin(10.2, 2.0); bin(-5.5, 3.0); bin(6.0, 8.5);
 
   // ----- hay-bale pen (south-west, x -24..-9, z 9..24): bales in short rows with gaps = a low maze
-  const bale = (x, z, ry = 0) => b.prop('hay bale', () => b.box(x, z, 1.4, 0.9, 0.9, 'ff_hay', { ry }));
+  const bale = (x, z, ry = 0) => b.prop('hay bale', () => b.box(x, z, 1.4, 0.9, 0.9, 'ff_hay', { ry, cast: false }));
   for (const [x, z] of [[-22.5, 10.0], [-20.5, 10.0], [-17.0, 11.0], [-15.0, 11.0], [-12.0, 12.5], [-22.5, 14.5], [-19.5, 15.5], [-16.5, 16.5], [-13.0, 16.0], [-22.0, 18.5], [-18.0, 20.0], [-14.5, 21.0], [-11.0, 19.5], [-20.0, 23.0]]) bale(x, z);
   for (const [x, z] of [[-21.0, 16.5], [-14.5, 13.5]]) b.prop('hay stack', () => { b.box(x, z, 1.4, 0.9, 0.9, 'ff_hay'); b.box(x, z, 1.3, 0.8, 0.8, 'ff_hay', { y0: 0.9 }); });
   b.prop('barn cutout', () => b.box(-9.5, 9.5, 3.0, 0.3, 2.4, 'ff_red')); b.prop('scarecrow', () => b.box(-23.5, 20.0, 0.4, 0.4, 1.9, 'ff_wood'));
@@ -203,16 +202,16 @@ export function build(b, rnd) {
     for (const dx of [-0.9, 0.9]) for (const dz of [-0.4, 0.4]) b.box(x + dx, z + dz, 0.06, 0.06, 1.1, 'ff_wood', { collide: false });
     for (const s of [-1, 1]) b.box(x, z + s * 0.9, 2.2, 0.3, 0.42, 'ff_wood');
   });
-  b.prop('popcorn machine', () => { b.box(22.5, 13.0, 1.0, 1.0, 1.9, 'ff_red'); b.box(22.5, 13.0, 0.9, 0.9, 0.4, 'ff_bulb', { y0: 1.5, collide: false }); });
-  b.prop('candy floss cart', () => { b.box(22.0, 16.8, 1.4, 0.9, 1.1, 'ff_plush'); b.mesh(['ico', 0.4, 1], 'ff_plush', 22.0, 1.5, 16.8); });
+  b.prop('popcorn machine', () => b.box(22.5, 13.0, 1.0, 1.0, 1.9, 'ff_red')); b.box(22.5, 13.0, 0.9, 0.9, 0.4, 'ff_bulb', { y0: 1.5, ...deco });
+  b.prop('candy floss cart', () => { b.box(22.0, 16.8, 1.4, 0.9, 1.1, 'ff_plush'); b.mesh(['ico', 0.4, 1], 'ff_plush', 22.0, 1.5, 16.8, { cast: true }); });
   b.prop('hot dog cart', () => b.box(14.5, 22.5, 1.6, 0.9, 1.3, 'ff_yellow'));
   b.prop('tent', () => { b.box(10.0, 21.0, 3.0, 3.0, 0.1, 'ff_canvas', { y0: 2.4, collide: false }); for (const dx of [-1.4, 1.4]) for (const dz of [-1.4, 1.4]) b.box(10.0 + dx, 21.0 + dz, 0.12, 0.12, 2.4, 'ff_steel'); });
   bench(17.0, 22.5); bench(23.0, 20.5, false); bin(8.8, 14.0); bin(23.8, 10.5); bin(15.0, 16.0);
   b.prop('clown cutout', () => b.box(9.0, 11.0, 1.0, 0.1, 1.9, 'ff_red'));
 
   // ----- entrance plaza (x -8..8, z 9..25)
-  b.prop('ticket booth', () => { b.box(-5.0, 22.0, 1.4, 1.4, 2.2, 'ff_red'); b.box(-5.0, 21.3, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, collide: false }); });
-  b.prop('ticket booth', () => { b.box(5.0, 22.0, 1.4, 1.4, 2.2, 'ff_blue'); b.box(5.0, 21.3, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, collide: false }); });
+  b.prop('ticket booth', () => b.box(-5.0, 22.0, 1.4, 1.4, 2.2, 'ff_red')); b.box(-5.0, 21.3, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, ...deco });
+  b.prop('ticket booth', () => b.box(5.0, 22.0, 1.4, 1.4, 2.2, 'ff_blue')); b.box(5.0, 21.3, 1.0, 0.06, 0.5, 'ff_bulb', { y0: 1.2, ...deco });
   b.prop('fountain', () => { b.box(0, 14.0, 3.0, 3.0, 0.4, 'ff_stone'); b.box(0, 14.0, 1.0, 1.0, 1.4, 'ff_stone', { y0: 0.4 }); });
   bench(-3.5, 17.0); bench(3.5, 17.0); one('map signpost', 'ff_wood', 0.0, 10.4, 0.6, 0.15, 2.0); one('fire extinguisher', 'ff_red', -2.2, 24.4, 0.2, 0.2, 0.5);
   for (let k = 0; k < 8; k++) b.box(-7.0 + k * 2, 11.0, 0.12, 0.12, 0.12, 'ff_bulb', { y0: 3.0 + (k % 2) * 0.2, ...deco }); // string lights (visual)

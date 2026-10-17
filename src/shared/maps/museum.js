@@ -59,24 +59,24 @@ export const mix = [['dino', 1], ['egypt', 1], ['grand', 1], ['gift', 1], ['armo
 export const spots = [
   // dinosaur hall
   { x: -12.0, z: -9.5, kind: 'dino', crouch: false }, { x: -12.0, z: -15.5, kind: 'dino', crouch: false }, { x: -19.5, z: -7.0, kind: 'dino', crouch: false }, { x: -7, z: -11.95, kind: 'dino', crouch: false },
-  { x: -19.8, z: -17.0, kind: 'dino', crouch: false }, { x: -5.2, z: -16.8, kind: 'dino', crouch: false }, { x: -17, z: -12.6, kind: 'dino', crouch: false }, { x: -8, z: -6, kind: 'dino', crouch: false },
+  { x: -19.8, z: -17.0, kind: 'dino', crouch: false }, { x: -5.2, z: -16.8, kind: 'dino', crouch: false }, { x: -17, z: -12.1, kind: 'dino', crouch: false }, { x: -8, z: -6.25, kind: 'dino', crouch: false },
   // storage
-  { x: -2.0, z: -15.4, kind: 'storage', crouch: true }, { x: 2.2, z: -14.0, kind: 'storage', crouch: false }, { x: -2.4, z: -11.0, kind: 'storage', crouch: false }, { x: 1.6, z: -9.0, kind: 'storage', crouch: true },
-  { x: -2.6, z: -6.2, kind: 'storage', crouch: false }, { x: 2.4, z: -5.25, kind: 'storage', crouch: true }, { x: 0.2, z: -16.8, kind: 'storage', crouch: false },
+  { x: -2.25, z: -15.4, kind: 'storage', crouch: true }, { x: 2.2, z: -14.0, kind: 'storage', crouch: false }, { x: -2.4, z: -11.0, kind: 'storage', crouch: false }, { x: 1.6, z: -9.0, kind: 'storage', crouch: true },
+  { x: -2.6, z: -6.2, kind: 'storage', crouch: false }, { x: 2.4, z: -5.5, kind: 'storage', crouch: true }, { x: 0.2, z: -16.8, kind: 'storage', crouch: false },
   // egyptian wing
   { x: 7.25, z: -14, kind: 'egypt', crouch: true }, { x: 11.75, z: -14, kind: 'egypt', crouch: true }, { x: 16.25, z: -14, kind: 'egypt', crouch: true }, { x: 10.0, z: -8.0, kind: 'egypt', crouch: false },
-  { x: 15, z: -8, kind: 'egypt', crouch: false }, { x: 20.0, z: -10.0, kind: 'egypt', crouch: false }, { x: 5.0, z: -17.0, kind: 'egypt', crouch: false }, { x: 19.5, z: -4.25, kind: 'egypt', crouch: false },
+  { x: 15, z: -8, kind: 'egypt', crouch: false }, { x: 20.0, z: -10.0, kind: 'egypt', crouch: false }, { x: 5.0, z: -17.0, kind: 'egypt', crouch: false }, { x: 19.5, z: -4, kind: 'egypt', crouch: false },
   // grand hall
-  { x: -18, z: 1.25, kind: 'grand', crouch: false }, { x: -13.25, z: 3.8, kind: 'grand', crouch: false }, { x: -6.75, z: -1.5, kind: 'grand', crouch: false }, { x: 0, z: -0.75, kind: 'grand', crouch: true },
-  { x: 6.5, z: 4.05, kind: 'grand', crouch: false }, { x: 13.25, z: -1.6, kind: 'grand', crouch: false }, { x: 19.0, z: 2.0, kind: 'grand', crouch: false },
+  { x: -18, z: 1.25, kind: 'grand', crouch: false }, { x: -13.25, z: 3.8, kind: 'grand', crouch: false }, { x: -6.75, z: -1.5, kind: 'grand', crouch: false }, { x: 0, z: -1, kind: 'grand', crouch: true },
+  { x: 6.5, z: 4.3, kind: 'grand', crouch: false }, { x: 13.25, z: -1.6, kind: 'grand', crouch: false }, { x: 19.0, z: 2.0, kind: 'grand', crouch: false },
   // armour gallery
   { x: -19.5, z: 8.0, kind: 'armour', crouch: false }, { x: -15.0, z: 10.5, kind: 'armour', crouch: false }, { x: -19.5, z: 14.5, kind: 'armour', crouch: false }, { x: -10.5, z: 16.4, kind: 'armour', crouch: false },
   { x: -8.2, z: 7.5, kind: 'armour', crouch: false }, { x: -13.0, z: 13.5, kind: 'armour', crouch: true }, { x: -17.0, z: 16.6, kind: 'armour', crouch: false },
   // atrium
-  { x: -4.4, z: 16.6, kind: 'atrium', crouch: false }, { x: 4.4, z: 16.6, kind: 'atrium', crouch: false }, { x: 0, z: 8.25, kind: 'atrium', crouch: true },
+  { x: -4.4, z: 16.6, kind: 'atrium', crouch: false }, { x: 4.15, z: 16.6, kind: 'atrium', crouch: false }, { x: 0, z: 8.25, kind: 'atrium', crouch: true },
   // gift shop
   { x: 9.5, z: 7.25, kind: 'gift', crouch: false }, { x: 14.5, z: 9.0, kind: 'gift', crouch: false }, { x: 19.5, z: 10.5, kind: 'gift', crouch: false }, { x: 12.0, z: 13.5, kind: 'gift', crouch: false },
-  { x: 17.5, z: 15.75, kind: 'gift', crouch: false }, { x: 8.0, z: 16.8, kind: 'gift', crouch: false },
+  { x: 17.5, z: 16, kind: 'gift', crouch: false }, { x: 8.0, z: 16.8, kind: 'gift', crouch: false },
 ];
 export const spawns = [
   [-17.75, 0.5], [-12, 0.5], [-7, 1.5], [-3, 2.5], [3, 2.5], [8, 0.25], [14, 1.5], [19, 0.5],

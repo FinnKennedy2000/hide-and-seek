@@ -9,6 +9,7 @@
     "start": "node server/index.js",
     "smoke": "playwright test",
     "test:server": "node tests/server/run.js",
+    "test:world": "node --test tests/world/*.test.mjs",
     "test:audio": "node --test tests/audio/cues.test.mjs",
     "test:chars": "node --test tests/chars/rig.test.mjs",
     "test:player": "node tests/player/controller.test.mjs"
