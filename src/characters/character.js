@@ -151,11 +151,11 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
   // ---------- animation state ----------
   const S = {
     t: Math.random() * 10, phase: 0, move: 0, run: 0, crouch: 0, air: 0, look: 0,
-    taunt: -1, hit: -1, blinkIn: 2 + Math.random() * 4, blink: -1,
+    taunt: -1, hit: -1, mode: null, down: 0, vic: 0, pitch: 0, blinkIn: 2 + Math.random() * 4, blink: -1,
   };
   const TAUNT_T = 1.2, HIT_T = 0.4, BLINK_T = 0.14;
 
-  function update(dt, { speed = 0, crouch = false, airborne = false, lookYaw = 0 } = {}) {
+  function update(dt, { speed = 0, crouch = false, airborne = false, lookYaw = 0, aimPitch = 0 } = {}) {
     dt = clamp(dt || 0, 0, 0.1);
     S.t += dt;
     const t = S.t;
@@ -164,6 +164,9 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
     S.crouch = damp(S.crouch, crouch ? 1 : 0, 12, dt);
     S.air = damp(S.air, airborne ? 1 : 0, 14, dt);
     S.look = damp(S.look, clamp(lookYaw, -1.2, 1.2), 10, dt);
+    S.pitch = damp(S.pitch, clamp(aimPitch, -1.2, 1.2), 14, dt);
+    S.down = damp(S.down, S.mode === 'tagged' ? 1 : 0, 8, dt); // tagged: topples sideways and stays down
+    S.vic = damp(S.vic, S.mode === 'victory' ? 1 : 0, 8, dt);   // victory: hops with arms up
 
     // one-shot envelopes (smooth in/out, no snapping)
     let tw = 0, hw = 0;
@@ -189,6 +192,7 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
     rig.rotation.y = Math.sin(t * 9) * 0.12 * tw;
     rig.position.z = 0.1 * hw;
     rig.scale.set(1 + 0.12 * hw, 1 - 0.15 * hw, 1 + 0.12 * hw);
+    rig.rotation.z += 1.45 * S.down; rig.position.y = 0.14 * S.down + Math.abs(Math.sin(t * 9)) * 0.18 * S.vic;
 
     // legs
     const legScale = clamp(1 - 0.3 * cr - 0.28 * air, 0.5, 1) * (1 - 0.0);
@@ -219,7 +223,7 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
 
     // head: turn toward lookYaw, nod with the gait, tilt on hit
     headG.rotation.y = clamp(S.look, -0.9, 0.9) * 0.7;
-    headG.rotation.x = -0.05 * run * ground - 0.25 * hw + Math.sin(S.phase * 2) * 0.02 * ground;
+    headG.rotation.x = -0.05 * run * ground - 0.25 * hw - S.pitch * 0.5 + Math.sin(S.phase * 2) * 0.02 * ground;
     headG.rotation.z = Math.sin(t * 1.1) * 0.03 * (1 - move);
 
     // eyes: glance with leftover turn, blink at random
@@ -239,6 +243,8 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
   function play(name) {
     if (name === 'taunt') S.taunt = 0;
     else if (name === 'hit') S.hit = 0;
+    else if (name === 'tagged' || name === 'victory') S.mode = name;
+    else if (name === 'reset' || name === 'idle') S.mode = null;
   }
 
   function setTint(c, amount = 0) {
@@ -248,5 +254,5 @@ export function createCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plai
 
   function dispose() { for (const [m] of tintable) m.dispose(); }
 
-  return { root, update, play, setSeeker, setTint, dispose };
+  return { kind: 'procedural', root, update, play, setSeeker, setTint, dispose };
 }

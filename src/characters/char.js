@@ -2,8 +2,17 @@
 // character.js characters face -Z; the game's avatar convention is "faces +Z", so each one sits in a wrapper turned by PI.
 // Also owns the paint-splat texture/material (world decals and splats stuck on characters).
 import * as THREE from 'three';
-import { createCharacter, HATS, OUTFITS } from './character.js';
+import { createCharacter as createProcedural, HATS, OUTFITS } from './character.js';
+import { createRigCharacter, rigStatus } from './rig.js';
 export { HATS, OUTFITS };
+
+// glTF rig once it has loaded, otherwise (still loading, or the load failed) the procedural character: same API either way
+export function createCharacter(opts) {
+  if (rigStatus() === 'ready') {
+    try { return createRigCharacter(opts); } catch (e) { console.warn('rig character failed, using procedural', e); }
+  }
+  return createProcedural(opts);
+}
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const S = THREE.SRGBColorSpace;
@@ -39,8 +48,9 @@ export const setSeeker = (root, on) => root.ch.setSeeker(on);
 export const tintChar = (root, hex) => root.ch.setTint(hex ?? 0xffffff, hex == null ? 0 : 0.9);
 export const flinch = (root) => root.ch.play('hit');
 export const taunt = (root) => root.ch.play('taunt');
-// a: { speed (m/s), crouch 0..1, air, lat (-1..1 sideways motion) }
-export const animate = (root, dt, a = {}) => root.ch.update(dt, { speed: a.speed || 0, crouch: (a.crouch || 0) > 0.4, airborne: !!a.air, lookYaw: (a.lat || 0) * 0.5 });
+export const playChar = (root, name) => root.ch.play(name); // 'taunt' | 'hit' | 'tagged' | 'victory' | 'reset'
+// a: { speed (m/s), crouch 0..1, air, lat (-1..1 sideways motion), pitch (radians, + = looking up) }
+export const animate = (root, dt, a = {}) => root.ch.update(dt, { speed: a.speed || 0, crouch: (a.crouch || 0) > 0.4, airborne: !!a.air, lookYaw: (a.lat || 0) * 0.5, aimPitch: a.pitch || 0 });
 export const disposeChar = (root) => root.ch.dispose();
 
 // paint splat stuck on the body (front and back) so a tagged hider stays revealed

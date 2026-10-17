@@ -4,7 +4,10 @@
 import { bus, EV } from './bus.js';
 
 const loaders = {
-  async gltf(url) { const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'); return new GLTFLoader().loadAsync(url); },
+  async gltf(url) { // meshopt decoder: compressed models (public/models/**) are meshopt-encoded
+    const [{ GLTFLoader }, { MeshoptDecoder }] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js')]);
+    return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url);
+  },
   async hdr(url) { const { RGBELoader } = await import('three/addons/loaders/RGBELoader.js'); return new RGBELoader().loadAsync(url); },
   async ktx2(url) {
     const [{ KTX2Loader }, { renderer }] = await Promise.all([import('three/addons/loaders/KTX2Loader.js'), import('../render/renderer.js')]);
