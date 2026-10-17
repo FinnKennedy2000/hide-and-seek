@@ -111,14 +111,13 @@ for (const id of IDS) {
   const reach = (() => { let n = 0; for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) { const x = NMIN + (i + .5) * CELL, z = NMIN + (j + .5) * CELL; if (x > m.bounds.x0 && x < m.bounds.x1 && z > m.bounds.z0 && z < m.bounds.z1 && seen[j * NG + i]) n++; } return n; })();
   ok(reach / inB > 0.97, `${id}: ${(100 * reach / inB).toFixed(1)}% of free floor inside bounds is reachable (> 97%)`);
   // draw-call estimate: same grouping as src/world/build.js flushRecs (prop | material | cast | recv | solid)
-  const groups = new Set();
-  let cur = -1;
+  const groups = new Set(), inst = new Set(), names = w.props.map((p) => p.name);
   buildWorld({
-    box: (cx, cz, wd, d, h, mat, o, p) => groups.add(`${p}|${mat}|${o.cast ?? true}|${o.recv ?? true}|true`),
-    mesh: (g, mat, x, y, z, o, p) => groups.add(`${p}|${mat}|${o.cast ?? true}|true|${o.cast !== false}`),
+    box: (cx, cz, wd, d, h, mat, o, p) => { groups.add(`${p}|${mat}|${o.cast ?? true}|${o.recv ?? true}|true`); inst.add(p < 0 ? `s|${mat}|${o.cast ?? true}|${o.recv ?? true}` : `${names[p]}|${mat}`); },
+    mesh: (g, mat, x, y, z, o, p) => { groups.add(`${p}|${mat}|${o.cast ?? true}|true|${o.cast !== false}`); inst.add(p < 0 ? `s|${mat}|${o.cast ?? true}|true` : `${names[p]}|${g[0]}|${mat}`); },
     books: () => groups.add('books'),
   }, id);
-  console.log(`INFO ${id}: ~${groups.size} draw calls after merge (build.js grouping), ${w.colliders.length} colliders, size ${(m.bounds.x1 - m.bounds.x0).toFixed(0)}x${(m.bounds.z1 - m.bounds.z0).toFixed(0)}`);
+  console.log(`INFO ${id}: ~${groups.size} draw calls after merge (build.js grouping), ~${inst.size} if repeated prop kinds are instanced (one draw per kind+material), ${w.colliders.length} colliders, size ${(m.bounds.x1 - m.bounds.x0).toFixed(0)}x${(m.bounds.z1 - m.bounds.z0).toFixed(0)}`);
   ok(groups.size <= 200, `${id}: draw calls ${groups.size} <= 200 before perf.instanceStatic`);
 }
 process.exit(fail ? 1 : 0);
