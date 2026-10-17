@@ -123,9 +123,9 @@ async function mapGame(n, map, mode = 'prophunt') {
     g.close();
   });
 
-  test('disguise: lateshop prop id > 32 accepted (house rejects it)', async () => {
-    const big = W.props.filter((p) => p.id > 32 && Math.abs(p.x) < 20 && Math.abs(p.z) < 20).find((p) => p.name === 'plant') || W.props[100];
-    ok(big.id > 32 && W.props.length > 32 && HW.props.length <= 32, `lateshop has ${W.props.length} props, house ${HW.props.length}; testing #${big.id} ${big.name}`);
+  test('disguise: lateshop prop id beyond the house table accepted (house rejects it)', async () => {
+    const big = W.props.filter((p) => p.id >= HW.props.length && Math.abs(p.x) < 20 && Math.abs(p.z) < 20).find((p) => p.name === 'plant') || W.props[100];
+    ok(big.id >= HW.props.length && W.props.length > HW.props.length, `lateshop has ${W.props.length} props, house ${HW.props.length}; testing #${big.id} ${big.name}`);
     const g = await mapGame(3, 'lateshop');
     const [H] = g.hiders;
     await pos(H, big.x + 0.6, big.z); await sleep(80);
