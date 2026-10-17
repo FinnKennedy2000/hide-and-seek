@@ -7,7 +7,7 @@ const url = process.env.SMOKE_URL || `http://localhost:${process.env.SMOKE_PORT}
 
 module.exports = defineConfig({
   testDir: 'tests',
-  testMatch: /(smoke|chars)\.spec\.js$/,
+  testMatch: /(smoke|chars|ui)\.spec\.js$/,
   timeout: 180_000,
   workers: 1,
   reporter: 'list',

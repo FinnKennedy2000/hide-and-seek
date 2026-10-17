@@ -10,6 +10,7 @@ import { hiders, sendHider, tagTarget, updateHiders } from '../ai/hiders.js';
 import { S, seekerGroup, updateSeeker } from '../ai/seeker.js';
 import { initAudio, sfx } from '../audio/sfx.js';
 import { toast, show } from '../ui/hud.js';
+import { bus, EV } from '../core/bus.js';
 import { enterFull, spMap } from '../ui/menus.js';
 import { makeChar, playChar, HATS, OUTFITS } from '../characters/index.js';
 import { updatePlayer, noises } from '../player/controller.js';
@@ -64,6 +65,7 @@ export function endGame(win, title, sub) {
     : [['SURVIVED', `${Math.floor(G.t)}s`], ['SPOTTED', G.stats.spotted], ['LOUD STEPS', G.stats.loud]];
   $('endStats').innerHTML = st.map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
   show('hud', false); show('end', true);
+  bus.emit(EV.END, { single: true, win, sub });
 }
 export function tryTag() {
   if (G.mode === 'online') return hooks.tag?.();

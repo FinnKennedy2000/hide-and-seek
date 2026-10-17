@@ -1,38 +1,58 @@
 // Player settings, persisted in localStorage ('hs-opts', same key and `vol`/`cues` fields as before so saved options survive).
-// settings.set(k, v) validates, saves and emits 'settings' {key, value}.
+// settings.set(k, v) validates, saves and emits 'settings' {key, value}. The UI (src/ui/settings-screen.js) writes these; producers read them.
 import { bus, EV } from './bus.js';
 
 const KEY = 'hs-opts';
-const QUALITY = ['low', 'med', 'high', 'ultra'];
 const SHAKE = ['off', 'low', 'med', 'high'];
+export const QUALITY = ['potato', 'low', 'med', 'high', 'ultra'];
 const num = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+const prefersReduced = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
 
-export const settings = { quality: 'high', fov: 72, sens: 0.0022, volume: 0.8, music: 0.6, sfx: 1, ui: 1, cues: true, invertY: false, headBob: 1, shake: 'med', binds: {} }; // volume = master bus; music / sfx / ui = the other audio buses (0..1)
+// binds: action -> KeyboardEvent.code overrides (see src/ui/menus.js BINDINGS); onboarded: role -> true once the first-play overlay was seen
+export const DEFAULTS = Object.freeze({
+  quality: 'high', fov: 72, sens: 0.0022, invertY: false,
+  volume: 0.8, music: 0.6, sfx: 1, ui: 1, // master + buses
+  cues: true, reducedMotion: prefersReduced(), colorBlind: false,
+  headBob: 1, shake: 'med', // camera feel (read by the player controller / camera shake)
+  fpsCap: 60,      // 60 | 30 (eco)
+  perfHud: false,  // F3 overlay
+  binds: {}, onboarded: {},
+});
+export const settings = { ...DEFAULTS, reducedMotion: prefersReduced(), binds: {}, onboarded: {} };
+
+// per-key validators: return the cleaned value or throw
+const bool = (v) => { if (typeof v !== 'boolean') throw new Error('expected boolean'); return v; };
+const VALID = {
+  quality: (v) => { if (!QUALITY.includes(v)) throw new Error(`bad quality ${v}`); return v; },
+  fov: (v) => num(v, 50, 110, 72), sens: (v) => num(v, 0.0005, 0.01, 0.0022),
+  volume: (v) => num(v, 0, 1, 0.8), music: (v) => num(v, 0, 1, 0.6), sfx: (v) => num(v, 0, 1, 1), ui: (v) => num(v, 0, 1, 1),
+  invertY: bool, cues: bool, reducedMotion: bool, colorBlind: bool, perfHud: bool,
+  headBob: (v) => num(v, 0, 1, 1),
+  shake: (v) => { if (!SHAKE.includes(v)) throw new Error(`bad shake ${v}`); return v; },
+  fpsCap: (v) => { if (v !== 60 && v !== 30) throw new Error(`bad fpsCap ${v}`); return v; },
+  binds: (v) => { if (!v || typeof v !== 'object') throw new Error('expected object'); return Object.fromEntries(Object.entries(v).filter(([, c]) => typeof c === 'string')); },
+  onboarded: (v) => { if (!v || typeof v !== 'object') throw new Error('expected object'); return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, !!x])); },
+};
 
 try {
   const o = JSON.parse(localStorage.getItem(KEY) || '{}');
-  if (typeof o.cues === 'boolean') settings.cues = o.cues;
-  if (Number.isFinite(o.vol)) settings.volume = num(o.vol, 0, 1, 0.8);
-  for (const k of ['music', 'sfx', 'ui']) if (Number.isFinite(o[k])) settings[k] = num(o[k], 0, 1, settings[k]);
-  if (QUALITY.includes(o.quality)) settings.quality = o.quality;
-  settings.fov = num(o.fov, 50, 110, 72); settings.sens = num(o.sens, 0.0005, 0.01, 0.0022);
-  if (typeof o.invertY === 'boolean') settings.invertY = o.invertY;
-  settings.headBob = num(o.headBob, 0, 1, 1); if (SHAKE.includes(o.shake)) settings.shake = o.shake;
-  if (o.binds && typeof o.binds === 'object') for (const [a, c] of Object.entries(o.binds)) if (typeof c === 'string') settings.binds[a] = c; // action -> KeyboardEvent.code
+  const saved = { ...o, volume: o.vol ?? o.volume }; // legacy field name
+  for (const k of Object.keys(VALID)) {
+    if (saved[k] === undefined) continue;
+    try { settings[k] = VALID[k](saved[k]); } catch { /* bad stored value: keep default */ }
+  }
 } catch { /* storage blocked: defaults */ }
 
 const save = () => {
-  const { quality, fov, sens, volume, music, sfx, ui, cues, invertY, headBob, shake, binds } = settings;
-  try { localStorage.setItem(KEY, JSON.stringify({ quality, fov, sens, vol: volume, music, sfx, ui, cues, invertY, headBob, shake, binds })); } catch { /* storage blocked: fine */ }
+  const { volume, ...rest } = settings;
+  try { localStorage.setItem(KEY, JSON.stringify({ ...rest, vol: volume })); } catch { /* storage blocked: fine */ }
 };
 
 Object.defineProperty(settings, 'set', {
   enumerable: false,
   value(k, v) {
-    if (!Object.hasOwn(settings, k)) throw new Error(`unknown setting ${k}`);
-    if (k === 'quality' && !QUALITY.includes(v)) throw new Error(`bad quality ${v}`);
-    if (k === 'shake' && !SHAKE.includes(v)) throw new Error(`bad shake ${v}`);
-    settings[k] = v; save();
-    bus.emit(EV.SETTINGS, { key: k, value: v });
+    if (!Object.hasOwn(VALID, k)) throw new Error(`unknown setting ${k}`);
+    settings[k] = VALID[k](v); save();
+    bus.emit(EV.SETTINGS, { key: k, value: settings[k] });
   },
 });

@@ -5,10 +5,12 @@ import { addSystem, start } from './core/loop.js';
 import { renderer, scene, camera, composer } from './render/renderer.js';
 import { updateFx } from './render/fx.js';
 import { setWorld, updateFlicker } from './world/build.js';
-import { updateCues, toast } from './ui/hud.js';
+import { toast } from './ui/hud.js';
+import { backdropCam, skipRender } from './ui/backdrop.js';
 import { update as updateSingle } from './modes/singleplayer.js';
 import { hiders } from './ai/hiders.js';
 import './ui/menus.js';
+import './ui/index.js';
 import './net/online.js';
 import './audio/index.js'; // bus listeners + audio system
 
@@ -20,9 +22,7 @@ addSystem({
   name: 'game', order: 20,
   update(dt) {
     if (G.phase === 'menu' || G.phase === 'end') {
-      G.orbit += dt * 0.08;
-      camera.position.set(Math.cos(G.orbit) * 30, 8 + Math.sin(G.orbit * 2), Math.sin(G.orbit) * 30);
-      camera.lookAt(0, 2.5, 0); camera.fov = 60; camera.updateProjectionMatrix();
+      backdropCam(dt); // menu fly-through (src/ui/backdrop.js)
       if (G.phase === 'end') { for (const h of hiders) if (!h.found) h.mesh.visible = true; }
     } else if (!G.paused) {
       try { (G.mode === 'online' ? hooks.update : updateSingle)(dt); } catch (e) {
@@ -33,8 +33,8 @@ addSystem({
     hooks.tick?.(dt);
   },
 });
-addSystem({ name: 'anim', order: 40, update(dt) { updateFlicker(dt); updateCues(dt); updateFx(dt); } });
-addSystem({ name: 'render', order: 100, update() { composer.render(); } });
+addSystem({ name: 'anim', order: 40, update(dt) { updateFlicker(dt); updateFx(dt); } });
+addSystem({ name: 'render', order: 100, update(dt) { if (!skipRender(dt)) composer.render(); } });
 start();
 
 window.__hs = { THREE, renderer, scene, camera, composer, G }; // debugging + tests/smoke.spec.js (draw-call counts)
