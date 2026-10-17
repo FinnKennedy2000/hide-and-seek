@@ -66,8 +66,10 @@ export const materials = {
 // locker banks (x0, x1) along the north (z -1.65) and south (z +1.65) hallway walls; every third unit (i % 3 === 1) is an open alcove you can stand in
 const BANKS_N = [[-19.8, -17.3], [-15.1, -9.3], [-7.1, -1.1], [1.5, 4.3], [13.3, 15.3], [17.5, 19.8]];
 const BANKS_S = [[-19.8, -14.4], [-11.6, -8.4], [-5.6, -0.4], [2.6, 5.4], [7.9, 14.1], [16.5, 19.8]];
-const alcoves = (banks, z) => banks.flatMap(([a, e]) => { const n = Math.max(1, Math.round((e - a) / 0.9)), w = (e - a) / n; return Array.from({ length: n }, (_, i) => i).filter((i) => i % 3 === 1).map((i) => [a + (i + 0.5) * w, z]); });
-const ALC_N = alcoves(BANKS_N, -1.65), ALC_S = alcoves(BANKS_S, 1.65);
+// bank layout: units of 0.9 m lockers with a 1.2 m open alcove at every third unit; scaled to fill [x0, x1]. Alcove inner width ~1.1 m so a 0.6 m player fits.
+const bankUnits = (a, e) => { const raw = []; for (let x = 0, i = 0; x < e - a - 0.5; i++) { const w = i % 3 === 1 ? 1.2 : 0.9; raw.push(w); x += w; } const k = (e - a) / raw.reduce((p, q) => p + q, 0); let x = a; return raw.map((w, i) => { const u = { x0: x, x1: x + w * k, alcove: i % 3 === 1 }; x += w * k; return u; }); };
+const alcoves = (banks, z) => banks.flatMap(([a, e]) => bankUnits(a, e).filter((u) => u.alcove).map((u) => [(u.x0 + u.x1) / 2, z]));
+const ALC_N = alcoves(BANKS_N, -1.55), ALC_S = alcoves(BANKS_S, 1.55);
 
 export const mix = [['classroom', 1], ['hallway', 1], ['gym', 1], ['cafeteria', 1], ['library', 1]];
 export const spots = [
@@ -149,11 +151,10 @@ export function build(b, rnd) {
   b.light(2, 2.6, -9, 28, 13, 0xd8c8ff);    // library
 
   // ----- hallway lockers: banks with open alcoves (stand inside). One static material, a few single locker props at the dead ends.
-  const bank = (x0, x1, z) => { // locker bank along a wall; z = box centre. Doors are painted strips, every third unit is an open alcove
-    const n = Math.max(1, Math.round((x1 - x0) / 0.9)), w = (x1 - x0) / n;
-    for (let i = 0; i < n; i++) {
-      const cx = x0 + (i + 0.5) * w;
-      if (i % 3 === 1) { b.box(cx - w / 2 + 0.03, z, 0.06, 0.5, 1.9, 'sc_lockerOpen'); b.box(cx + w / 2 - 0.03, z, 0.06, 0.5, 1.9, 'sc_lockerOpen'); b.box(cx, z + (z < 0 ? -0.22 : 0.22), w, 0.06, 1.9, 'sc_lockerOpen', { collide: false }); }
+  const bank = (x0, x1, z) => { // locker bank along a wall; z = box centre. Alcoves are open, painted back panel is visual only
+    for (const u of bankUnits(x0, x1)) {
+      const cx = (u.x0 + u.x1) / 2, w = u.x1 - u.x0;
+      if (u.alcove) { b.box(u.x0 + 0.03, z, 0.06, 0.5, 1.9, 'sc_lockerOpen'); b.box(u.x1 - 0.03, z, 0.06, 0.5, 1.9, 'sc_lockerOpen'); b.box(cx, z + (z < 0 ? -0.22 : 0.22), w, 0.06, 1.9, 'sc_lockerOpen', { collide: false }); }
       else b.box(cx, z, w - 0.02, 0.5, 1.9, 'sc_locker');
     }
   };
