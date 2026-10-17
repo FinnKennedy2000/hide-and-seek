@@ -17,6 +17,8 @@ import * as R from './remote.js';
 import * as PH from '../modes/prophunt.js';
 import { HATS, OUTFITS } from '../characters/index.js';
 import { MAPS } from '../shared/worlddata.js';
+import { bus, EV } from '../core/bus.js';
+import { RECONNECT_SECS, F_GONE, F_SELF } from '../shared/protocol.js';
 
 const NAME_KEY = 'hs-name', COS_KEY = 'hs-cos';
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b]; // server palette
@@ -26,7 +28,7 @@ const TAG_RANGE = 3.0;   // client-side check; server accepts <= 3.5 to absorb l
 const now = () => performance.now() / 1000;
 
 // view: menu | lobby | play | results | conn
-const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', map: 'house', cos: {} };
+const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, token: '', recon: false, reconUntil: 0, seq: 0, hist: [], fill: false, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', map: 'house', cos: {} };
 
 const readName = () => { try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; } };
 const readCos = () => { try { const c = JSON.parse(localStorage.getItem(COS_KEY) || '{}'); return { color: COLORS.includes(c.color) ? c.color : undefined, hat: HATS.includes(c.hat) ? c.hat : undefined, outfit: OUTFITS.includes(c.outfit) ? c.outfit : undefined }; } catch { return {}; } };
@@ -68,7 +70,7 @@ function leave(send = true) {
   clearTimeout(st.waitT); st.waitT = 0; st.retrying = false;
   if (send) st.net?.send('leave');
   st.net?.close(); st.net = null;
-  st.code = ''; st.players = [];
+  st.code = ''; st.players = []; st.token = ''; st.recon = false;
   R.clearRemotes();
   const u = new URL(location.href); u.searchParams.delete('room'); history.replaceState(null, '', u);
   for (const id of Object.values(PANELS)) show(id, false);
@@ -78,7 +80,7 @@ function leave(send = true) {
 
 // ----- connection
 function open(onopen) {
-  st.net?.close();
+  st.net?.close(); R.resetClock();
   try { st.net = connect({ onopen, onmessage: onMsg, onclose: onClose }); } catch (e) { console.warn('connect failed', e); onClose('badurl'); }
 }
 function submit(action) {
@@ -90,8 +92,21 @@ function submit(action) {
   st.retry = { name, code: action === 'join' ? code : '' };
   open(() => st.net.send(action, { name, code }));
 }
+// A dropped socket mid-round: keep trying `reconnect {token}` for RECONNECT_SECS (the server holds the seat, role and score that long)
+function tryReconnect() {
+  clearTimeout(st.waitT);
+  if (now() > st.reconUntil) { st.recon = false; st.token = ''; setConn(false); return bus.emit(EV.NET, { kind: 'reconnect-failed' }); }
+  st.waitT = setTimeout(() => { st.waitT = 0; open(() => st.net.send('reconnect', { token: st.token })); }, 1500);
+}
 function onClose(reason) {
   st.net = null;
+  if (st.recon) return tryReconnect();
+  if (st.view === 'play' && st.token && reason !== 'badurl') {
+    st.recon = true; st.reconUntil = now() + RECONNECT_SECS;
+    R.clearRemotes(); setView('conn'); setConn('recon');
+    bus.emit(EV.NET, { kind: 'reconnecting' });
+    return tryReconnect();
+  }
   if (st.view === 'menu') return msg(reason === 'badurl' ? 'Invalid server address in the ?server= link' : reason === 'timeout' ? 'Server not responding \u2014 try again' : 'Could not reach the server. Check your connection and try again.');
   if (st.view === 'conn') return;
   st.retry = { name: st.retry?.name || readName(), code: st.code };
@@ -101,9 +116,10 @@ function onClose(reason) {
 }
 // conn screen: dropped-link text, or the waiting-for-round state (auto-retrying the join)
 function setConn(waiting) {
-  $('connTitle').textContent = waiting ? 'ROUND IN PROGRESS' : 'CONNECTION LOST';
-  $('connSub').textContent = waiting ? 'Waiting for the round to finish\u2026' : 'The link to the server dropped. If you were in a round you have been removed from it; reconnecting puts you back in the room lobby.';
-  $('connRetry').classList.toggle('hidden', waiting);
+  const recon = waiting === 'recon';
+  $('connTitle').textContent = recon ? 'RECONNECTING' : waiting ? 'ROUND IN PROGRESS' : 'CONNECTION LOST';
+  $('connSub').textContent = recon ? 'Hold on, getting you back into the round\u2026' : waiting ? 'Waiting for the round to finish\u2026' : 'The link to the server dropped. If you were in a round you have been removed from it; reconnecting puts you back in the room lobby.';
+  $('connRetry').classList.toggle('hidden', !!waiting);
   $('connMenu').firstElementChild.textContent = waiting ? 'CANCEL' : 'MENU';
 }
 function waitForRound() {
@@ -117,6 +133,8 @@ function waitForRound() {
 const handlers = {
   err(m) {
     const text = String(m.msg || 'Error');
+    bus.emit(EV.NET, { kind: 'err', msg: text });
+    if (st.recon) { st.recon = false; st.token = ''; st.net?.close(); st.net = null; st.retry = { name: st.retry?.name || readName(), code: st.code }; st.code = ''; return void setConn(false); } // seat gone: fall back to the normal lost-link screen
     if (/^Round in progress/.test(text) && st.retrying && st.retry?.code && !st.code) return void waitForRound();
     clearTimeout(st.waitT); st.waitT = 0; st.retrying = false;
     if (st.code) return void (st.view === 'play' || st.view === 'results' ? toast(text, '#ff4d5e') : ($('lobHint').textContent = text)); // e.g. host pressed Start alone
@@ -124,8 +142,9 @@ const handlers = {
   },
   room(m) {
     if (st.view === 'play') for (const p of st.players) if (!m.players.some((q) => q.id === p.id)) { feed(`${p.name} left`); R.removeRemote(p.id); }
+    const resuming = st.recon && (m.phase === 'hide' || m.phase === 'seek'); st.recon = false; st.token = m.token || st.token; st.fill = !!m.fill;
     st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic'; st.map = m.map || 'house';
-    if (st.view === 'menu' || st.view === 'conn') {
+    if (!resuming && (st.view === 'menu' || st.view === 'conn')) {
       setView('lobby'); history.replaceState(null, '', `?room=${m.code}`);
       st.cos = readCos(); if (Object.values(st.cos).some((v) => v !== undefined)) st.net?.send('cosmetic', st.cos); // push saved look
     }
@@ -140,12 +159,13 @@ const handlers = {
       p.role = seekers.has(p.id) ? 'seeker' : 'hider';
       if (p.id !== st.id) R.addRemote(p.id, p.name, p.color, p.role === 'seeker', p.hat, p.outfit);
     }
-    st.role = playerOf(st.id).role; st.phase = 'hide'; st.deadline = now() + m.hide; st.hidersLeft = st.players.length - seekers.size; st.lastCount = -1; st.tagCd = 0;
+    st.role = playerOf(st.id).role; st.phase = m.phase || 'hide'; st.deadline = now() + (m.resume ? m.tl : m.hide); st.hist.length = 0; st.seq = 0;
+    if (m.resume) bus.emit(EV.NET, { kind: 'resumed', role: m.role, score: m.score }); st.hidersLeft = st.players.length - seekers.size; st.lastCount = -1; st.tagCd = 0;
     const sp = m.spawns.find((s) => s.id === st.id);
     Object.assign(P, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, vy: 0, yaw: sp.yaw, pitch: 0, crouch: 0 });
     $('feed').textContent = ''; $('crosshair').classList.remove('hot'); $('prompt').classList.remove('show'); $('timer').classList.remove('low');
     $('seekerState').style.display = 'none'; $('detectWrap').classList.remove('show'); $('found').style.display = '';
-    $('blackout').classList.toggle('on', st.role === 'seeker');
+    $('blackout').classList.toggle('on', st.role === 'seeker' && st.phase === 'hide');
     $('blackmsg').textContent = 'THE HIDERS ARE HIDING...';
     setView('play'); G.phase = 'play';
     const self = playerOf(st.id), pro = st.mode === 'prophunt';
@@ -161,10 +181,15 @@ const handlers = {
   },
   snap(m) {
     if (st.view !== 'play') return;
-    const t = now();
+    const t = now(), ts = R.syncClock(m.st, t);
     st.deadline = t + m.tl; st.hidersLeft = m.hl;
-    for (const [id, x, y, z, yaw, pitch, c] of m.p) if (id !== st.id) R.pushSnap(id, t, x, y, z, yaw, pitch, c);
+    for (const [id, x, y, z, yaw, pitch, c, fl] of m.p) {
+      if (fl & F_SELF) reconcile(m.ack, x, y, z);
+      else if (fl & F_GONE) R.hideRemote(id);
+      else R.pushSnap(id, ts, x, y, z, yaw, pitch, c);
+    }
   },
+  conn(m) { if (st.view === 'play') feed(`${nameOf(m.id)} ${m.on ? 'reconnected' : 'lost connection'}`, '#ffd166'); },
   tagged(m) {
     const target = playerOf(m.target), by = playerOf(m.by);
     if (target) target.role = 'seeker';
@@ -230,7 +255,7 @@ function renderLobby() {
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = hex(p.color);
     const nm = document.createElement('span'); nm.textContent = p.name;
     li.append(dot, nm);
-    for (const [on, t] of [[p.id === st.hostId, 'HOST'], [p.id === st.id, 'YOU'], [p.hat && p.hat !== 'none', p.hat], [p.outfit && p.outfit !== 'plain', p.outfit]]) if (on) { const s = document.createElement('span'); s.className = 'tagx'; s.textContent = t; li.append(s); }
+    for (const [on, t] of [[p.id === st.hostId, 'HOST'], [p.id === st.id, 'YOU'], [p.bot, 'BOT'], [p.hat && p.hat !== 'none', p.hat], [p.outfit && p.outfit !== 'plain', p.outfit]]) if (on) { const s = document.createElement('span'); s.className = 'tagx'; s.textContent = t; li.append(s); }
     ul.append(li);
   }
   const host = st.id === st.hostId, enough = st.players.length >= 2;
@@ -240,12 +265,32 @@ function renderLobby() {
   for (const b of $('lobMode').children) b.disabled = !host;
   row('lobMap', MAP_NAMES, st.map, (v) => host && st.net?.send('map', { map: v })); // everyone sees the pick; only the host's chips are enabled
   for (const b of $('lobMap').children) b.disabled = !host;
+  let fb = $('lobFill'); // "fill with bots": host-only toggle, created here so it needs no markup change
+  if (!fb) { fb = document.createElement('button'); fb.id = 'lobFill'; fb.className = 'chip'; $('lobMap').after(fb); }
+  fb.textContent = `FILL WITH BOTS: ${st.fill ? 'ON' : 'OFF'}`; fb.classList.toggle('on', st.fill); fb.disabled = !host; fb.onclick = () => host && st.net?.send('fill', { on: !st.fill });
   row('cosColor', COLORS.map((c) => [c]), me.color, pick('color'));
   row('cosHat', HATS.map((h) => [h, h.toUpperCase()]), me.hat, pick('hat'));
   row('cosOutfit', OUTFITS.map((o) => [o, o.toUpperCase()]), me.outfit, pick('outfit'));
   $('lobStart').classList.toggle('hidden', !host);
   $('lobStart').disabled = !enough;
   $('lobHint').textContent = host ? (enough ? `${st.players.length}/8 players. Start when ready.` : 'Waiting for at least one more player...') : 'Waiting for the host to start...';
+}
+
+// ----- client-side prediction + server reconciliation
+// The local player always moves immediately (prediction). Each `pos` carries a sequence number and we remember where we were at that
+// seq; the server's snapshot says which seq it last accepted (ack) and where it put us. A small difference is eased out, a big one
+// (a refused move) snaps us back, and both shift the remembered history so the next comparison starts from the corrected path.
+const SNAP_ERR = 0.5, SOFT_K = 0.2;
+function reconcile(ack, sx, sy, sz) {
+  const i = st.hist.findIndex((h) => h.s === ack);
+  if (i < 0) return;
+  st.hist.splice(0, i); // everything older than the acked move is settled
+  const h = st.hist[0], ex = sx - h.x, ez = sz - h.z, e = Math.hypot(ex, ez);
+  if (e < 0.02) return;
+  const snap = e >= SNAP_ERR, k = snap ? 1 : SOFT_K;
+  P.x += ex * k; P.z += ez * k; if (snap) { P.vx = 0; P.vz = 0; }
+  for (const q of st.hist) { q.x += ex * k; q.z += ez * k; }
+  bus.emit(EV.NET, { kind: 'correct', err: Math.round(e * 100) / 100, snap });
 }
 
 // ----- HUD / in-round update (called by game.js every frame while G.mode === 'online' and playing)
@@ -263,7 +308,7 @@ function tagTarget() {
   const { x: ex, y: ey, z: ez } = camera.position;
   let best = null, bd = 0.87;
   for (const a of R.remotes.values()) {
-    if (a.seeker) continue;
+    if (a.seeker || a.gone) continue;
     for (const k of [0.9, 1.35]) {
       const yy = a.y + k * (1 - 0.35 * a.c), dx = a.x - ex, dy = yy - ey, dz = a.z - ez, d = Math.hypot(dx, dy, dz);
       if (d > TAG_RANGE) continue;
@@ -304,7 +349,9 @@ hooks.update = (dt) => {
   if (st.sendT <= 0 && !frozen && !(pro && PH.ph.out)) {
     st.sendT = 1 / 15;
     const r = (v) => Math.round(v * 100) / 100, po = pro ? PH.pose() : { yaw: P.yaw, c: P.crouch };
-    st.net?.send('pos', { x: r(P.x), y: r(P.y), z: r(P.z), yaw: r(po.yaw), pitch: r(P.pitch), c: r(po.c) });
+    st.seq = (st.seq + 1) & 0xffff;
+    st.hist.push({ s: st.seq, x: r(P.x), z: r(P.z) }); if (st.hist.length > 120) st.hist.shift();
+    st.net?.send('pos', { s: st.seq, x: r(P.x), y: r(P.y), z: r(P.z), yaw: r(po.yaw), pitch: r(P.pitch), c: r(po.c) });
   }
   // HUD
   setText('modeLabel', `${seeker ? 'SEEKER' : 'HIDER'} - ${pro ? 'PROP HUNT' : 'CLASSIC'} - ${hide ? 'HIDING TIME' : 'SEEK'}`);

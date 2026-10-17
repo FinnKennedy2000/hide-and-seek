@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const ROOT = path.resolve(__dirname, '..', 'dist'); // `npm run build` output
@@ -36,6 +37,13 @@ const MODES = ['classic', 'prophunt'];
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = MAG, PICKUP_SHOTS = 6; // a hit earns a whole extra mag
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
+const NOISE_RANGE = 30;         // m: `noise` cues are only sent to players who could hear them
+const REVEAL_S = 1.0, HOLD_S = 0.4; // a sound reveals the maker's position for 1 s; a player that just left LOS lingers 0.4 s so interpolation does not pop
+const BUDGET_CAP = 1.5;         // m: speed-budget bucket (accrues MAX_SPEED m/s of server time), so jittered / bunched packets are not mistaken for teleports
+const BOT_TARGET = 6;           // "fill bots" tops a lobby up to this many players
+let PR = null;      // src/shared/protocol.js
+let BOTSPOTS = null; // mapId -> hiding spots the bots may use
+let NAVS = null;    // mapId -> shared nav (grid, path, LOS) over that map's colliders
 let WORLDS = null; // mapId -> { colliders, props, meta, spawns, rayBox } from src/shared/worlddata.js, built before listening
 let MAPS = null;   // the map registry from src/shared/worlddata.js
 const worldOf = (room) => WORLDS[room.map];
@@ -64,6 +72,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end(req.method === 'HEAD' ? undefined : 'ok');
   }
+  if (rel === '/metrics') { // Prometheus text format
+    let humans = 0, bots = 0;
+    for (const r of rooms.values()) for (const q of r.players.values()) q.bot ? bots++ : humans++;
+    res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+    return res.end(req.method === 'HEAD' ? undefined : `hs_rooms ${rooms.size}\nhs_players ${humans}\nhs_bots ${bots}\nhs_connections ${wss ? wss.clients.size : 0}\nhs_tick_ms ${tickMs.last.toFixed(3)}\nhs_tick_ms_avg ${tickMs.avg.toFixed(3)}\nhs_tick_ms_max ${tickMs.max.toFixed(3)}\nhs_uptime_s ${Math.round(process.uptime())}\n`);
+  }
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.resolve(ROOT, '.' + path.sep + path.normalize(rel));
   // reject traversal outside dist/
@@ -90,13 +104,24 @@ const server = http.createServer((req, res) => {
 // helpers
 // ======================================================================
 const rooms = new Map();   // code -> room
+const tokens = new Map();  // reconnect token -> player (only players currently in a room)
 let nextId = 1;
+const tickMs = { last: 0, avg: 0, max: 0 };
 const now = () => Date.now() / 1000;
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null);
 const r2 = (v) => Math.round(v * 100) / 100;
 const cleanName = (n) => (typeof n === 'string' ? n.replace(/[^\x20-\x7e]/g, '').trim().slice(0, 16) : '') || 'Player';
+const BOT_WS = { readyState: 0, send() {} }; // bots have no socket: every send() to them is a no-op
 
+function newPlayer(ws, bot = false) {
+  return {
+    id: nextId++, ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0, c: 0, lastPos: 0, lastTag: 0, lastNoise: 0, tokens: 120, tokT: Date.now(),
+    ack: 0, budget: BUDGET_CAP, budgetT: Date.now(), rtt: 0, disc: 0,
+    hist: [], sent: new Map(), seen: new Map(), reveal: new Map(), // lag-comp history; per-receiver snapshot state (what we sent / when each player was last in LOS / sound reveals)
+  };
+}
 function send(p, obj) {
   const ws = p.ws;
   if (ws.readyState !== 1) return;
@@ -115,37 +140,52 @@ function newCode() {
 }
 const hidersOf = (room) => [...room.players.values()].filter((p) => p.role === 'hider');
 const seekersOf = (room) => [...room.players.values()].filter((p) => p.role === 'seeker');
+const humansOf = (room) => [...room.players.values()].filter((p) => !p.bot);
 
-function sendRoom(room) {
-  const list = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, hat: p.hat, outfit: p.outfit, total: p.total }));
-  for (const p of room.players.values()) send(p, { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, map: room.map, players: list });
+function roomMsg(room, p) {
+  const list = [...room.players.values()].map((q) => ({ id: q.id, name: q.name, color: q.color, hat: q.hat, outfit: q.outfit, total: q.total, bot: q.bot || undefined }));
+  return { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, map: room.map, fill: room.fill, token: p.token, players: list };
 }
+function sendRoom(room) { for (const p of room.players.values()) if (!p.bot) send(p, roomMsg(room, p)); }
 
 // ======================================================================
 // rooms and rounds
 // ======================================================================
-function joinRoom(p, room) {
+function joinRoom(p, room, quiet) {
   const used = new Set([...room.players.values()].map((q) => q.color));
   p.color = COLORS.find((c) => !used.has(c)) ?? COLORS[0];
   p.hat = 'none'; p.outfit = 'plain';
-  p.room = room; p.role = null; p.score = 0; p.total = 0; p.tags = 0;
+  p.room = room; p.role = null; p.score = 0; p.total = 0; p.tags = 0; p.disc = 0;
   room.players.set(p.id, p);
-  if (!room.hostId) room.hostId = p.id;
-  sendRoom(room);
+  if (p.token) tokens.set(p.token, p);
+  if (!room.hostId && !p.bot) room.hostId = p.id;
+  if (!quiet) sendRoom(room);
+}
+
+// "fill bots": in the lobby, top the room up with bots to BOT_TARGET players (humans always win a slot)
+function syncBots(room) {
+  if (room.phase !== 'lobby') return;
+  const want = room.fill ? Math.max(0, BOT_TARGET - humansOf(room).length) : 0;
+  const bots = [...room.players.values()].filter((q) => q.bot);
+  while (bots.length > want) room.players.delete(bots.pop().id);
+  while (bots.length < want) { const b = newPlayer(BOT_WS, true); b.name = `Bot ${++room.botN}`; joinRoom(b, room, true); bots.push(b); }
 }
 
 function leaveRoom(p) {
   const room = p.room;
   if (!room) return;
-  p.room = null; p.role = null;
+  p.room = null; p.role = null; p.disc = 0;
+  if (p.token) tokens.delete(p.token);
   room.players.delete(p.id);
-  if (!room.players.size) { rooms.delete(room.code); return; }
-  if (room.hostId === p.id) room.hostId = room.players.keys().next().value;
+  if (!humansOf(room).length) { rooms.delete(room.code); return; }
+  if (room.hostId === p.id) room.hostId = humansOf(room)[0].id;
+  syncBots(room);
   sendRoom(room);
   checkRound(room);
 }
 
 function startRound(room) {
+  syncBots(room);
   const ps = shuffle([...room.players.values()]);
   const nSeek = ps.length >= 6 ? 2 : 1;
   const W = worldOf(room), ss = W.meta.seekerStart;
@@ -158,9 +198,11 @@ function startRound(room) {
     if (p.role === 'seeker') { p.x = ss.x + (i - (nSeek - 1) / 2) * 1.4; p.z = ss.z; p.yaw = ss.yaw; }
     else { const [x, z] = spots[(i - nSeek) % spots.length]; p.x = x; p.z = z; p.yaw = Math.random() * Math.PI * 2; }
     p.y = 0; p.pitch = 0; p.c = 0;
+    p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map();
+    Object.assign(p, { st: 'init', path: null, pi: 0, heading: p.yaw - Math.PI, spot: null, visited: new Set(), detect: 0 }); // bot brain
     spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
   });
-  room.phase = 'hide';
+  room.phase = 'hide'; room.lt = 0;
   room.t0 = now(); room.phaseEnd = room.t0 + HIDE_SECS; room.pickup = null; room.pickupDone = false; room.pickupAt = 0;
   broadcast(room, { t: 'round', mode: room.mode, map: room.map, seekers: ps.slice(0, nSeek).map((p) => p.id), spawns, hide: HIDE_SECS, seek: SEEK_SECS });
   if (room.mode === 'prophunt') for (const p of ps.slice(0, nSeek)) sendAmmo(p);
@@ -178,6 +220,7 @@ function endRound(room, winner) {
   room.phase = 'lobby';
   for (const p of room.players.values()) p.role = null;
   broadcast(room, { t: 'end', winner, mode: room.mode, players });
+  syncBots(room);
   sendRoom(room);
 }
 
@@ -191,14 +234,64 @@ function checkRound(room) {
 // a seeker that can no longer shoot: out of health, or empty with no crate left to find
 const spent = (room, p) => p.hp <= 0 || (p.mag + p.res <= 0 && room.pickupDone);
 function sendAmmo(p) { send(p, { t: 'ammo', mag: p.mag, res: p.res, hp: p.hp, rl: p.reloadEnd ? 1 : 0 }); }
-function hiderBox(room, h) { // server-side bounding volume: the prop's footprint when disguised, else a person
+function hiderBox(room, h, at = h) { // server-side bounding volume: the prop's footprint when disguised, else a person. `at`: where (a rewound position)
   const pr = h.disguise != null ? worldOf(room).props[h.disguise] : null;
-  const r = pr ? Math.max(0.25, Math.max(pr.w, pr.d) / 2) : 0.35, ht = pr ? Math.max(0.4, pr.h) : 1.75 * (1 - 0.35 * h.c);
-  return { x0: h.x - r, x1: h.x + r, z0: h.z - r, z1: h.z + r, y0: h.y, y1: h.y + ht };
+  const r = pr ? Math.max(0.25, Math.max(pr.w, pr.d) / 2) : 0.35, ht = pr ? Math.max(0.4, pr.h) : 1.75 * (1 - 0.35 * at.c);
+  return { x0: at.x - r, x1: at.x + r, z0: at.z - r, z1: at.z + r, y0: at.y, y1: at.y + ht };
+}
+
+// ----- lag compensation: 1 s of every player's position at 30 Hz; shots are judged against where the shooter saw the target
+function sampleHistory() {
+  const t = Date.now(), keep = PR.HIST_SECS * 1000 + 100;
+  for (const room of rooms.values()) {
+    if (room.phase !== 'hide' && room.phase !== 'seek') continue;
+    for (const p of room.players.values()) {
+      p.hist.push({ t, x: p.x, y: p.y, z: p.z, c: p.c });
+      while (p.hist.length && t - p.hist[0].t > keep) p.hist.shift();
+    }
+  }
+}
+function posAt(p, T) { // interpolated {x,y,z,c} at wall-clock ms T (the oldest sample if T is older than the history)
+  const h = p.hist;
+  if (!h.length || T >= h[h.length - 1].t) return p;
+  if (T <= h[0].t) return h[0];
+  let i = h.length - 1; while (h[i - 1].t > T) i--;
+  const a = h[i - 1], b = h[i], k = (T - a.t) / (b.t - a.t || 1);
+  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k, c: a.c + (b.c - a.c) * k };
+}
+
+// ----- interest management: what a receiver may know about another player's position
+// true when `o` is within INTEREST_RANGE and in line of sight (eye to two body points), or made a sound the receiver could hear
+function visible(room, r, o, t) {
+  if ((r.reveal.get(o.id) ?? 0) > t) return true;
+  const dx = o.x - r.x, dz = o.z - r.z;
+  if (dx * dx + dz * dz <= PR.INTEREST_RANGE * PR.INTEREST_RANGE) {
+    const los = NAVS[room.map].losClear, ey = r.y + 1.5 * (1 - 0.35 * r.c);
+    if (los(r.x, ey, r.z, o.x, o.y + 0.5, o.z) || los(r.x, ey, r.z, o.x, o.y + 1.3 * (1 - 0.35 * o.c), o.z)) { r.seen.set(o.id, t); return true; }
+  }
+  return t - (r.seen.get(o.id) ?? -99) < HOLD_S;
+}
+const GONE_Q = new Int32Array(6);
+const sameQ = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3] && a[4] === b[4] && a[5] === b[5];
+function sendSnapshots(room, t) {
+  const all = [...room.players.values()], hl = hidersOf(room).length, tl = Math.max(0, room.phaseEnd - t), st = Date.now();
+  for (const r of all) {
+    if (r.bot || r.ws.readyState !== 1) continue;
+    const ents = [];
+    for (const o of all) {
+      if (o === r) { ents.push({ id: o.id, q: PR.quantise(o), flags: PR.F_SELF }); continue; } // own state is always sent: it carries the reconciliation target
+      if (!visible(room, r, o, t)) { if (r.sent.delete(o.id)) ents.push({ id: o.id, q: GONE_Q, flags: PR.F_GONE }); continue; }
+      const q = PR.quantise(o), prev = r.sent.get(o.id);
+      if (prev && sameQ(prev, q)) continue; // delta: unchanged since the last snapshot this receiver got
+      r.sent.set(o.id, q); ents.push({ id: o.id, q, flags: 0 });
+    }
+    r.ws.send(PR.encodeSnap({ tl, hl, ack: r.ack, st }, ents));
+  }
 }
 
 function tickRoom(room, t) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
+  const dt = room.lt ? Math.min(0.25, t - room.lt) : 0; room.lt = t;
   if (room.phase === 'hide' && t >= room.phaseEnd) {
     room.phase = 'seek'; room.phaseEnd = t + SEEK_SECS; room.nextAward = t + 10;
     broadcast(room, { t: 'phase', phase: 'seek', tl: SEEK_SECS });
@@ -220,15 +313,15 @@ function tickRoom(room, t) {
     }
     if (t >= room.phaseEnd) return endRound(room, 'hiders');
   }
-  const hl = hidersOf(room).length;
-  broadcast(room, {
-    t: 'snap', tl: Math.max(0, r2(room.phaseEnd - t)), hl,
-    p: [...room.players.values()].map((p) => [p.id, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), r2(p.c)]),
-  });
+  for (const b of room.players.values()) if (b.bot && (room.phase === 'hide' || room.phase === 'seek')) botThink(room, b, t, dt);
+  if (room.phase !== 'hide' && room.phase !== 'seek') return; // a bot's tag or shot may have ended the round
+  sendSnapshots(room, t);
 }
 setInterval(() => {
-  const t = now();
-  for (const room of rooms.values()) {
+  const t = now(), t0 = performance.now();
+  for (const room of [...rooms.values()]) {
+    for (const q of [...room.players.values()]) if (q.disc && Date.now() - q.disc > PR.RECONNECT_SECS * 1000) leaveRoom(q); // reconnect window over
+    if (rooms.get(room.code) !== room) continue;
     try { tickRoom(room, t); } catch (e) {
       console.error('tick error', room.code, e);
       try { endRound(room, 'hiders'); } catch (e2) { // could not end cleanly: force the room back to the lobby
@@ -238,20 +331,183 @@ setInterval(() => {
       }
     }
   }
+  const d = performance.now() - t0;
+  tickMs.last = d; tickMs.avg += (d - tickMs.avg) * 0.05; tickMs.max = Math.max(d, tickMs.max * 0.98);
 }, TICK_MS);
 process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 
 // ======================================================================
+// actions shared by players and bots
+// ======================================================================
+function applyDisguise(room, p, id) { p.lastDisguise = now(); p.disguise = id; p.tint = null; broadcast(room, { t: 'disguise', id: p.id, propId: id }); }
+function startReload(p) { p.reloadEnd = now() + RELOAD_S; sendAmmo(p); }
+
+// the seeker `p` fires from (ox,oy,oz) along unit (ux,uy,uz); hiders are judged where they were at wall-clock ms T. False when the shot is refused.
+function fireShot(room, p, ox, oy, oz, ux, uy, uz, T) {
+  const t = now();
+  if (t - p.lastShot < FIRE_GAP || p.reloadEnd || p.mag <= 0) return false;
+  p.lastShot = t; p.mag--; p.shots++;
+  const W = worldOf(room);
+  let tw = SHOT_RANGE;                                                               // nearest world occluder
+  for (const c of W.colliders) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, c); if (d > 0.1 && d < tw) tw = d; }
+  let target = null, th = tw;
+  for (const h of hidersOf(room)) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, hiderBox(room, h, posAt(h, T))); if (d >= 0 && d < th) { th = d; target = h; } }
+  const d = target ? th : tw;
+  for (const q of room.players.values()) if (q !== p) q.reveal.set(p.id, t + REVEAL_S);  // the muzzle flash gives the shooter away
+  broadcast(room, { t: 'shot', by: p.id, hit: target ? target.id : 0, x: r2(ox + ux * d), y: r2(oy + uy * d), z: r2(oz + uz * d), ox: r2(ox), oy: r2(oy), oz: r2(oz) });
+  if (target) {
+    p.hits++; p.tags++; p.score += 3; p.res += REFUND;
+    Object.assign(target, { role: 'seeker', disguise: null, tint: null, tagT: t, hp: HP0, mag: MAG, res: 0, reloadEnd: 0 }); // infection: new seeker, one mag
+    const hl = hidersOf(room).length;
+    broadcast(room, { t: 'tagged', by: p.id, target: target.id, hl });
+    sendAmmo(target);
+  } else p.hp -= MISS_DMG;
+  sendAmmo(p);
+  if (p.hp <= 0) { p.out = true; broadcast(room, { t: 'out', id: p.id }); }
+  if (!hidersOf(room).length) endRound(room, 'seekers'); else checkRound(room);
+  return true;
+}
+function doTag(room, p, target) { // classic tag, range already checked
+  p.lastTag = now();
+  target.role = 'seeker';
+  p.score += 3; p.tags++;
+  const hl = hidersOf(room).length;
+  broadcast(room, { t: 'tagged', by: p.id, target: target.id, hl });
+  if (!hl) endRound(room, 'seekers');
+}
+
+// ======================================================================
+// bots: server-side AI over the shared nav grid (same ideas as src/ai: hiders run to a spot and crouch, seekers patrol, look, chase)
+// ======================================================================
+const COS35 = Math.cos(35 * Math.PI / 180);
+function pickSpot(room, b, avoid) {
+  const all = BOTSPOTS[room.map], taken = new Set();
+  for (const q of room.players.values()) if (q !== b && q.spot) taken.add(q.spot);
+  let c = all.filter((s) => !taken.has(s) && (!avoid || Math.hypot(s.x - avoid.x, s.z - avoid.z) > 10));
+  if (!c.length) c = all;
+  return c[(Math.random() * c.length) | 0];
+}
+function goTo(room, b, x, z, st, speed) { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.st = st; b.speed = speed; }
+function botHear(room, b, x, z) { // a seeker bot walks over to a noise
+  if (b.role !== 'seeker' || b.st === 'chase' || room.phase !== 'seek') return;
+  goTo(room, b, x + (Math.random() - 0.5) * 3, z + (Math.random() - 0.5) * 3, 'investigate', 3.6);
+}
+function nextSearch(room, b) {
+  let c = BOTSPOTS[room.map].filter((s) => !b.visited.has(s));
+  if (!c.length) { b.visited.clear(); c = BOTSPOTS[room.map].slice(); }
+  c.sort((a, d) => Math.hypot(a.x - b.x, a.z - b.z) - Math.hypot(d.x - b.x, d.z - b.z));
+  const s = c.slice(0, 3)[(Math.random() * Math.min(3, c.length)) | 0]; b.visited.add(s);
+  const d = Math.hypot(s.x - b.x, s.z - b.z), k = d > 1.8 ? (d - 1.5) / d : 0; // stop short so it looks at the spot
+  const base = Math.atan2(s.x - b.x, s.z - b.z);
+  goTo(room, b, b.x + (s.x - b.x) * k, b.z + (s.z - b.z) * k, 'patrol', 2.7);
+  b.base = base; // look toward the spot on arrival
+}
+function botThink(room, b, t, dt) {
+  const nav = NAVS[room.map];
+  if (b.role === 'hider') {
+    if (b.st === 'init') { b.spot = pickSpot(room, b); goTo(room, b, b.spot.x, b.spot.z, 'run', 4.5); b.fleeCd = 3; }
+    if (b.st === 'run') {
+      b.c = Math.max(0, b.c - dt * 4);
+      if (nav.follow(b, b.speed, dt)) {
+        b.st = 'hide';
+        if (room.mode === 'prophunt') { // become the nearest prop
+          let best = null, bd = DISGUISE_RANGE;
+          worldOf(room).props.forEach((pr) => { const d = Math.hypot(b.x - pr.x, b.z - pr.z) - Math.max(pr.w, pr.d) / 2; if (d < bd) { bd = d; best = pr; } });
+          if (best) applyDisguise(room, b, best.id);
+        }
+      }
+    } else if (b.st === 'hide') {
+      b.c = Math.min(1, b.c + dt * 4); b.fleeCd -= dt;
+      if (b.fleeCd <= 0 && Math.random() < dt * 0.9) {
+        const s = seekersOf(room).find((q) => Math.hypot(q.x - b.x, q.z - b.z) < 2.6 && nav.losClear(q.x, q.y + 1.5, q.z, b.x, b.y + 0.5, b.z));
+        if (s) { if (b.disguise != null) applyDisguise(room, b, null); b.spot = pickSpot(room, b, s); goTo(room, b, b.spot.x, b.spot.z, 'run', 6.2); }
+      }
+    }
+  } else if (room.phase === 'seek' && !b.out) {
+    const ey = b.y + 1.5, fx = Math.sin(b.heading), fz = Math.cos(b.heading);
+    let tgt = null, td = 1e9;
+    for (const h of hidersOf(room)) { // vision: 35 degree cone, 12 m (2.5 m if the hider is a prop), line of sight
+      const dx = h.x - b.x, dz = h.z - b.z, d = Math.hypot(dx, dz);
+      if (d >= (h.disguise != null ? 2.5 : 12) || d >= td) continue;
+      if (!(d < 1.1 || (dx * fx + dz * fz) / d > COS35)) continue;
+      if (nav.losClear(b.x, ey, b.z, h.x, h.y + 0.5, h.z) || nav.losClear(b.x, ey, b.z, h.x, h.y + 1.3, h.z)) { td = d; tgt = h; }
+    }
+    if (tgt) { b.detect = Math.min(1, b.detect + dt / 0.6); b.last = { x: tgt.x, z: tgt.z }; b.lostT = 0; if (b.st !== 'chase') { b.st = 'chase'; b.rep = 0; } } else b.detect = Math.max(0, b.detect - dt * 0.9);
+    switch (b.st) {
+      case 'chase':
+        if (tgt) {
+          b.rep -= dt; if (b.rep <= 0) { b.path = nav.findPath(b.x, b.z, tgt.x, tgt.z); b.pi = 0; b.rep = 0.3; }
+          if (room.mode === 'classic') {
+            nav.follow(b, 5.1, dt);
+            if (td < 2.8 && b.detect >= 0.7 && t - b.lastTag >= 0.3) doTag(room, b, tgt);
+          } else {
+            if (td > 9) nav.follow(b, 5.1, dt);
+            if (b.detect >= 1 && td < 25) {
+              const bx = hiderBox(room, tgt), cx = (bx.x0 + bx.x1) / 2, cy = (bx.y0 + bx.y1) / 2, cz = (bx.z0 + bx.z1) / 2;
+              let ux = cx - b.x + (Math.random() - 0.5) * 0.12 * td, uy = cy - ey + (Math.random() - 0.5) * 0.12 * td, uz = cz - b.z + (Math.random() - 0.5) * 0.12 * td;
+              const l = Math.hypot(ux, uy, uz) || 1; ux /= l; uy /= l; uz /= l;
+              b.heading = Math.atan2(cx - b.x, cz - b.z);
+              if (b.mag <= 0) { if (b.res > 0 && !b.reloadEnd) startReload(b); }
+              else if (t - (b.botFire || 0) > 0.7) { b.botFire = t; fireShot(room, b, b.x, ey, b.z, ux, uy, uz, Date.now()); }
+            }
+          }
+        } else {
+          b.lostT += dt; nav.follow(b, 5.1, dt);
+          if (b.lostT > 2.5 || b.pi >= b.path.length) { if (b.last) goTo(room, b, b.last.x, b.last.z, 'investigate', 3.6); else nextSearch(room, b); b.lostT = 0; }
+        }
+        break;
+      case 'patrol': case 'investigate':
+        if (nav.follow(b, b.speed, dt)) { b.st = 'look'; b.timer = 2.2; if (b.base == null) b.base = b.heading; }
+        break;
+      case 'look':
+        b.timer -= dt; b.heading = b.base + Math.sin((2.2 - b.timer) * 3) * 0.9;
+        if (b.timer <= 0) nextSearch(room, b);
+        break;
+      default: nextSearch(room, b);
+    }
+  }
+  b.yaw = b.heading - Math.PI; // clients draw yaw so that the avatar faces +z at heading 0
+}
+
+// ======================================================================
 // websocket
 // ======================================================================
+
+
+const refuse = (p) => { send(p, { t: 'err', msg: PR.REFRESH_MSG }); p.ws.close(1008, 'protocol'); };
+
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 
 const handlers = {
+  hello(p, m) { // first message on every connection; a different protocol version is refused instead of desyncing
+    if (m.protocol !== PR.PROTOCOL) return refuse(p);
+    p.ok = true;
+    send(p, { t: 'ping', s: Date.now(), rtt: 0 });
+  },
+  pong(p, m) { // server-measured round trip: lag compensation never trusts a client-reported value
+    const rtt = typeof m.s === 'number' ? (Date.now() - m.s) / 1000 : -1;
+    if (rtt >= 0 && rtt < 5) p.rtt = p.rtt ? p.rtt * 0.7 + rtt * 0.3 : rtt;
+  },
+  reconnect(p, m, conn) { // take over a player whose socket dropped within the last 30 s of a live round
+    const old = typeof m.token === 'string' ? tokens.get(m.token) : null;
+    if (!old || !old.disc || !old.room || Date.now() - old.disc > PR.RECONNECT_SECS * 1000) return send(p, { t: 'err', msg: 'Session expired' });
+    if (old.ws.readyState === 1) old.ws.terminate();
+    old.ws = p.ws; old.ok = true; old.disc = 0; old.sent = new Map(); old.seen = new Map(); old.rtt = p.rtt;
+    p.ws.alive = true; conn.p = old;
+    const room = old.room;
+    send(old, roomMsg(room, old));
+    broadcast(room, { t: 'conn', id: old.id, on: true }, old);
+    if (room.phase === 'hide' || room.phase === 'seek') {
+      send(old, { t: 'round', resume: 1, phase: room.phase, mode: room.mode, map: room.map, seekers: seekersOf(room).map((q) => q.id), spawns: [{ id: old.id, x: r2(old.x), z: r2(old.z), yaw: r2(old.yaw) }], hide: HIDE_SECS, seek: SEEK_SECS, tl: Math.max(0, r2(room.phaseEnd - now())), role: old.role, score: old.score });
+      for (const q of room.players.values()) { if (q.disguise != null) send(old, { t: 'disguise', id: q.id, propId: q.disguise }); if (q.tint != null) send(old, { t: 'camo', id: q.id, c: q.tint }); }
+      if (room.mode === 'prophunt') { if (old.role === 'seeker') sendAmmo(old); if (room.pickup) send(old, { t: 'pickup', x: room.pickup.x, z: room.pickup.z }); }
+    }
+  },
   create(p, m) {
     if (p.room) leaveRoom(p);
     p.name = cleanName(m.name);
-    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode: 'classic', map: 'house', pickup: null, pickupDone: false, pickupAt: 0, t0: 0 };
+    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode: 'classic', map: 'house', pickup: null, pickupDone: false, pickupAt: 0, t0: 0, fill: false, botN: 0, lt: 0 };
     rooms.set(room.code, room);
     joinRoom(p, room);
   },
@@ -261,10 +517,11 @@ const handlers = {
     if (!room) return send(p, { t: 'err', msg: 'Room not found' });
     if (p.room === room) return sendRoom(room);
     if (room.phase !== 'lobby') return send(p, { t: 'err', msg: 'Round in progress, try again in a moment' });
-    if (room.players.size >= MAX_PLAYERS) return send(p, { t: 'err', msg: 'Room is full' });
+    if (humansOf(room).length >= MAX_PLAYERS) return send(p, { t: 'err', msg: 'Room is full' });
     if (p.room) leaveRoom(p);
     p.name = cleanName(m.name);
-    joinRoom(p, room);
+    joinRoom(p, room, true);
+    syncBots(room); sendRoom(room);
   },
   leave(p) { leaveRoom(p); },
   mode(p, m) { // host picks the game mode in the lobby
@@ -276,6 +533,11 @@ const handlers = {
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby' || typeof m.map !== 'string' || !Object.hasOwn(MAPS, m.map)) return;
     room.map = m.map; sendRoom(room);
+  },
+  fill(p, m) { // host toggles "fill with bots"
+    const room = p.room;
+    if (!room || room.hostId !== p.id || room.phase !== 'lobby' || typeof m.on !== 'boolean') return;
+    room.fill = m.on; syncBots(room); sendRoom(room);
   },
   cosmetic(p, m) { // colour from the palette, hat / outfit from the enums; anything else is rejected whole
     const room = p.room;
@@ -290,6 +552,7 @@ const handlers = {
   start(p) {
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby') return;
+    syncBots(room);
     if (room.players.size < MIN_PLAYERS) return send(p, { t: 'err', msg: 'Need at least 2 players' });
     startRound(room);
   },
@@ -302,10 +565,17 @@ const handlers = {
     const bd = worldOf(room).meta.bounds;
     const x = num(m.x, bd.x0 - 0.5, bd.x1 + 0.5), y = num(m.y, 0, 8), z = num(m.z, bd.z0 - 0.5, bd.z1 + 0.5), yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -1.6, 1.6), c = num(m.c, 0, 1);
     if (x === null || y === null || z === null || yaw === null || pitch === null || c === null) return;
+    const seq = Number.isInteger(m.s) ? m.s & 0xffff : null;
     const dt = Math.min(1, (t - p.lastPos) / 1000);
-    if (Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 0.5) return;
+    // speed check. The per-move rule is the original one; the bucket (9 m/s of server time, capped at BUDGET_CAP) additionally
+    // accepts a move that jitter or a dropped packet made look too fast, without ever allowing more than 9 m/s on average.
+    p.budget = Math.min(BUDGET_CAP, p.budget + ((t - p.budgetT) / 1000) * MAX_SPEED); p.budgetT = t;
+    const dist = Math.hypot(x - p.x, z - p.z);
+    if (dist > MAX_SPEED * dt + 0.5 && dist > p.budget) { if (seq !== null) p.ack = seq; return; } // refused: the ack tells the client to snap back to our position
+    p.budget = Math.max(0, p.budget - dist);
     p.lastPos = t;
     p.x = x; p.y = y; p.z = z; p.yaw = yaw; p.pitch = pitch; p.c = c;
+    if (seq !== null) p.ack = seq;
   },
   // ----- prop hunt
   disguise(p, m) { // hider becomes a prop (propId) or reverts (null)
@@ -320,8 +590,7 @@ const handlers = {
       if (Math.hypot(p.x - pr.x, p.z - pr.z) > DISGUISE_RANGE + Math.max(pr.w, pr.d) / 2) return; // must be near the prop
       id = m.propId;
     }
-    p.lastDisguise = t; p.disguise = id; p.tint = null;
-    broadcast(room, { t: 'disguise', id: p.id, propId: id });
+    applyDisguise(room, p, id);
   },
   camo(p, m) { // tint toward a sampled surface colour
     const room = p.room;
@@ -336,9 +605,10 @@ const handlers = {
     if (!room || room.mode !== 'prophunt' || (room.phase !== 'hide' && room.phase !== 'seek') || p.role !== 'hider') return;
     const t = now(); if (t - p.lastTaunt < TAUNT_CD - CD_SLACK) return;
     p.lastTaunt = t; p.score += 2;
+    for (const q of room.players.values()) if (q !== p) q.reveal.set(p.id, t + REVEAL_S); // a taunt is a sound the whole room hears
     broadcast(room, { t: 'taunt', id: p.id, x: r2(p.x), z: r2(p.z) });
   },
-  shoot(p, m) { // authoritative blaster: validate, raycast hiders and world, apply economy
+  shoot(p, m) { // authoritative blaster: validate, rewind hiders to what the shooter saw, raycast hiders and world, apply economy
     const room = p.room;
     if (!room || room.mode !== 'prophunt' || room.phase !== 'seek' || p.role !== 'seeker' || p.out || p.hp <= 0) return;
     const ox = num(m.ox, -40, 40), oy = num(m.oy, -1, 10), oz = num(m.oz, -40, 40), dx = num(m.dx, -1.5, 1.5), dy = num(m.dy, -1.5, 1.5), dz = num(m.dz, -1.5, 1.5);
@@ -346,33 +616,15 @@ const handlers = {
     const len = Math.hypot(dx, dy, dz);
     if (Math.abs(len - 1) > 0.05) return;                                              // direction must be a unit vector
     if (Math.hypot(ox - p.x, oz - p.z) > ORIGIN_TOL || oy < p.y || oy > p.y + 2.2) return sendAmmo(p); // origin near where the seeker really is
-    const t = now();
-    if (t - p.lastShot < FIRE_GAP || p.reloadEnd || p.mag <= 0) return sendAmmo(p);
-    p.lastShot = t; p.mag--; p.shots++;
-    const ux = dx / len, uy = dy / len, uz = dz / len;
-    const W = worldOf(room);
-    let tw = SHOT_RANGE;                                                               // nearest world occluder
-    for (const c of W.colliders) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, c); if (d > 0.1 && d < tw) tw = d; }
-    let target = null, th = tw;
-    for (const h of hidersOf(room)) { const d = W.rayBox(ox, oy, oz, ux, uy, uz, hiderBox(room, h)); if (d >= 0 && d < th) { th = d; target = h; } }
-    const d = target ? th : tw;
-    broadcast(room, { t: 'shot', by: p.id, hit: target ? target.id : 0, x: r2(ox + ux * d), y: r2(oy + uy * d), z: r2(oz + uz * d), ox: r2(ox), oy: r2(oy), oz: r2(oz) });
-    if (target) {
-      p.hits++; p.tags++; p.score += 3; p.res += REFUND;
-      Object.assign(target, { role: 'seeker', disguise: null, tint: null, tagT: t, hp: HP0, mag: MAG, res: 0, reloadEnd: 0 }); // infection: new seeker, one mag
-      const hl = hidersOf(room).length;
-      broadcast(room, { t: 'tagged', by: p.id, target: target.id, hl });
-      sendAmmo(target);
-    } else p.hp -= MISS_DMG;
-    sendAmmo(p);
-    if (p.hp <= 0) { p.out = true; broadcast(room, { t: 'out', id: p.id }); }
-    if (!hidersOf(room).length) endRound(room, 'seekers'); else checkRound(room);
+    // the shooter saw hiders one way trip plus its own interpolation delay (`d`, claimed by the client, clamped to 0.2 s) in the past; never more than MAX_REWIND
+    const rewind = Math.min(PR.MAX_REWIND, p.rtt / 2 + (num(m.d, 0, 0.2) ?? 0));
+    if (!fireShot(room, p, ox, oy, oz, dx / len, dy / len, dz / len, Date.now() - rewind * 1000)) sendAmmo(p);
   },
   reload(p) {
     const room = p.room;
     if (!room || room.mode !== 'prophunt' || room.phase !== 'seek' || p.role !== 'seeker' || p.out) return;
     if (p.reloadEnd || p.mag >= MAG || p.res <= 0) return sendAmmo(p);
-    p.reloadEnd = now() + RELOAD_S; sendAmmo(p);
+    startReload(p);
   },
   grab(p) { // pick up the ammo crate when close enough
     const room = p.room, c = room && room.pickup;
@@ -388,34 +640,42 @@ const handlers = {
     const t = now();
     if (t - p.lastTag < 0.3) return;
     if (Math.hypot(target.x - p.x, target.z - p.z) > TAG_RANGE) return;
-    p.lastTag = t;
-    target.role = 'seeker';
-    p.score += 3; p.tags++;
-    const hl = hidersOf(room).length;
-    broadcast(room, { t: 'tagged', by: p.id, target: target.id, hl });
-    if (!hl) endRound(room, 'seekers');
+    doTag(room, p, target);
   },
-  noise(p, m) {
+  noise(p, m) { // a cue only goes to players within hearing range, and the maker's position is revealed to them for a moment
     const room = p.room;
     if (!room || room.phase === 'lobby' || (m.k !== 'sprint' && m.k !== 'land' && m.k !== 'scrape')) return;
     const t = Date.now();
     if (t - p.lastNoise < 200) return;
     p.lastNoise = t;
-    broadcast(room, { t: 'noise', id: p.id, k: m.k, x: r2(p.x), z: r2(p.z) }, p);
+    const s = now(), msg = { t: 'noise', id: p.id, k: m.k, x: r2(p.x), z: r2(p.z) };
+    for (const q of room.players.values()) {
+      if (q === p || Math.hypot(q.x - p.x, q.z - p.z) > NOISE_RANGE) continue;
+      q.reveal.set(p.id, s + REVEAL_S);
+      if (q.bot) botHear(room, q, p.x, p.z); else send(q, msg);
+    }
   },
 };
 
 wss.on('connection', (ws) => {
-  const p = {
-    id: nextId++, ws, name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
-    x: 0, y: 0, z: 0, yaw: 0, pitch: 0, c: 0, lastPos: 0, lastTag: 0, lastNoise: 0, tokens: 120, tokT: Date.now(),
-  };
-  ws.alive = true;
+  const conn = { p: newPlayer(ws) };
+  ws.conn = conn; ws.alive = true;
   ws.on('pong', () => { ws.alive = true; });
   ws.on('error', (e) => console.warn('ws error', e.message));
-  ws.on('close', () => { try { leaveRoom(p); } catch (e) { console.error('close handler error', e); } });
+  ws.on('close', (code) => {
+    try {
+      const p = conn.p;
+      if (p.ws !== ws) return; // this socket was already replaced by a reconnect
+      // 1006 = the link died without a close frame (network drop, killed tab, sleeping phone): in a live round keep the seat for the
+      // reconnect window. A close frame (the player pressed leave or closed the page) frees the seat at once.
+      if (code === 1006 && p.room && (p.room.phase === 'hide' || p.room.phase === 'seek')) {
+        p.disc = Date.now(); broadcast(p.room, { t: 'conn', id: p.id, on: false }, p);
+      } else leaveRoom(p);
+    } catch (e) { console.error('close handler error', e); }
+  });
   ws.on('message', (raw, isBinary) => {
     ws.alive = true;
+    const p = conn.p;
     // token bucket: 60 msgs/s sustained, bursts of 120
     const t = Date.now();
     p.tokens = Math.min(120, p.tokens + ((t - p.tokT) / 1000) * 60); p.tokT = t;
@@ -425,9 +685,10 @@ wss.on('connection', (ws) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
     if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+    if (!p.ok && m.t !== 'hello') return refuse(p); // a client that skips hello is an older build
     const h = Object.hasOwn(handlers, m.t) ? handlers[m.t] : null;
     if (!h) return;
-    try { h(p, m); } catch (e) { console.error('handler error', m.t, e); }
+    try { h(p, m, conn); } catch (e) { console.error('handler error', m.t, e); }
   });
 });
 
@@ -438,12 +699,22 @@ setInterval(() => {
     ws.alive = false; ws.ping();
   }
 }, 15000).unref();
+// app-level ping every second: the client echoes it (`pong`) so the server knows each player's rtt for lag compensation
+setInterval(() => {
+  for (const ws of wss.clients) { const p = ws.conn?.p; if (p?.ok) send(p, { t: 'ping', s: Date.now(), rtt: r2(p.rtt) }); }
+}, 1000).unref();
+setInterval(() => { try { sampleHistory(); } catch (e) { console.error('history error', e); } }, 1000 / 30).unref();
 
 const port = process.env.PORT || 3000;
-// the shared worlds (colliders + prop table per map) are an ES module; build them all before accepting connections
-import('../src/shared/worlddata.js').then((m) => {
-  MAPS = m.MAPS; WORLDS = {};
-  for (const [id, map] of Object.entries(MAPS)) WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
+// the shared modules (colliders + prop table per map, nav, protocol) are ES modules; load them all before accepting connections
+Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js')]).then(([m, proto, nav]) => {
+  PR = proto; MAPS = m.MAPS; WORLDS = {}; NAVS = {}; BOTSPOTS = {};
+  for (const [id, map] of Object.entries(MAPS)) {
+    WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
+    NAVS[id] = nav.createNav(WORLDS[id].colliders); NAVS[id].buildNav();
+    const reach = NAVS[id].reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);
+    BOTSPOTS[id] = map.spots.filter((s) => map.meta.trusted || reach(s.x, s.z)); // same sealed-pocket filter as the client AI
+  }
   if (!fs.existsSync(path.join(ROOT, 'index.html'))) console.warn('dist/ is missing: run `npm run build` (only /ws and /health will work)');
   server.listen(port, () => console.log(`Hide & Seek on http://localhost:${port} (${Object.entries(WORLDS).map(([id, w]) => `${id}: ${w.colliders.length} colliders, ${w.props.length} props`).join('; ')})`));
-}).catch((e) => { console.error('failed to load src/shared/worlddata.js', e); process.exit(1); });
+}).catch((e) => { console.error('failed to load src/shared', e); process.exit(1); });

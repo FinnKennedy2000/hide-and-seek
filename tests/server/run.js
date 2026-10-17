@@ -4,7 +4,7 @@ const net = require('node:net');
 const path = require('node:path');
 
 const free = () => new Promise((res) => { const s = net.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => res(p)); }); });
-const tests = ['core.test.js', 'worlddata.test.js', 'mp-test.js', 'mp-test2.js', 'mp-test3.js'];
+const tests = ['core.test.js', 'worlddata.test.js', 'mp-test.js', 'mp-test2.js', 'mp-test3.js', 'netcode.test.js'];
 
 (async () => {
   const port = await free();

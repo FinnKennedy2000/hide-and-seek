@@ -1,6 +1,7 @@
 // Map selection (Late Shop) integration test. Run via `npm run test:server`
 // Server must be started with HIDE_SECS=1 SEEK_SECS=20.
 const WebSocket = require('ws');
+const WIRE = require('./wire.js');
 const SERVER = process.env.URL || 'ws://localhost:3458/ws';
 let pass = 0, fail = 0; const failed = [];
 const ok = (c, name) => { c ? pass++ : (fail++, failed.push(name)); console.log((c ? 'PASS ' : 'FAIL ') + name); };
@@ -9,12 +10,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function client(label) {
   const ws = new WebSocket(SERVER), log = [], waiters = [];
   const c = { label, ws, log, id: 0 };
-  ws.on('message', (d) => {
-    const m = JSON.parse(d); log.push(m);
+  ws.on('message', (d, bin) => {
+    const m = WIRE.parse(d, bin); if (!m) return; log.push(m);
     if (m.t === 'room') c.id = m.you;
     for (const w of [...waiters]) if (w.f(m)) { waiters.splice(waiters.indexOf(w), 1); w.r(m); }
   });
-  c.open = new Promise((r) => ws.on('open', r));
+  c.open = new Promise((r) => ws.on('open', () => { WIRE.hello(ws); r(); }));
   c.send = (t, d) => ws.send(JSON.stringify({ t, ...d }));
   c.wait = (f, ms = 3000) => new Promise((res, rej) => {
     const hit = log.find(f); if (hit) { log.splice(log.indexOf(hit), 1); return res(hit); }
@@ -24,12 +25,12 @@ function client(label) {
   c.none = async (f, ms = 500) => { await sleep(ms); return !log.some(f); };
   return c;
 }
-// walk in <=0.8m steps every 45ms (server drops moves faster than ~9 m/s)
+// walk in 0.4m steps every 50ms = 8 m/s (the server refuses moves faster than 9 m/s)
 const pos = async (c, x, z) => {
   for (;;) {
-    const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = Math.min(1, 0.8 / (d || 1));
+    const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = Math.min(1, 0.4 / (d || 1));
     c.at = [cx + (x - cx) * s, cz + (z - cz) * s];
-    c.send('pos', { x: c.at[0], y: 0, z: c.at[1], yaw: 0, pitch: 0, c: 0 }); await sleep(45);
+    c.send('pos', { x: c.at[0], y: 0, z: c.at[1], yaw: 0, pitch: 0, c: 0 }); await sleep(50);
     if (s === 1) return;
   }
 };
@@ -78,6 +79,7 @@ async function mapGame(n, map, mode = 'prophunt') {
 }
 
 (async () => {
+  await WIRE.ready;
   const WD = await import('../../src/shared/worlddata.js');
   const LS = WD.MAPS.lateshop, W = WD.buildWorld({}, 'lateshop'), HW = WD.buildWorld({}, 'house');
   const tests = []; const test = (name, fn) => tests.push([name, fn]);
@@ -165,7 +167,8 @@ async function mapGame(n, map, mode = 'prophunt') {
     const g = await mapGame(2, 'lateshop', 'classic'); const [H] = g.hiders;
     // server clamps to bounds+0.5: a client claiming x=23.8 ends up at 22.5, which shows in snapshots
     await pos(H, 22, 0); await sleep(60); H.send('pos', { x: 22.9, y: 0, z: 0, yaw: 0, pitch: 0, c: 0 }); await sleep(200);
-    const snap = await g.seeker.wait((m) => m.t === 'snap' && m.p.some((q) => q[0] === H.id && q[1] > 22.3), 1500);
+    // (read it from the hider's own snapshot entry: interest management no longer shows a hider behind the shop wall to the seeker)
+    const snap = await H.wait((m) => m.t === 'snap' && m.p.some((q) => q[0] === H.id && q[1] > 22.3), 1500);
     ok(snap.p.find((q) => q[0] === H.id)[1] <= 22.5 + 1e-6, 'x clamped to bounds + 0.5 on lateshop');
     g.close();
   });

@@ -4,7 +4,21 @@ import { scene } from '../render/renderer.js';
 import { makePropClone } from '../world/build.js';
 import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint } from '../characters/index.js';
 
-const INTERP = 0.1; // render remote players 100ms in the past
+// Remote players are drawn in the past on the SERVER's clock: every snapshot carries the server time, `clock` maps it to local time
+// (tracking the fastest packets) and the delay grows with measured jitter, so a late packet is absorbed instead of rubber-banding.
+const INTERP_MIN = 0.1, INTERP_MAX = 0.3;
+const clock = { st0: null, off: 0, jit: 0, delay: INTERP_MIN };
+export const interpDelay = () => clock.delay;
+export const resetClock = () => { clock.st0 = null; clock.jit = 0; clock.delay = INTERP_MIN; };
+// call once per snapshot with its server ms and the local arrival time (s); returns the snapshot's time in server seconds
+export function syncClock(stMs, local) {
+  if (clock.st0 === null) { clock.st0 = stMs; clock.off = local; clock.jit = 0; }
+  const s = ((stMs - clock.st0) | 0) / 1000, d = local - s;
+  clock.off = Math.min(d, clock.off + 0.001);                 // fastest packet = best estimate; creeps up to follow drift and route changes
+  clock.jit += (d - clock.off - clock.jit) * 0.1;             // smoothed lateness vs the fastest packet
+  clock.delay += (Math.min(INTERP_MAX, INTERP_MIN + 2 * clock.jit) - clock.delay) * 0.05;
+  return s;
+}
 export const remotes = new Map(); // id -> avatar
 export const opts = { cone: true, hideHiders: false }; // set per round by online.js
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -92,7 +106,8 @@ export function animAvatar(a, dt) {
 export function addRemote(id, name, color, seeker, hat, pattern) {
   removeRemote(id);
   const a = makeAvatar(name, color, seeker, hat, pattern);
-  Object.assign(a, { id, buf: [], x: 0, y: 0, z: 0, c: 0, px: null, py: 0, pz: 0 });
+  Object.assign(a, { id, buf: [], x: 0, y: 0, z: 0, c: 0, px: null, py: 0, pz: 0, gone: true }); // hidden until the server first sends it (interest management)
+  a.root.visible = false;
   remotes.set(id, a);
   return a;
 }
@@ -103,19 +118,28 @@ export function removeRemote(id) {
 }
 export function clearRemotes() { for (const id of [...remotes.keys()]) removeRemote(id); }
 
+// t: server seconds (syncClock). The server only sends a player when its state changed, so after a quiet spell hold the last pose
+// until just before the new sample instead of gliding across the whole gap.
 export function pushSnap(id, t, x, y, z, yaw, pitch, c) {
   const a = remotes.get(id); if (!a) return;
+  a.gone = false;
+  const last = a.buf[a.buf.length - 1];
+  if (last && t - last.t > 0.15) a.buf.push({ ...last, t: t - 0.067 });
   a.buf.push({ t, x, y, z, yaw, c });
   if (a.buf.length > 30) a.buf.shift();
 }
+
+// the server stopped sending this player (out of sight and earshot): hide the avatar and forget its track
+export function hideRemote(id) { const a = remotes.get(id); if (a) { a.gone = true; a.buf.length = 0; a.px = null; a.root.visible = false; } }
 
 const lerp = (a, b, k) => a + (b - a) * k;
 const lerpAngle = (a, b, k) => a + (((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * k;
 
 // localSeeker: seekers never see hiders' name tags (and a disguised hider never has one)
 export function updateRemotes(now, localSeeker = false, dt = 0) {
-  const rt = now - INTERP;
+  const rt = now - clock.off - clock.delay; // server seconds
   for (const a of remotes.values()) {
+    if (a.gone) continue;
     const b = a.buf;
     while (b.length >= 2 && b[1].t <= rt) b.shift();
     if (!b.length) continue;

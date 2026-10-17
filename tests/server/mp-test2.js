@@ -1,6 +1,7 @@
 // Prop Hunt + lobby integration test. Run via `npm run test:server` (needs a server: HIDE_SECS=1 SEEK_SECS=20)
 // Server must be started with HIDE_SECS=1 SEEK_SECS=20.
 const WebSocket = require('ws');
+const WIRE = require('./wire.js');
 const SERVER = process.env.URL || 'ws://localhost:3458/ws';
 let pass = 0, fail = 0; const failed = [];
 const ok = (c, name) => { c ? pass++ : (fail++, failed.push(name)); console.log((c ? 'PASS ' : 'FAIL ') + name); };
@@ -9,12 +10,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function client(label) {
   const ws = new WebSocket(SERVER), log = [], waiters = [];
   const c = { label, ws, log, id: 0 };
-  ws.on('message', (d) => {
-    const m = JSON.parse(d); log.push(m);
+  ws.on('message', (d, bin) => {
+    const m = WIRE.parse(d, bin); if (!m) return; log.push(m);
     if (m.t === 'room') c.id = m.you;
     for (const w of [...waiters]) if (w.f(m)) { waiters.splice(waiters.indexOf(w), 1); w.r(m); }
   });
-  c.open = new Promise((r) => ws.on('open', r));
+  c.open = new Promise((r) => ws.on('open', () => { WIRE.hello(ws); r(); }));
   c.send = (t, d) => ws.send(JSON.stringify({ t, ...d }));
   c.wait = (f, ms = 3000) => new Promise((res, rej) => {
     const hit = log.find(f); if (hit) { log.splice(log.indexOf(hit), 1); return res(hit); }
@@ -24,12 +25,12 @@ function client(label) {
   c.none = async (f, ms = 500) => { await sleep(ms); return !log.some(f); };
   return c;
 }
-// walk in <=0.8m steps every 45ms (server drops moves faster than ~9 m/s)
+// walk in 0.4m steps every 50ms = 8 m/s (the server refuses moves faster than 9 m/s)
 const pos = async (c, x, z) => {
   for (;;) {
-    const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = Math.min(1, 0.8 / (d || 1));
+    const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = Math.min(1, 0.4 / (d || 1));
     c.at = [cx + (x - cx) * s, cz + (z - cz) * s];
-    c.send('pos', { x: c.at[0], y: 0, z: c.at[1], yaw: 0, pitch: 0, c: 0 }); await sleep(45);
+    c.send('pos', { x: c.at[0], y: 0, z: c.at[1], yaw: 0, pitch: 0, c: 0 }); await sleep(50);
     if (s === 1) return;
   }
 };
@@ -64,6 +65,7 @@ async function game(n = 2, mode = 'prophunt') {
 const ammo = (c, f = () => true, ms = 2000) => c.wait((m) => m.t === 'ammo' && f(m), ms);
 
 (async () => {
+  await WIRE.ready;
   const WD = await import('../../src/shared/worlddata.js');
   const world = WD.buildWorld();
   const { HATS, OUTFITS } = await import('../../src/characters/character.js').catch(() => ({ HATS: ['none', 'cap', 'beanie', 'bucket', 'crown'], OUTFITS: ['plain', 'stripes', 'dots', 'overalls'] }));

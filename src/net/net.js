@@ -1,4 +1,9 @@
-// WebSocket client. Messages are JSON objects: { t: 'type', ...fields }.
+// WebSocket client. Messages are JSON objects: { t: 'type', ...fields }; snapshots are binary (src/shared/protocol.js) and are
+// delivered to onmessage as { t: 'snap', tl, hl, ack, st, p: [[id,x,y,z,yaw,pitch,c,flags], ...] }.
+// The first message on every connection is `hello {protocol}`; the server answers `ping` every second (answered with `pong` here, which is how it measures rtt).
+import { PROTOCOL, decodeSnap } from '../shared/protocol.js';
+import { bus, EV } from '../core/bus.js';
+
 export const RAILWAY_HOST = 'hide-and-seek-production-21e1.up.railway.app';
 export const RAILWAY_WS = `wss://${RAILWAY_HOST}/ws`;
 
@@ -20,13 +25,21 @@ export function wsUrl() {
 export function connect({ onopen, onmessage, onclose }) {
   const ws = new WebSocket(wsUrl());
   const to = setTimeout(() => { if (ws.readyState !== 1) { ws.onclose = null; ws.close(); onclose?.('timeout'); } }, 10000);
-  ws.onopen = () => { clearTimeout(to); onopen?.(); };
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { clearTimeout(to); ws.send(JSON.stringify({ t: 'hello', protocol: PROTOCOL })); bus.emit(EV.NET, { kind: 'open' }); onopen?.(); };
   ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') { const s = decodeSnap(e.data); if (s) onmessage?.({ t: 'snap', ...s }); return; }
     let m;
     try { m = JSON.parse(e.data); } catch { return; }
-    if (m && typeof m.t === 'string') onmessage?.(m);
+    if (!m || typeof m.t !== 'string') return;
+    if (m.t === 'ping') { // keep-alive + rtt probe: echo the server's timestamp, surface its rtt estimate
+      if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'pong', s: m.s }));
+      if (m.rtt > 0) bus.emit(EV.NET, { kind: 'rtt', ms: Math.round(m.rtt * 1000) });
+      return;
+    }
+    onmessage?.(m);
   };
-  ws.onclose = () => { clearTimeout(to); onclose?.(); };
+  ws.onclose = () => { clearTimeout(to); bus.emit(EV.NET, { kind: 'close' }); onclose?.(); };
   ws.onerror = (e) => console.warn('websocket error', e); // a close event always follows
   return {
     send(t, data) { if (ws.readyState === 1) ws.send(JSON.stringify({ t, ...data })); },
