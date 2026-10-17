@@ -6,7 +6,7 @@ import { render } from '../render/index.js';
 import { settings } from '../core/settings.js';
 import { bus, EV } from '../core/bus.js';
 import { addSystem, setFrameCap } from '../core/loop.js';
-import { updateCulling, capLights, setLite, bounds } from '../world/build.js';
+import { updateCulling, capLights, setLite, bounds, makePropClone, props } from '../world/build.js';
 import { perf } from './index.js';
 import { budget, TIERS } from './budget.js';
 import { pickTier, benchTier, BENCH } from './tier.js';
@@ -153,5 +153,5 @@ export function initPerf() {
   // ---- repeat visits: hashed assets are cached by the service worker (production builds only)
   if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
-  window.__perf = { st, gov, perf, bounds: () => bounds }; // tests/perf/budget.spec.js
+  window.__perf = { st, gov, perf, bounds: () => bounds, makePropClone, props }; // tests/perf/budget.spec.js
 }
