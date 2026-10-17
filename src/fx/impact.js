@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { scene } from '../render/renderer.js';
 import { burst } from '../render/fx.js';
 import { splatMat } from '../characters/index.js';
+import { settings } from '../core/settings.js';
+
+const PARTICLES = { potato: 2, low: 4, med: 6, high: 10, ultra: 10 };
 
 const MAX = 60, decals = [];
 const geo = new THREE.PlaneGeometry(1, 1), Z = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), qr = new THREE.Quaternion();
@@ -17,6 +20,6 @@ export function splat(point, normal, color) {
 }
 export function impact(point, normal, color) {
   splat(point, normal, color);
-  burst(point.x + normal.x * 0.05, point.y + normal.y * 0.05, point.z + normal.z * 0.05, color, 10, 0.4, 1.4, 0.1);
+  burst(point.x + normal.x * 0.05, point.y + normal.y * 0.05, point.z + normal.z * 0.05, color, PARTICLES[settings.quality] ?? 10, 0.4, 1.4, 0.1);
 }
 export function clearImpacts() { for (const d of decals) scene.remove(d); decals.length = 0; next = 0; }

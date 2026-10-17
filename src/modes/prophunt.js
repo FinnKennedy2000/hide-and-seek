@@ -3,7 +3,7 @@
 // The server is authoritative for everything; this sends requests and renders the broadcasts.
 import * as THREE from 'three';
 import { $, setText } from '../core/util.js';
-import { P, G } from '../core/state.js';
+import { P, G, DEBUG } from '../core/state.js';
 import { keys, mouse } from '../core/input.js';
 import { bus, EV } from '../core/bus.js';
 import { camera } from '../render/renderer.js';
@@ -21,7 +21,7 @@ import { addShake, clearShake } from '../fx/shake.js';
 
 const me = { on: false, id: 0, role: 'hider', send() {}, colorOf: () => 0xffffff, av: null, propId: null, rotLock: false, propRot: 0, rotY: 0, heading: 0, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: 6, res: 12, reloading: false, lastFire: 0, grabT: 0, phase: 'hide', fc: new THREE.Vector3() };
 export const ph = me;
-if (typeof window !== 'undefined') { window.__ph = me; window.__phFire = () => fire(); } // debug + smoke tests
+if (DEBUG) { window.__ph = me; window.__phFire = () => fire(); } // smoke tests only (?debug=1 or dev build)
 const ray = new THREE.Raycaster();
 const _f = new THREE.Vector3(), _p = new THREE.Vector3(), _b = new THREE.Vector3(), _o = new THREE.Vector3(), _q = new THREE.Vector3();
 const QPI = Math.PI / 4;

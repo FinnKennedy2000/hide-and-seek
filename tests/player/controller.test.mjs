@@ -9,7 +9,7 @@ const box = (x0, x1, z0, z1, y0, y1) => ({ x0, x1, z0, z1, y0, y1 });
 const bounds = { x0: -50, x1: 50, z0: -50, z1: 50 };
 const fresh = (o = {}) => ({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, crouch: 0, r: 0.3, ph: 1.7, eyeY: 1.6, mul: 1, fixedPh: 0, airborne: false, stamina: 1, ...o });
 const FWD = { ix: 0, iz: -1, sprint: false, crouch: false, jump: false, can: true }; // yaw 0: forward is -z
-const run = (mo, s, inp, secs, dt = 1 / 60, each) => { const evs = []; for (let i = 0; i < Math.round(secs / dt); i++) { evs.push(mo.step(s, typeof inp === 'function' ? inp(i * dt) : inp, dt)); each?.(); } return evs; };
+const run = (mo, s, inp, secs, dt = 1 / 60, each) => { const evs = []; for (let i = 0; i < Math.round(secs / dt); i++) { evs.push({ ...mo.step(s, typeof inp === 'function' ? inp(i * dt) : inp, dt) }); each?.(); } return evs; };
 
 await RAPIER.init();
 const cols = [box(-5, 5, -3.02, -3, 0, 3), box(-5, 5, -8, -6, 0, 0.25), box(-5, 5, -12, -10, 0, 0.6)]; // wall z=-3, 0.25 m stair at z -8..-6, 0.6 m box at z -12..-10
@@ -62,5 +62,16 @@ for (const [name, mk] of [['rapier', () => rapierBackend(RAPIER, cols)], ['aabb'
   const evB = run(jm, s, (t) => ({ ix: 0, iz: 0, sprint: false, crouch: false, jump: t > 0.0 && t < 0.03, can: true }), 0.4);
   ok(evB.some((e) => e.jumped), 'jump buffer: early press fires on landing');
 }
+{ // headroom: released crouch under a 1.3 m ceiling keeps the player crouched; in the open it stands
+  for (const [name, mk] of [['rapier', () => rapierBackend(RAPIER, [box(-5, 5, -5, 5, 1.3, 1.6)])], ['aabb', () => aabbBackend([box(-5, 5, -5, 5, 1.3, 1.6)])]]) {
+    const mo = createMotion(mk(), bounds), s = fresh({ crouch: 1, ph: 1.0 });
+    run(mo, s, { ix: 0, iz: 0, sprint: false, crouch: true, jump: false, can: true }, 0.8);
+    run(mo, s, { ix: 0, iz: 0, sprint: false, crouch: false, jump: false, can: true }, 0.8);
+    ok(s.crouch > 0.9, `${name}: stays crouched without headroom (crouch=${s.crouch.toFixed(2)})`);
+  }
+}
+{ const mo = createMotion(rapierBackend(RAPIER, []), bounds), s = fresh();
+  run(mo, s, { ix: 0, iz: 0, sprint: false, crouch: false, jump: false, can: true }, 2);
+  ok(Math.abs(s.y) < 0.02 && !s.airborne, `rapier: standing still stays on the floor (y=${s.y.toFixed(3)})`); }
 console.log(fail ? `${fail} FAILED` : 'all passed');
 process.exit(fail ? 1 : 0);

@@ -8,7 +8,7 @@ const errors = (page, list) => {
 
 test('holding W then window blur stops the player within 100 ms', async ({ page }) => {
   const errs = []; errors(page, errs);
-  await page.goto('/');
+  await page.goto('/?debug=1');
   await page.waitForSelector('#btnHide');
   await page.click('#btnHide'); // HIDE mode: the player can move during the countdown
   await page.waitForTimeout(500);
@@ -33,7 +33,7 @@ test('holding W then window blur stops the player within 100 ms', async ({ page 
 test('R reload, boss key for 2 s, boss key again: reloading resolves via the server ammo sync', async ({ browser }) => {
   test.setTimeout(300_000);
   const errs = [];
-  const mk = async () => { const ctx = await browser.newContext(); const page = await ctx.newPage(); errors(page, errs); await page.goto('/'); return { ctx, page }; };
+  const mk = async () => { const ctx = await browser.newContext(); const page = await ctx.newPage(); errors(page, errs); await page.goto('/?debug=1'); return { ctx, page }; };
   const a = await mk(), b = await mk();
   await a.page.click('#btnOnline'); await a.page.fill('#olName', 'Ann'); await a.page.click('#olCreate');
   await a.page.waitForSelector('#lobCode');
