@@ -35,8 +35,18 @@ function flood(blocked, x, z) {
   }
   return seen;
 }
-// a point counts as reachable when its 0.5 m cell or one of the 8 neighbours is (the game snaps spots to the nearest free cell)
-const near = (seen, x, z) => { const ci = cell(x), cj = cell(z); for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const i = ci + di, j = cj + dj; if (i >= 0 && j >= 0 && i < NG && j < NG && seen[j * NG + i]) return true; } return false; };
+// same snap as nav.js nearestFree: a spot's own cell if free, else the closest free cell within 9 cells; the spot counts as reachable if THAT cell is
+const near = (seen, x, z, blocked) => {
+  const ci = cell(x), cj = cell(z);
+  if (!blocked[cj * NG + ci]) return !!seen[cj * NG + ci];
+  let best = null, bd = 1e9;
+  for (let r = 1; r < 10 && !best; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+    const i = ci + di, j = cj + dj;
+    if (i < 0 || j < 0 || i >= NG || j >= NG || blocked[j * NG + i]) continue;
+    const d = di * di + dj * dj; if (d < bd) { bd = d; best = j * NG + i; }
+  }
+  return best !== null && !!seen[best];
+};
 // nearest reachable free point, for fixing a bad spot by hand
 function suggest(blocked, seen, x, z) {
   let best = null, bd = 1e9;
@@ -77,7 +87,7 @@ for (const id of IDS) {
   const bad = [];
   map.spots.forEach((s, i) => {
     const why = [];
-    if (!near(seen, s.x, s.z)) why.push('unreachable');
+    if (!near(seen, s.x, s.z, blocked)) why.push('unreachable');
     if (solid.some((c) => s.x > c.x0 - 0.2 && s.x < c.x1 + 0.2 && s.z > c.z0 - 0.2 && s.z < c.z1 + 0.2)) why.push('inside collider');
     else if (hits(w.colliders, s.x, s.z, 0.25, s.crouch ? 1.0 : 1.7).length) why.push('body overlaps collider');
     if (Math.abs(s.x) > -NMIN || Math.abs(s.z) > -NMIN || s.x < m.bounds.x0 || s.x > m.bounds.x1 || s.z < m.bounds.z0 || s.z > m.bounds.z1) why.push('out of bounds');
@@ -87,7 +97,7 @@ for (const id of IDS) {
   const badSp = [];
   map.spawns.forEach(([x, z], i) => {
     const why = [];
-    if (!near(seen, x, z)) why.push('unreachable');
+    if (!near(seen, x, z, blocked)) why.push('unreachable');
     if (hits(w.colliders, x, z, 0.35, 1.7).length) why.push('overlaps collider');
     if (x < m.bounds.x0 + 0.3 || x > m.bounds.x1 - 0.3 || z < m.bounds.z0 + 0.3 || z > m.bounds.z1 - 0.3) why.push('out of bounds');
     if (why.length) badSp.push(`#${i} (${x}, ${z}): ${why.join(', ')} -> try ${suggest(blocked, seen, x, z)?.join(', ')}`);
