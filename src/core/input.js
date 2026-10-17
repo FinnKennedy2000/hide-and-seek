@@ -5,6 +5,7 @@ import { canvas } from '../render/renderer.js';
 import { P, G } from './state.js';
 import { settings } from './settings.js';
 import { bus, EV } from './bus.js';
+import { bossOn } from '../ui/bossscreen.js';
 
 export const ACTIONS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sprint: 'ShiftLeft', crouch: 'KeyC',
@@ -22,8 +23,11 @@ export function canon(code) {
   return DEFAULTS.has(code) ? null : code;
 }
 // bind `action` to a physical key; if another action already uses that key the two swap
+const RESERVED = new Set(['Escape', 'Tab', 'Backquote', 'KeyP']); // pause / boss keys, handled before game input
 export function rebind(action, code) {
   if (!(action in ACTIONS)) throw new Error(`unknown action ${action}`);
+  if (/^(Control|Meta|Alt)/.test(code)) throw new Error(`${code} cannot be bound: Ctrl, Meta and Alt are browser-shortcut modifiers the game ignores`);
+  if (RESERVED.has(code)) throw new Error(`${code} is reserved (Esc / Tab / P pause, \` boss key)`);
   const cur = { ...ACTIONS, ...settings.binds }, old = cur[action], next = { ...settings.binds };
   for (const a in cur) if (a !== action && cur[a] === code) next[a] = old;
   next[action] = code;
@@ -39,7 +43,7 @@ export const releaseAll = () => { for (const k in keys) keys[k] = false; mouse.a
 const lost = () => { releaseAll(); P.vx = 0; P.vz = 0; };
 export function requestLock() { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch { /* headless / no gesture */ } }
 
-addEventListener('keydown', (e) => { const c = canon(e.code); if (c && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|TEXTAREA/.test(e.target.tagName || '')) keys[c] = true; });
+addEventListener('keydown', (e) => { const c = canon(e.code); if (c && !bossOn() && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|TEXTAREA/.test(e.target.tagName || '')) keys[c] = true; });
 addEventListener('keyup', (e) => { const c = canon(e.code); if (c) keys[c] = false; });
 addEventListener('blur', lost);
 document.addEventListener('visibilitychange', () => { if (document.hidden) lost(); });

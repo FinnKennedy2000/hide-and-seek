@@ -9,6 +9,8 @@ export const TUNE = {
   drain: 0.2, regen: 0.18, regenDelay: 0.7, exhaustBelow: 0, resumeAt: 0.25, // stamina is 0..1: 5 s of sprint
 };
 
+const ev = { jumped: false, landed: 0, slid: false, sprinting: false, sliding: false }; // reused every step: read it before the next step()
+
 export function createMotion(backend, bounds) {
   const m = { coyote: 0, buffer: 0, slideT: 0, slideCd: 0, slideDx: 0, slideDz: 0, regenT: 0, exhausted: false, prevCrouch: false, prevJump: false, wasAir: false };
   return {
@@ -16,7 +18,8 @@ export function createMotion(backend, bounds) {
     reset() { Object.assign(m, { coyote: 0, buffer: 0, slideT: 0, slideCd: 0, regenT: 0, exhausted: false, prevCrouch: false, prevJump: false, wasAir: false }); },
     // inp: {ix, iz, sprint, crouch, jump, can}; returns {jumped, landed (impact speed or 0), slid, sprinting, sliding}
     step(s, inp, dt) {
-      const T = TUNE, ev = { jumped: false, landed: 0, slid: false, sprinting: false, sliding: false };
+      const T = TUNE;
+      ev.jumped = false; ev.landed = 0; ev.slid = false; ev.sprinting = false; ev.sliding = false;
       const can = inp.can, crouchEdge = can && inp.crouch && !m.prevCrouch, jumpEdge = can && inp.jump && !m.prevJump;
       m.prevCrouch = !!(can && inp.crouch); m.prevJump = !!(can && inp.jump);
       m.slideCd -= dt; m.slideT -= dt;
@@ -37,7 +40,8 @@ export function createMotion(backend, bounds) {
       const sliding = m.slideT > 0 && !s.airborne && Math.hypot(s.vx, s.vz) > 2.4 && !jumpEdge;
       if (!sliding) m.slideT = Math.min(m.slideT, 0);
       ev.sprinting = sprint; ev.sliding = sliding;
-      const crouching = can && inp.crouch || sliding;
+      let crouching = can && inp.crouch || sliding;
+      if (!crouching && s.crouch > 0.05 && !s.fixedPh && !backend.canStand(s)) crouching = true; // no headroom: stay crouched
       s.crouch = lerp(s.crouch, crouching ? 1 : 0, Math.min(1, dt * 10));
       s.ph = s.fixedPh || lerp(1.7, 1.0, s.crouch); s.eyeY = lerp(1.6, 0.85, s.crouch);
       // horizontal: accelerate toward the wish velocity, friction when there is none (or when over the cap)
@@ -53,7 +57,7 @@ export function createMotion(backend, bounds) {
       m.buffer = jumpEdge ? T.buffer : m.buffer - dt;
       if (m.buffer > 0 && m.coyote > 0 && s.crouch < 0.5 && can) { s.vy = T.jump; s.airborne = true; m.coyote = 0; m.buffer = 0; ev.jumped = true; }
       const preVy = s.vy;
-      s.vy -= T.grav * dt;
+      if (s.airborne) s.vy -= T.grav * dt; else s.vy = 0; // resting on the ground: no downward push (Rapier's slide would sink the capsule's round foot); snap-to-ground handles small drops
       const wasUp = s.vy > 0;
       const y0 = s.y;
       const grounded = backend.move(s, s.vx * dt, s.vy * dt, s.vz * dt);

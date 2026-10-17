@@ -15,28 +15,43 @@ export function rapierBackend(RAPIER, colliders) {
   world.step(); // builds the broad phase so scene queries see the static boxes
   const kcc = world.createCharacterController(0.01);
   kcc.setUp({ x: 0, y: 1, z: 0 });
-  kcc.enableAutostep(MAX_STEP, 0.2, false) // min step width 0.2: smaller makes the capsule's round foot refuse a 0.25 m stair;
+  kcc.enableAutostep(MAX_STEP, 0.2, false); // min step width 0.2: smaller makes the capsule's round foot refuse a 0.25 m stair
   kcc.enableSnapToGround(0.15);
   kcc.setMaxSlopeClimbAngle(SLOPE); kcc.setMinSlopeSlideAngle(SLOPE + 0.1);
   kcc.setSlideEnabled(true);
-  let col = null, r = 0, h = 0, hh = 0;
+  let col = null, r = 0, qh = 0, hh = 0;
+  const tr = { x: 0, y: 0, z: 0 }, want = { x: 0, y: 0, z: 0 }; // scratch: reused every frame
   return {
     name: 'rapier',
+    canStand: (s) => standClear(colliders, s),
     move(s, dx, dy, dz) {
-      if (!col || r !== s.r || h !== s.ph) { // radius / height changed (crouch, disguise): rebuild the capsule
+      const h = Math.round(s.ph * 20) / 20; // 5 cm steps: the capsule is rebuilt only when it visibly changes, not every crouch-lerp frame
+      if (!col || r !== s.r || qh !== h) {
         if (col) world.removeCollider(col, false);
-        r = s.r; h = s.ph;
+        r = s.r; qh = h;
         hh = Math.max(0.01, (h - 2 * r) / 2); // capsule: a flat-bottomed cylinder snags on the floor seam
         col = world.createCollider(RAPIER.ColliderDesc.capsule(hh, r));
       }
-      col.setTranslation({ x: s.x, y: s.y + hh + r, z: s.z });
-      kcc.computeColliderMovement(col, { x: dx, y: dy, z: dz });
+      tr.x = s.x; tr.y = s.y + hh + r; tr.z = s.z; col.setTranslation(tr);
+      want.x = dx; want.y = dy; want.z = dz;
+      kcc.computeColliderMovement(col, want);
       const m = kcc.computedMovement();
       s.x += m.x; s.y += m.y; s.z += m.z;
       return kcc.computedGrounded();
     },
-    dispose() { kcc.free?.(); world.free(); },
+    dispose() { world.removeCharacterController(kcc); world.free(); },
   };
+}
+
+// true when a standing body (1.7 m) at s would not hit a ceiling: used to stay crouched under low geometry
+function standClear(colliders, s) {
+  const top = s.y + 1.7;
+  for (const c of colliders) {
+    if (c.y0 < s.y + 0.3 || c.y0 >= top || c.y1 <= s.y + s.ph) continue; // below step height, above head, or under the current head
+    const ex = s.x - clamp(s.x, c.x0, c.x1), ez = s.z - clamp(s.z, c.z0, c.z1);
+    if (ex * ex + ez * ez < s.r * s.r) return false;
+  }
+  return true;
 }
 
 export function aabbBackend(colliders) {
@@ -55,6 +70,7 @@ export function aabbBackend(colliders) {
   }
   return {
     name: 'aabb',
+    canStand: (s) => standClear(colliders, s),
     move(s, dx, dy, dz) {
       s.x += dx; s.z += dz;
       let ground = 0;
