@@ -9,7 +9,8 @@
     "start": "node server/index.js",
     "smoke": "playwright test",
     "test:server": "node tests/server/run.js",
-    "test:audio": "node --test tests/audio/cues.test.mjs"
+    "test:audio": "node --test tests/audio/cues.test.mjs",
+    "test:chars": "node --test tests/chars/rig.test.mjs"
   },
   "engines": {
     "node": ">=20.19"
