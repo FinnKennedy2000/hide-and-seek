@@ -98,14 +98,15 @@ export function initPerf() {
   setFrameCap(prefs.eco ? 30 : 60);
 
   // ---- character impostors: potato / low draw a distant character as one capsule (a character is ~19 meshes). Characters that
-  // manage their own LOD set root.userData.ownLod = true and are skipped.
+  // manage their own LOD (or are one mesh anyway: the glTF rig) are skipped, see lodChar.
   const capsule = new THREE.CapsuleGeometry(0.28, 0.9, 2, 8); capsule.translate(0, 0.73, 0);
   const _w = new THREE.Vector3();
   const lodChar = (root, far) => {
     if (root.userData.ownLod) return;
     let px = root.userData.proxy;
     if (!px) {
-      let src = null; root.ch.root.traverse((o) => { if (!src && o.isMesh && o.material.color) src = o.material; });
+      let src = null, n = 0; root.ch.root.traverse((o) => { if (o.isMesh) { n++; if (!src && o.material.color) src = o.material; } });
+      if (n <= 4) { root.userData.ownLod = true; return; } // the glTF rig is one skinned mesh with its own LOD (characters/rig.js): only the ~19-mesh procedural fallback needs an impostor
       px = root.userData.proxy = new THREE.Mesh(capsule, new THREE.MeshLambertMaterial({ color: src ? src.color : 0xffffff })); px.userData.src = src; root.add(px);
     }
     px.visible = far; root.ch.root.visible = !far;
