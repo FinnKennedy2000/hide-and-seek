@@ -8,7 +8,8 @@
     "build": "vite build",
     "start": "node server/index.js",
     "smoke": "playwright test",
-    "test:server": "node tests/server/run.js"
+    "test:server": "node tests/server/run.js",
+    "test:world": "node --test tests/world/*.test.mjs"
   },
   "engines": {
     "node": ">=20.19"
