@@ -7,42 +7,102 @@ export const meta = {
   ambient: { color: 0x8a78c0, ground: 0x3a2e44, intensity: 0.8 },
   seekerStart: { x: 0, z: 7.8, yaw: 0 },
   bounds: { x0: -23.5, x1: 23.5, z0: -23.5, z1: 23.5 },
+  // Audio zones: the FIRST zone whose box contains the listener wins, so the last entry is the catch-all.
+  // reverb: 'small' (furnished room) | 'hall' (big open interior) | 'outdoor'. box is {x0,x1,y0,y1,z0,z1} in world metres.
+  zones: [
+    { name: 'Bedroom', box: { x0: -8, x1: -2, y0: -1, y1: 4, z0: -6, z1: 0 }, reverb: 'small' },
+    { name: 'Study', box: { x0: -2, x1: 3, y0: -1, y1: 4, z0: -6, z1: -1.5 }, reverb: 'small' },
+    { name: 'Guest room', box: { x0: 3, x1: 8, y0: -1, y1: 4, z0: -6, z1: -1.5 }, reverb: 'small' },
+    { name: 'Kitchen', box: { x0: -8, x1: -2, y0: -1, y1: 4, z0: 0, z1: 6 }, reverb: 'small' },
+    { name: 'Living room', box: { x0: -2, x1: 8, y0: -1, y1: 4, z0: -1.5, z1: 6 }, reverb: 'small' },
+    { name: 'Garden', box: { x0: -24, x1: 24, y0: -1, y1: 60, z0: -24, z1: 24 }, reverb: 'outdoor' },
+  ],
+  // Light probes: sampled bounce colour of each interior, for the renderer's ambient / IBL tint (x, y, z, colour, intensity, radius).
+  lightProbes: [
+    { x: -5, y: 1.5, z: -3, color: 0xffc58a, intensity: 0.5, radius: 6 }, { x: 0.5, y: 1.5, z: -3.5, color: 0xffc58a, intensity: 0.45, radius: 5 },
+    { x: 5.5, y: 1.5, z: -3.5, color: 0xffb27a, intensity: 0.4, radius: 5 }, { x: -5, y: 1.5, z: 3, color: 0xffc58a, intensity: 0.5, radius: 6 },
+    { x: 3, y: 1.5, z: 2.2, color: 0xffc58a, intensity: 0.55, radius: 7 }, { x: 0, y: 2, z: 12, color: 0x8a78c0, intensity: 0.8, radius: 40 },
+  ],
 };
-export const materials = {};
+// New materials for the remaster. sign_* / art_* / decal_* get their canvas textures in src/world/textures.js.
+export const materials = {
+  trim: { color: 0xece6da, roughness: 0.5 }, ceiling: { color: 0xe9e2d4, roughness: 0.95 },
+  glassPane: { color: 0x9fc0e0, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false },
+  windowIn: { color: 0x101626, roughness: 1, emissive: 0x3a4c86, emissiveIntensity: 0.9 },
+  lampshade: { color: 0xf0d9b0, roughness: 0.9, emissive: 0xffc477, emissiveIntensity: 1.1 },
+  art: { color: 0xffffff, roughness: 0.8 }, decals: { color: 0xffffff, roughness: 1 }, // canvas atlases (src/world/textures.js)
+};
+// ----- hedge maze, north-east corner of the garden: a perfect maze (every cell reachable) from a fixed seed, entrance in the south wall, east end (the hedge row at x 15 closes the west end).
+const MZ = { x0: 14.0, z0: 14.8, n: 4, cell: 2.2, wall: 0.35 };
+function makeMaze() {
+  let a = 424242; const rand = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const { n } = MZ, st = `${n - 1},0`, open = new Set(), seen = new Set([st]), depth = new Map([[st, 0]]), stack = [[n - 1, 0]];
+  const key = (i, j, k, l) => (i < k || (i === k && j < l) ? `${i},${j}|${k},${l}` : `${k},${l}|${i},${j}`);
+  let far = [n - 1, 0];
+  while (stack.length) {
+    const [i, j] = stack[stack.length - 1];
+    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([di, dj]) => [i + di, j + dj]).filter(([x, z]) => x >= 0 && z >= 0 && x < n && z < n && !seen.has(`${x},${z}`));
+    if (!nb.length) { stack.pop(); continue; }
+    const [x, z] = nb[(rand() * nb.length) | 0];
+    open.add(key(i, j, x, z)); seen.add(`${x},${z}`); depth.set(`${x},${z}`, depth.get(`${i},${j}`) + 1); stack.push([x, z]);
+    if (depth.get(`${x},${z}`) > depth.get(`${far[0]},${far[1]}`)) far = [x, z];
+  }
+  return { open, far, key };
+}
+const MAZE = makeMaze();
+const mazeCentre = (i, j) => [MZ.x0 + (i + 0.5) * MZ.cell, MZ.z0 + (j + 0.5) * MZ.cell];
+
 export const mix = [['house', 3], ['garden', 2]];
 export const spots = [
   { x: -7.45, z: -4.7, kind: 'house', name: 'beside bed' }, { x: -3.2, z: -5.55, kind: 'house', name: 'wardrobe' },
   { x: 0.3, z: -5.5, kind: 'house', name: 'under desk' }, { x: 2.0, z: -2.15, kind: 'house', name: 'behind armchair' },
-  { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.4, z: -5.4, kind: 'house', name: 'crate pocket' },
+  { x: 7.5, z: -4.7, kind: 'house', name: 'beside bed 2' }, { x: 3.55, z: -5.4, kind: 'house', name: 'crate pocket' },
   { x: -4.6, z: 3.0, kind: 'house', name: 'under table' }, { x: -7.45, z: 5.45, kind: 'house', name: 'fridge pocket' },
   { x: 4.0, z: -0.55, kind: 'house', name: 'behind sofa' },
   { x: 12.9, z: -12.7, kind: 'garden', name: 'shed' }, { x: -11, z: 15.1, kind: 'garden', name: 'hedge A' },
   { x: 16.1, z: 11, kind: 'garden', name: 'hedge B' }, { x: -12, z: -16.1, kind: 'garden', name: 'hedge C' },
   { x: -20.1, z: 0, kind: 'garden', name: 'hedge D' }, { x: -14.6, z: 8.7, kind: 'garden', name: 'tree 1' },
   { x: 18.7, z: -6.4, kind: 'garden', name: 'tree 2' }, { x: -4.1, z: -17.7, kind: 'garden', name: 'tree 3' },
-  { x: 21.0, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
+  { x: 21.5, z: 5.6, kind: 'garden', name: 'rock' }, { x: -19.3, z: -9, kind: 'garden', name: 'crates' },
   { x: 8, z: 16.9, kind: 'garden', name: 'car' },
+  { x: mazeCentre(...MAZE.far)[0], z: mazeCentre(...MAZE.far)[1], kind: 'garden', name: 'hedge maze' }, // appended: spot indices stay stable
 ];
 // open spots in the garden / yard that don't overlap the world's colliders
-export const spawns = [[0, 12], [-6, 10], [-4, 16], [6, 9], [12, 6], [-12, 8], [16, 0], [-16, -4], [0, -14], [10, -18], [-8, -10], [18, 16], [-18, 16], [-20, -14]];
+export const spawns = [[0, 12], [-6, 10], [-4, 16], [6, 9], [12, 6], [-12, 8], [16, 0], [-16, -4], [0, -14], [10, -18], [-8, -10], [19.5, 9.5], [-18, 16], [-20, -14]];
+
 
 export function build(b, rnd) {
   const T = 0.2, H = 3;
+  const deco = { collide: false, cast: false };
+  // skirting board + cornice on both faces of a wall run, and a door frame (jambs + head) at each gap: all non-colliding trim
+  const trim = (cx, cz, len, alongX) => {
+    for (const s of [-1, 1]) {
+      const o = s * (T / 2 + 0.015);
+      if (alongX) { b.box(cx, cz + o, len, 0.03, 0.12, 'trim', deco); b.box(cx, cz + o * 1.3, len, 0.04, 0.08, 'trim', { ...deco, y0: 2.92 }); }
+      else { b.box(cx + o, cz, 0.03, len, 0.12, 'trim', deco); b.box(cx + o * 1.3, cz, 0.04, len, 0.08, 'trim', { ...deco, y0: 2.92 }); }
+    }
+  };
+  const frame = (c, g0, g1, alongX) => { // c: wall line, [g0,g1]: the opening
+    const m = (g0 + g1) / 2, w = g1 - g0;
+    if (alongX) { for (const x of [g0 + 0.03, g1 - 0.03]) b.box(x, c, 0.06, T + 0.08, 2.2, 'trim', deco); b.box(m, c, w, T + 0.08, 0.06, 'trim', { ...deco, y0: 2.14 }); }
+    else { for (const z of [g0 + 0.03, g1 - 0.03]) b.box(c, z, T + 0.08, 0.06, 2.2, 'trim', deco); b.box(c, m, T + 0.08, w, 0.06, 'trim', { ...deco, y0: 2.14 }); }
+  };
   function wallH(z, x0, x1, gaps = []) { // runs along x
     let c = x0;
-    const seg = (a, e) => { if (e - a > 0.01) b.box((a + e) / 2, z, e - a, T, H, 'wall'); };
-    for (const [g0, g1] of gaps) { seg(c, g0); b.box((g0 + g1) / 2, z, g1 - g0, T, 0.8, 'wall', { y0: 2.2, collide: false }); c = g1; }
+    const seg = (a, e) => { if (e - a > 0.01) { b.box((a + e) / 2, z, e - a, T, H, 'wall'); trim((a + e) / 2, z, e - a, true); } };
+    for (const [g0, g1] of gaps) { seg(c, g0); b.box((g0 + g1) / 2, z, g1 - g0, T, 0.8, 'wall', { y0: 2.2, collide: false }); frame(z, g0, g1, true); c = g1; }
     seg(c, x1);
   }
   function wallV(x, z0, z1, gaps = []) { // runs along z
     let c = z0;
-    const seg = (a, e) => { if (e - a > 0.01) b.box(x, (a + e) / 2, T, e - a, H, 'wall'); };
-    for (const [g0, g1] of gaps) { seg(c, g0); b.box(x, (g0 + g1) / 2, T, g1 - g0, 0.8, 'wall', { y0: 2.2, collide: false }); c = g1; }
+    const seg = (a, e) => { if (e - a > 0.01) { b.box(x, (a + e) / 2, T, e - a, H, 'wall'); trim(x, (a + e) / 2, e - a, false); } };
+    for (const [g0, g1] of gaps) { seg(c, g0); b.box(x, (g0 + g1) / 2, T, g1 - g0, 0.8, 'wall', { y0: 2.2, collide: false }); frame(x, g0, g1, false); c = g1; }
     seg(c, z1);
   }
   function pendant(x, z, intensity = 22, color = 0xffc58a) {
     b.light(x, 2.55, z, intensity, 11, color);
     b.mesh(['sphere', 0.12, 12, 8], 'glow', x, 2.6, z, { cast: false });
+    b.box(x, z, 0.02, 0.02, 0.4, 'dark', { y0: 2.62, ...deco }); b.mesh(['cyl', 0.1, 0.32, 0.26, 14], 'lampshade', x, 2.45, z, { cast: false });
   }
 
   // ----- house shell
@@ -52,6 +112,7 @@ export function build(b, rnd) {
   wallH(-1.5, -2, 8, [[0.1, 1.5], [5.6, 7.0]]);
   wallV(3, -6, -1.5, [[-4.3, -2.9]]);
   b.box(0, 0, 17, 13, 0.25, 'roof', { y0: 3, collide: false });
+  b.box(0, 0, 15.9, 11.9, 0.03, 'ceiling', { y0: 2.97, ...deco }); b.box(0, 0, 15.9, 11.9, 0.02, 'floor', deco); // plaster ceiling, plank floor
   b.box(0, 6.35, 17.4, 0.25, 0.5, 'roof', { y0: 3.2, collide: false }); // front fascia
   for (const x of [-5, -3, 3, 5]) b.mesh(['plane', 1.1, 1.0], 'glow', x, 1.6, 6.12, { cast: false }); // glowing windows
   for (const x of [-5, 0, 5]) b.mesh(['plane', 1.1, 1.0], 'glow', x, 1.6, -6.12, { cast: false, r: [0, Math.PI, 0] });
@@ -101,26 +162,26 @@ export function build(b, rnd) {
   for (let i = 0; i < 5; i++) b.box(-3.55 + i * 0.18, -5.45, 0.08, 0.04, 0.7, ['fabricRed', 'fabricGreen', 'fabricBlue'][i % 3], { y0: 0.95, collide: false });
   // study
   b.prop('desk', () => {
-    b.box(0.3, -5.5, 1.6, 0.7, 0.07, 'wood', { y0: 0.7 });
-    b.box(-0.5, -5.5, 0.05, 0.7, 0.7, 'wood'); b.box(1.1, -5.5, 0.05, 0.7, 0.7, 'wood');
-    b.box(0.3, -5.8, 1.5, 0.04, 0.7, 'wood');
-    b.box(0.9, -5.5, 0.35, 0.02, 0.25, 'tv', { y0: 0.77, collide: false, cast: false });
+    b.box(0.3, -5.5, 1.6, 0.7, 0.07, 'wood', { y0: 1.1 }); // top at 1.1: crouch-under clearance (the 'under desk' spot)
+    b.box(-0.5, -5.5, 0.05, 0.7, 1.1, 'wood'); b.box(1.1, -5.5, 0.05, 0.7, 1.1, 'wood');
+    b.box(0.3, -5.8, 1.5, 0.04, 1.1, 'wood');
+    b.box(0.9, -5.5, 0.35, 0.02, 0.25, 'tv', { y0: 1.17, collide: false, cast: false });
   });
-  chair(0.3, -4.4);
+  chair(0.3, -3.9);
   bookshelf(-1.7, -5.0, 1.4);
   b.prop('armchair', () => { b.box(2.0, -3.2, 1.0, 1.0, 0.45, 'fabricGreen'); b.box(2.0, -3.52, 1.0, 0.25, 0.9, 'fabricGreen'); });
   b.box(0.5, -3.0, 1.6, 1.0, 0.02, 'rug', { y0: 0.02, collide: false, cast: false });
   // bedroom 2
   bed(6.3, -4.85, 'fabricRed');
-  crate(4.2, -5.2, 1.0); crate(4.9, -5.4, 0.8); crate(4.2, -5.2, 0.7, 1.0);
+  crate(4.6, -5.2, 1.0); crate(5.2, -5.4, 0.8); crate(4.6, -5.2, 0.7, 1.0); // pushed east so the 'crate pocket' by the wall is walkable
   cabinet('side table', 7.65, -2.4, 0.5, 1.0, 0.9, 'wood');
   plant(3.5, -2.1);
   // kitchen
   b.box(-7.55, 2.5, 0.7, 3.4, 0.9, 'counter');
   b.box(-7.55, 2.5, 0.72, 3.42, 0.04, 'dark', { y0: 0.9, collide: false });
   cabinet('fridge', -6.6, 5.45, 0.8, 0.8, 1.9, 'metal');
-  table(-4.6, 3.0, 1.6, 0.9);
-  chair(-4.6, 2.0); chair(-4.6, 4.0); chair(-5.75, 3.0); chair(-3.45, 3.0);
+  table(-4.6, 3.0, 1.6, 0.9, 1.1); // tall enough to crouch under
+  chair(-4.6, 1.8); chair(-4.6, 4.2); chair(-5.95, 3.0); chair(-3.25, 3.0);
   b.box(-4.6, 3.0, 2.4, 1.8, 0.02, 'rug', { y0: 0.02, collide: false, cast: false });
   // living room
   sofa(4.0, 0.8, 2.4, true, 'fabricBlue');
@@ -163,4 +224,73 @@ export function build(b, rnd) {
   b.prop('lamp post', () => { b.box(3.5, 12, 0.12, 0.12, 2.6, 'dark'); b.mesh(['sphere', 0.2, 12, 8], 'glow', 3.5, 2.7, 12, { cast: false }); });
   b.light(3.5, 2.7, 12, 40, 16, 0xffc27a);
 
+
+  // ===== remaster detail. Everything above this line keeps its b.prop order; the detail below adds no props until the appended ones.
+  const mini = (() => { let a = 99; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })(); // own RNG: never touches `rnd`
+  // windows: frame bars with a mullion cross on both wall faces, translucent glass, sill outside, dusk sky plane inside, curtains inside
+  const windowAt = (x, wz, sign) => { // wz: wall line (z), sign: +1 = wall faces +z outside (south wall), -1 = north wall
+    for (const side of [1, -1]) { // side +1 = outside face, -1 = inside face
+      const z = wz + sign * side * (T / 2 + 0.025);
+      for (const dy of [-0.5, 0.5]) b.box(x, z, 1.2, 0.05, 0.06, 'trim', { ...deco, y0: 1.6 + dy - 0.03 });
+      for (const dx of [-0.58, 0.58]) b.box(x + dx, z, 0.06, 0.05, 1.0, 'trim', { ...deco, y0: 1.1 });
+      b.box(x, z, 0.03, 0.04, 1.0, 'trim', { ...deco, y0: 1.1 }); b.box(x, z, 1.1, 0.04, 0.03, 'trim', { ...deco, y0: 1.585 });
+      b.mesh(['plane', 1.1, 1.0], 'glassPane', x, 1.6, wz + sign * side * (T / 2 + 0.005), { cast: false, r: [0, side * sign > 0 ? 0 : Math.PI, 0] });
+    }
+    b.box(x, wz + sign * (T / 2 + 0.07), 1.35, 0.16, 0.04, 'trim', { ...deco, y0: 1.06 }); // outside sill
+    b.mesh(['plane', 1.1, 1.0], 'windowIn', x, 1.6, wz - sign * (T / 2 + 0.003), { cast: false, r: [0, sign > 0 ? Math.PI : 0, 0] });
+    for (const dx of [-0.82, 0.82]) b.box(x + dx, wz - sign * (T / 2 + 0.07), 0.3, 0.1, 1.55, 'fabricRed', { ...deco, y0: 0.9 });
+    b.box(x, wz - sign * (T / 2 + 0.07), 1.9, 0.03, 0.03, 'dark', { ...deco, y0: 2.5 });
+  };
+  for (const x of [-5, -3, 3, 5]) windowAt(x, 6, 1);
+  for (const x of [-5, 0, 5]) windowAt(x, -6, -1);
+  // pictures: (x, z) on the wall face, `face` = the way the picture looks
+  const picture = (x, z, face, art, w = 0.8, h = 0.6, y = 1.7) => {
+    const ry = { '+z': 0, '-z': Math.PI, '+x': Math.PI / 2, '-x': -Math.PI / 2 }[face], f = face.endsWith('z'), s = face[0] === '+' ? 1 : -1;
+    b.box(x, z, f ? w + 0.1 : 0.04, f ? 0.04 : w + 0.1, h + 0.1, 'wood', { ...deco, y0: y - h / 2 - 0.05 });
+    b.mesh(['plane', w, h], 'art', f ? x : x + s * 0.025, y, f ? z + s * 0.025 : z, { cast: false, atlas: art, r: [0, ry, 0] });
+  };
+  picture(-7.88, -3.4, '+x', 'art_hills'); picture(-6.2, -5.88, '+z', 'art_sea', 0.9, 0.6, 1.9); picture(6.3, -5.88, '+z', 'art_abstract', 0.9, 0.6, 1.9);
+  picture(2.7, 5.88, '-z', 'art_hills', 0.9, 0.55, 1.75); picture(5.8, 5.88, '-z', 'art_sea'); picture(-1.88, -0.6, '+x', 'art_abstract', 0.5, 0.7, 1.6);
+  picture(7.88, 0.6, '-x', 'art_hills', 1.0, 0.6, 1.8); picture(0.4, -5.88, '+z', 'art_abstract', 0.6, 0.8, 1.9);
+  // kitchen: wall cabinets over the counter, clock, a hob and a sink on the counter
+  b.box(-7.74, 2.5, 0.34, 3.2, 0.7, 'wood', { ...deco, y0: 1.5 });
+  for (const z of [1.45, 2.5, 3.55]) b.box(-7.56, z, 0.02, 0.9, 0.55, 'trim', { ...deco, y0: 1.58 });
+  b.mesh(['cyl', 0.2, 0.2, 0.04, 20], 'white', -3.2, 2.0, 0.14, { cast: false, r: [Math.PI / 2, 0, 0] });
+  for (const [dx, dz] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]]) b.mesh(['cyl', 0.07, 0.07, 0.015, 12], 'dark', -7.55 + dx, 0.935, 1.6 + dz, { cast: false });
+  b.box(-7.55, 3.4, 0.5, 0.6, 0.02, 'metal', { ...deco, y0: 0.9 });
+  // living room / study: books and objects on shelves and surfaces, TV glare
+  for (let i = 0; i < 9; i++) b.box(2.2 + i * 0.14, 5.55, 0.08, 0.14, 0.12 + mini() * 0.1, ['fabricRed', 'fabricBlue', 'fabricGreen', 'white'][i % 4], { ...deco, y0: 1.0 });
+  b.mesh(['cyl', 0.07, 0.05, 0.14, 10], 'white', 4.0, 0.47, 2.4, { cast: false }); b.mesh(['cyl', 0.05, 0.05, 0.1, 10], 'rug', -4.3, 0.8, 2.8, { cast: false });
+  // front door: mat, trim post and the porch lamp bracket; wall lights either side
+  b.box(0, 6.6, 1.0, 0.5, 0.015, 'dark', { y0: 0.12, ...deco });
+  for (const x of [-1.5, 1.5]) { b.box(x, 6.18, 0.08, 0.08, 0.14, 'dark', { y0: 2.1, ...deco }); b.mesh(['sphere', 0.09, 10, 8], 'glow', x, 2.28, 6.2, { cast: false }); }
+  // floor decals: grime by the kitchen counter, scuffs at the front door and in the hall, leaf litter under the garden trees
+  b.mesh(['plane', 2.2, 2.2], 'decals', -6.6, 0.026, 4.3, { cast: false, atlas: 'decal_stain', r: [-Math.PI / 2, 0, 0.4] });
+  b.mesh(['plane', 2.4, 2.4], 'decals', 0, 0.026, 5.0, { cast: false, atlas: 'decal_scuff', r: [-Math.PI / 2, 0, 0.2] });
+  b.mesh(['plane', 2.4, 2.4], 'decals', 5.5, 0.026, 3.8, { cast: false, atlas: 'decal_scuff', r: [-Math.PI / 2, 0, 1.9] });
+  for (const [x, z] of [[-14, 8], [18, -6], [-4, -17], [10, 19], [-18, 19], [20, -18], [0, -20]]) b.mesh(['plane', 4.2, 4.2], 'decals', x, 0.015, z, { cast: false, atlas: 'decal_leaves', r: [-Math.PI / 2, 0, x] });
+  b.mesh(['plane', 3, 3], 'decals', 0, 0.135, 6.7, { cast: false, atlas: 'decal_leaves', r: [-Math.PI / 2, 0, 1] });
+  // hedge maze (north-east corner): cell walls from the generated maze, outer ring closed except the south entrance in the last column
+  const mz = (i, j) => [MZ.x0 + i * MZ.cell, MZ.z0 + j * MZ.cell];
+  const mazeWall = (cx, cz, w, d) => { b.box(cx, cz, w, d, 1.9, 'hedge'); b.box(cx, cz, w - 0.15, d - 0.15, 0.3, 'hedge', { y0: 1.8, collide: false }); };
+  for (let i = 0; i < MZ.n; i++) for (let j = 0; j <= MZ.n; j++) { // walls along x at z = z0 + j*cell, above cell (i, j)
+    const edge = j === 0 || j === MZ.n || !MAZE.open.has(MAZE.key(i, j - 1, i, j));
+    if (j === 0 && i === MZ.n - 1) continue; // entrance
+    if (edge) { const [x, z] = mz(i + 0.5, j); mazeWall(x, z, MZ.cell + MZ.wall, MZ.wall); }
+  }
+  for (let i = 0; i <= MZ.n; i++) for (let j = 0; j < MZ.n; j++) { // walls along z at x = x0 + i*cell
+    const edge = i === 0 || i === MZ.n || !MAZE.open.has(MAZE.key(i - 1, j, i, j));
+    if (edge) { const [x, z] = mz(i, j + 0.5); mazeWall(x, z, MZ.wall, MZ.cell + MZ.wall); }
+  }
+  { const [cx, cz] = mazeCentre(...MAZE.far); b.mesh(['sphere', 0.12, 10, 8], 'glow', cx, 0.3, cz, { cast: false }); b.box(cx, cz, 0.5, 0.5, 0.1, 'stone', { collide: false }); }
+
+  // ----- appended props (ids 32+): disguise options that did not exist before; never insert above this line
+  b.prop('coat stand', () => { b.box(-1.3, 5.65, 0.34, 0.34, 0.05, 'dark'); b.box(-1.3, 5.65, 0.05, 0.05, 1.7, 'wood'); b.mesh(['sphere', 0.12, 8, 6], 'fabricRed', -1.3, 1.6, 5.65, { s: [1, 0.7, 1] }); });
+  b.prop('umbrella stand', () => { b.mesh(['cyl', 0.14, 0.12, 0.5, 12], 'metal', 1.3, 0.25, 5.65); b.box(1.3, 5.65, 0.03, 0.03, 0.9, 'dark', { y0: 0.4, collide: false }); b.collider({ x0: 1.14, x1: 1.46, z0: 5.49, z1: 5.81, y0: 0, y1: 0.5 }); });
+  b.prop('floor lamp', () => { b.box(6.4, 5.5, 0.3, 0.3, 0.04, 'dark'); b.box(6.4, 5.5, 0.04, 0.04, 1.5, 'dark', { y0: 0.04 }); b.mesh(['cyl', 0.14, 0.24, 0.3, 14], 'lampshade', 6.4, 1.65, 5.5, { cast: false }); });
+  b.prop('garden bench', () => { b.box(3.0, 9.0, 1.4, 0.45, 0.06, 'wood', { y0: 0.42 }); b.box(3.0, 8.82, 1.4, 0.05, 0.4, 'wood', { y0: 0.48 }); for (const dx of [-0.6, 0.6]) b.box(3.0 + dx, 9.0, 0.06, 0.4, 0.42, 'dark'); });
+  b.prop('bird bath', () => { b.mesh(['cyl', 0.1, 0.16, 0.7, 10], 'stone', -3.5, 0.35, 13.5); b.mesh(['cyl', 0.42, 0.18, 0.12, 14], 'stone', -3.5, 0.76, 13.5); b.collider({ x0: -3.92, x1: -3.08, z0: 13.08, z1: 13.92, y0: 0, y1: 0.82 }); });
+  b.prop('barrel', () => b.mesh(['cyl', 0.34, 0.3, 0.9, 14], 'wood', 16.5, 0.45, -9.2)); // collider below
+  b.collider({ x0: 16.16, x1: 16.84, z0: -9.54, z1: -8.86, y0: 0, y1: 0.9 });
+  b.prop('wheelie bin', () => { b.box(9.2, -2.0, 0.55, 0.65, 1.0, 'leaf'); b.box(9.2, -2.0, 0.6, 0.7, 0.05, 'dark', { y0: 1.0, collide: false }); });
 }
