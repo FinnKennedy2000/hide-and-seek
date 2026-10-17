@@ -165,7 +165,7 @@ export function fire() {
   if (me.mag <= 0) { sfx.empty(); toast(me.res > 0 ? 'EMPTY - PRESS R' : 'OUT OF AMMO', '#ffd166'); me.lastFire = t; return; }
   me.lastFire = t; me.mag--;
   camera.getWorldDirection(_f); spreadDir(_f);
-  me.send('shoot', { ox: r3(camera.position.x), oy: r3(camera.position.y), oz: r3(camera.position.z), dx: r3(_f.x), dy: r3(_f.y), dz: r3(_f.z) });
+  me.send('shoot', { ox: r3(camera.position.x), oy: r3(camera.position.y), oz: r3(camera.position.z), dx: r3(_f.x), dy: r3(_f.y), dz: r3(_f.z), d: R.interpDelay() }); // d: how far in the past remote players are drawn (server lag compensation)
   B.recoil(); sfx.shoot(); updateHud();
 }
 
