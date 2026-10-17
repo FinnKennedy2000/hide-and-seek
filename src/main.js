@@ -10,6 +10,7 @@ import { update as updateSingle } from './modes/singleplayer.js';
 import { hiders } from './ai/hiders.js';
 import './ui/menus.js';
 import './net/online.js';
+import './audio/index.js'; // bus listeners + audio system
 
 setWorld('house'); // initial map; the title screen / online rounds switch it
 

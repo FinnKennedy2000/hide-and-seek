@@ -55,3 +55,26 @@ test('SEEK on every map: no errors, records draw calls', async ({ page }) => {
   }
   expect(errors, errors.join('\n')).toEqual([]);
 });
+
+// Audio: a 'sound' at 5 m shows a cue, the same sound at 60 m does not (fairness falloff), and muting via settings
+// zeroes the master gain while cues keep appearing.
+test('audio: cues follow distance, mute zeroes master but keeps cues', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('#btnSeek');
+  await page.click('#btnSeek');
+  await page.waitForFunction(() => window.__hs?.audio?.master() !== undefined && window.__hs.audio.master() !== null, null, { timeout: 15000 });
+  const cues = () => page.locator('#cues .cue', { hasText: '\u2738' }).count(); // shot glyph: ignore the game's own footstep cues
+  // the player stands near (0, 12) facing -z; place sounds relative to the player via a far x offset
+  const px = await page.evaluate(() => { const c = window.__hs.camera.position; return [c.x, c.z]; });
+  const at = (d) => page.evaluate(([x, z, d]) => { const a = window.__hs.audio; a.bus.emit(a.EV.SOUND, { kind: 'shot', x: x + d, y: 1, z, vol: 0.25 }); }, [px[0], px[1], d]);
+  await at(60); await page.waitForTimeout(100);
+  expect(await cues(), 'far sound (60 m) shows no cue').toBe(0);
+  await at(5); await page.waitForTimeout(100);
+  expect(await cues(), 'near sound (5 m) shows one cue').toBe(1);
+  await page.evaluate(() => window.__hs.audio.settings.set('volume', 0));
+  expect(await page.evaluate(() => window.__hs.audio.master())).toBe(0);
+  await page.waitForTimeout(1700); // let the first cue expire (1.5 s)
+  await at(5); await page.waitForTimeout(100);
+  expect(await cues(), 'cue still appears while muted').toBe(1);
+  await page.evaluate(() => window.__hs.audio.settings.set('volume', 0.8));
+});

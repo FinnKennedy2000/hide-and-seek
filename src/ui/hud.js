@@ -7,7 +7,7 @@ export function show(id, on) { $(id).classList.toggle('hidden', !on); }
 
 // ----- visual sound cues: every positional sfx below also shows where it came from (ring around the crosshair + caption),
 // using the same falloff as spat() so you never see a cue for something you could not hear. Own sounds (no position) get none.
-const CUE = { // type -> [caption, colour, glyph]
+export const CUE = { // type -> [caption, colour, glyph]
   step: ['Footsteps', '#cbd5e1', '\u2022'], sprint: ['Running', '#fbbf24', '\u00bb'], land: ['Landing', '#fb923c', '\u25bc'], scrape: ['Scraping', '#a78bfa', '\u2248'],
   taunt: ['Taunt', '#f472b6', '\u266a'], shot: ['Shot', '#ef4444', '\u2738'], rustle: ['Rustling', '#4ade80', '~'], puff: ['Disguise poof', '#67e8f9', '\u25cb'], splat: ['Paint splat', '#f87171', '\u25cf'],
 };
