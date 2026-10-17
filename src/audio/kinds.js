@@ -32,6 +32,17 @@ export const KINDS = {
   win: { cue: 'taunt', vol: 0.2, bus: 'ui', stinger: 'win' },
   lose: { cue: 'taunt', vol: 0.14, bus: 'ui', stinger: 'lose' },
 };
+export const CULL = 0.012; // audibility floor shared by the visual cues, samples and the synth fallback (same value as CUE_MIN in ui/hud.js)
+// p = voice priority (default 1): when the voice cap is hit the lowest priority voice is evicted first, so footsteps (0) go before stings (3)
+for (const k of ['step', 'sprint']) KINDS[k].p = 0;
+for (const k of ['found', 'win', 'lose', 'alert']) KINDS[k].p = 3;
+// Validate a network 'sound' event: known kind, finite x/y/z, vol clamped to 0..1 (missing = the kind's default). null = drop it.
+export function parseSound(m) {
+  const def = KINDS[m?.kind];
+  if (!def || ![m.x, m.y, m.z].every(Number.isFinite)) return null;
+  if (m.vol !== undefined && !Number.isFinite(m.vol)) return null;
+  return { kind: m.kind, pos: { x: m.x, y: m.y, z: m.z }, vol: m.vol === undefined ? def.vol : Math.min(1, Math.max(0, m.vol)) };
+}
 export const SURFACES = ['wood', 'tile', 'grass', 'concrete'];
 export const files = (s, n) => Array.from({ length: n }, (_, i) => ({ key: `${s}_${i}`, url: `/audio/${s}_${i}.ogg`, type: 'audio' }));
 // lazy sample sets: 'common' on first use, one footstep set per surface the current map uses (see zones.js)
