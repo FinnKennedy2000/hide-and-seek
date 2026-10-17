@@ -1,19 +1,21 @@
 import { rnd, clamp } from '../core/util.js';
 import { P } from '../core/state.js';
 import { cueAt } from '../ui/hud.js';
-import { eng, initEngine, applyVolumes, setDuck, loadSet, playSample, updateZone } from './engine.js';
-import { KINDS } from './kinds.js';
+import { eng, initEngine, applyVolumes, setMuted, loadSet, playSample, updateZone, voice, resume } from './engine.js';
+import { KINDS, CULL } from './kinds.js';
 import { zoneAt, surfacesOf } from './zones.js';
 import { music } from './music.js';
 
 // Sound entry point. play(kind, pos?, vol?) ALWAYS fires the visual cue first (captions must work with sound off, on a failed
 // context or with samples missing), then plays the sample, falling back to the synthesised version below.
-// Volumes live in settings (master / music / sfx / ui buses, engine.js); ducking under the boss screen is setMuted().
-export const setMuted = (m) => setDuck(m);
+// Volumes live in settings (master / music / sfx / ui buses, engine.js); the boss screen fully mutes via setMuted().
+export { setMuted };
 export const applyVol = applyVolumes;
 export function loadForMap() { loadSet('common'); for (const s of surfacesOf()) loadSet(`step_${s}`); }
+let crickets = 0, prio = 1; // prio: priority of the sound being played (synth voices share the sample voice budget)
+export function stopAudio() { clearInterval(crickets); music.stop(); }
 export function initAudio() {
-  if (eng.ctx) { eng.ctx.resume(); return; }
+  if (eng.ctx) { resume(); return; }
   if (!initEngine()) return;
   const AC = eng.ctx; // quiet ambient wind + crickets
   const wind = AC.createBufferSource(); wind.buffer = eng.noise; wind.loop = true;
@@ -21,7 +23,7 @@ export function initAudio() {
   const wg = AC.createGain(); wg.gain.value = 0.03;
   const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 0.12; lg.gain.value = 0.02; lfo.connect(lg); lg.connect(wg.gain); lfo.start();
   wind.connect(wf); wf.connect(wg); wg.connect(eng.buses.sfx); wind.start();
-  setInterval(() => { if (AC.state === 'running' && Math.random() < 0.7) for (let i = 0; i < 3; i++) tone(4300 + rnd(-80, 80), 0.04, { vol: 0.012, delay: i * 0.07 }); }, 380);
+  crickets = setInterval(() => { if (AC.state === 'running' && Math.random() < 0.7) for (let i = 0; i < 3; i++) tone(4300 + rnd(-80, 80), 0.04, { vol: 0.012, delay: i * 0.07, prio: 0 }); }, 380);
   music.start(); loadForMap(); updateZone();
 }
 
@@ -32,28 +34,31 @@ function spat(pos) {
   const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
   return { vol: 1 / (1 + d * 0.45), pan: clamp((dx * rx + dz * rz) / Math.max(d, 1), -1, 1) * Math.min(1, d / 2) };
 }
-function route(node, pan) {
+function route(node, pan) { // returns a cleanup fn
   const AC = eng.ctx, out = eng.buses.sfx;
-  if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan; node.connect(p); p.connect(out); } else node.connect(out);
+  if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan; node.connect(p); p.connect(out); return () => p.disconnect(); }
+  node.connect(out); return () => {};
 }
 function tone(f, dur = 0.15, o = {}) {
   const AC = eng.ctx; if (!AC) return;
   const { type = 'sine', vol = 0.15, slide = 0, delay = 0, pos } = o, sp = spat(pos);
-  if (sp.vol < 0.02) return;
-  const t = AC.currentTime + delay, osc = AC.createOscillator(), g = AC.createGain();
+  if (sp.vol * vol < CULL) return;
+  const t = AC.currentTime + delay, osc = AC.createOscillator(), g = AC.createGain(), release = voice(o.prio ?? prio, () => osc.stop());
+  if (!release) return;
   osc.type = type; osc.frequency.setValueAtTime(f, t);
   if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f + slide), t + dur);
   g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol * sp.vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g); route(g, sp.pan); osc.start(t); osc.stop(t + dur + 0.05);
+  const end = route(g, sp.pan); osc.onended = () => { release(); osc.disconnect(); g.disconnect(); end(); }; osc.connect(g); osc.start(t); osc.stop(t + dur + 0.05);
 }
 function hit(dur, o = {}) {
   const AC = eng.ctx; if (!AC) return;
   const { freq = 400, q = 1, type = 'lowpass', vol = 0.2, pos, rate = 1 } = o, sp = spat(pos);
-  if (sp.vol < 0.02) return;
-  const t = AC.currentTime, src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  if (sp.vol * vol < CULL) return;
+  const t = AC.currentTime, src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(), release = voice(prio, () => src.stop());
+  if (!release) return;
   src.buffer = eng.noise; src.playbackRate.value = rate; f.type = type; f.frequency.value = freq; f.Q.value = q;
   g.gain.setValueAtTime(vol * sp.vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(f); f.connect(g); route(g, sp.pan); src.start(t, Math.random()); src.stop(t + dur + 0.05);
+  const end = route(g, sp.pan); src.onended = () => { release(); src.disconnect(); f.disconnect(); g.disconnect(); end(); }; src.connect(f); f.connect(g); src.start(t, Math.random()); src.stop(t + dur + 0.05);
 }
 const SYN = { // kind -> (pos, vol) => sound only (the cue is fired by play)
   step: (pos, vol) => hit(0.09, { freq: 380 + rnd(-60, 60), vol, pos }),
@@ -93,7 +98,7 @@ export function play(kind, pos, vol) {
   let prefix = def.s;
   if (prefix?.endsWith('*')) prefix = `step_${zoneAt((pos || P).x, (pos || P).z).surface}`;
   if (prefix && playSample(def, prefix, pos, v, def.rate)) return;
-  SYN[kind]?.(pos, v);
+  prio = def.p ?? 1; SYN[kind]?.(pos, v);
 }
 
 // Legacy call surface used all over the game (positional ones take a {x,z} pos; null/undefined = your own sound).

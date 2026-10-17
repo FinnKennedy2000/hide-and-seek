@@ -78,3 +78,20 @@ test('audio: cues follow distance, mute zeroes master but keeps cues', async ({ 
   expect(await cues(), 'cue still appears while muted').toBe(1);
   await page.evaluate(() => window.__hs.audio.settings.set('volume', 0.8));
 });
+
+// Boss key: Backquote mutes everything (master target 0) and leaving restores the volume with a running context.
+test('audio: boss key mutes, closing restores volume and a running context', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('#btnSeek');
+  await page.click('#btnSeek');
+  await page.waitForFunction(() => window.__hs?.audio?.state?.() === 'running', null, { timeout: 15000 });
+  const master = () => page.evaluate(() => window.__hs.audio.master());
+  expect(await master()).toBeCloseTo(0.8, 5);
+  await page.keyboard.press('Backquote');
+  await page.waitForTimeout(200);
+  expect(await master(), 'boss screen: master muted').toBe(0);
+  await page.keyboard.press('Backquote');
+  await page.waitForTimeout(200);
+  expect(await master(), 'master restored').toBeCloseTo(0.8, 5);
+  expect(await page.evaluate(() => window.__hs.audio.state())).toBe('running');
+});

@@ -1,6 +1,6 @@
 // Web Audio graph. THREE.AudioListener on the camera keeps ctx.listener in sync with the view; sounds are PannerNodes (HRTF).
 //   voice: source -> [lowpass if occluded] -> gain -> panner -> bus.sfx|ui  (+ send -> reverb -> bus.sfx)
-//   buses: sfx, music, ui -> duck -> master -> destination.   master = settings.volume, buses = settings.sfx / music / ui
+//   buses: sfx, music, ui -> master -> destination.   master = settings.volume, buses = settings.sfx / music / ui
 import * as THREE from 'three';
 import { camera } from '../render/renderer.js';
 import { P } from '../core/state.js';
@@ -9,20 +9,38 @@ import { bus, EV } from '../core/bus.js';
 import { loadGroup } from '../core/assets.js';
 import { losClear } from '../ai/nav.js';
 import { zoneAt } from './zones.js';
-import { setFiles } from './kinds.js';
+import { setFiles, CULL } from './kinds.js';
 
-export const eng = { ctx: null, master: null, duck: null, buses: {}, noise: null };
+export const eng = { ctx: null, master: null, buses: {}, noise: null, muted: false, target: {} }; // target = the volumes last asked for (the nodes ramp towards them)
 const buffers = new Map(), loading = new Set();
 const lowQ = () => settings.quality === 'low' || settings.quality === 'potato';
 export const voiceCap = () => (lowQ() ? 16 : 32);
-let active = 0, send, wetOut, conv, delayNodes, irs, zoneName = null;
+const live = new Set(); // voices in flight: {prio, stop}
+let send, wetOut, conv, delayNodes, irs, zoneName = null;
 
 export function applyVolumes() {
   if (!eng.ctx) return;
-  eng.master.gain.value = settings.volume;
-  for (const k of ['music', 'sfx', 'ui']) eng.buses[k].gain.value = settings[k];
+  const t = eng.ctx.currentTime, want = { master: eng.muted ? 0 : settings.volume, music: settings.music, sfx: settings.sfx, ui: settings.ui };
+  Object.assign(eng.target, want);
+  eng.master.gain.setTargetAtTime(want.master, t, 0.02);
+  for (const k of ['music', 'sfx', 'ui']) eng.buses[k].gain.setTargetAtTime(want[k], t, 0.02);
 }
-export function setDuck(on) { if (eng.ctx) eng.duck.gain.setTargetAtTime(on ? 0.12 : 1, eng.ctx.currentTime, 0.15); }
+// boss key: everything (music and ambience included) goes silent and comes back on exit
+export function setMuted(on) { eng.muted = on; applyVolumes(); if (!on) resume(); }
+export function resume() { if (eng.ctx && eng.ctx.state !== 'running') eng.ctx.resume().catch(() => {}); }
+
+// Voice budget shared by samples and the synth fallback. Returns a release fn, or null when the voice must not start:
+// context not running (never queue sources on a suspended context, they would all burst on resume) or cap reached with nothing cheaper to evict.
+export function voice(prio, stop) {
+  if (!eng.ctx || eng.ctx.state !== 'running') return null;
+  if (live.size >= voiceCap()) {
+    let low = null; for (const v of live) if (!low || v.prio < low.prio) low = v;
+    if (low.prio >= prio) return null;
+    live.delete(low); try { low.stop(); } catch { /* already stopped */ }
+  }
+  const v = { prio, stop }; live.add(v);
+  return () => live.delete(v);
+}
 
 // ----- synthesised impulse responses: decaying noise, darker as it decays
 function makeIR(ctx, secs, decay, dark) {
@@ -57,17 +75,17 @@ function setZone(name) {
 export function updateZone() { if (eng.ctx) setZone(zoneAt(P.x, P.z).reverb); }
 
 export function initEngine() {
-  if (eng.ctx) { eng.ctx.resume(); return true; }
+  if (eng.ctx) { resume(); return true; }
   try {
     const listener = new THREE.AudioListener(); camera.add(listener);
     const ctx = listener.context;
-    eng.ctx = ctx; eng.master = ctx.createGain(); eng.duck = ctx.createGain();
-    eng.duck.connect(eng.master); eng.master.connect(ctx.destination);
-    for (const k of ['sfx', 'music', 'ui']) { eng.buses[k] = ctx.createGain(); eng.buses[k].connect(eng.duck); }
+    eng.ctx = ctx; eng.master = ctx.createGain(); eng.master.connect(ctx.destination);
+    for (const k of ['sfx', 'music', 'ui']) { eng.buses[k] = ctx.createGain(); eng.buses[k].connect(eng.master); }
     wetOut = ctx.createGain(); wetOut.connect(eng.buses.sfx);
     eng.noise = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
     const d = eng.noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    buildReverb(); applyVolumes(); ctx.resume?.();
+    buildReverb(); applyVolumes(); eng.master.gain.value = eng.target.master; for (const k of ['music', 'sfx', 'ui']) eng.buses[k].gain.value = eng.target[k]; resume();
+    ctx.onstatechange = () => { if (ctx.state !== 'running') live.clear(); }; // recount: stuck voices must not hold the cap
     bus.on(EV.SETTINGS, ({ key }) => { if (key === 'quality') buildReverb(); applyVolumes(); });
     return true;
   } catch (e) { console.warn('audio unavailable', e); eng.ctx = null; return false; }
@@ -81,12 +99,11 @@ export async function loadSet(name) {
 }
 
 // ----- one-shot voice. Returns false when no sample is ready (caller plays the synth), true when handled (even if culled).
-const CULL = 0.012; // same audibility floor as the visual cues in ui/hud.js
-export function playSample(def, prefix, pos, vol, rate = 1) {
+export function playSample(def, prefix, pos, vol, rate = 1) { // false = no sample yet (play the synth); true = handled
   const ctx = eng.ctx; if (!ctx) return false;
   const i = Math.floor(Math.random() * def.n), buf = buffers.get(`${prefix}_${i}`) || buffers.get(`${prefix}_0`);
   if (!buf) { loadSet(prefix.startsWith('step_') ? prefix : 'common'); return false; }
-  if (active >= voiceCap()) return true;
+  if (eng.ctx.state !== 'running') return true; // dropped; the cue already fired
   let level = vol * def.g, lp = null, panner = null;
   if (pos) {
     const y = pos.y ?? 1, d = Math.hypot(pos.x - P.x, pos.z - P.z);
@@ -101,8 +118,10 @@ export function playSample(def, prefix, pos, vol, rate = 1) {
   src.connect(lp || g); lp?.connect(g);
   const out = eng.buses[def.bus] || eng.buses.sfx;
   if (panner) { g.connect(panner); panner.connect(out); panner.connect(send); } else g.connect(out);
-  active++; src.onended = () => { active--; src.disconnect(); g.disconnect(); panner?.disconnect(); lp?.disconnect(); };
+  const release = voice(def.p ?? 1, () => src.stop());
+  if (!release) return true;
+  src.onended = () => { release(); src.disconnect(); g.disconnect(); panner?.disconnect(); lp?.disconnect(); };
   src.start();
   return true;
 }
-export const _debug = { voices: () => active, buffers: () => buffers.size };
+export const _debug = { voices: () => live.size, buffers: () => buffers.size };
