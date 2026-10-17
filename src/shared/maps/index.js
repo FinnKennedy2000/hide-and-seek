@@ -5,14 +5,16 @@
 // materials: extra material specs the client adds to its table (name -> MeshStandardMaterial params).
 import * as house from './house.js';
 import * as lateshop from './lateshop.js';
-import * as office from './office.js';
-import * as museum from './museum.js';
 import * as school from './school.js';
+import * as museum from './museum.js';
+import * as funfair from './funfair.js';
+import * as office from './office.js';
 
 export const MAPS = {
   house,
   lateshop,
-  office,
-  museum,
   school,
+  museum,
+  funfair,
+  office,
 };
