@@ -1,11 +1,11 @@
 'use strict';
-// Static file server for public/ plus the multiplayer WebSocket endpoint (/ws) on one port.
+// Static file server for dist/ (the Vite build) plus the multiplayer WebSocket endpoint (/ws) on one port.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
-const ROOT = path.resolve(__dirname, '..', 'public');
+const ROOT = path.resolve(__dirname, '..', 'dist'); // `npm run build` output
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -14,6 +14,8 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.webp': 'image/webp', '.jpg': 'image/jpeg', '.glb': 'model/gltf-binary', '.ktx2': 'image/ktx2', '.hdr': 'application/octet-stream',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.map': 'application/json',
 };
 
 // ----- tunables (HIDE_SECS / SEEK_SECS env overrides exist so tests don't wait 3 minutes)
@@ -26,7 +28,7 @@ const MAX_MSG = 2048;
 const MIN_POS_MS = 40;          // position updates faster than ~25Hz are dropped
 const MAX_SPEED = 9;            // m/s; sprint is 6.8, the rest is slack for jitter. Faster moves are dropped (anti-teleport)
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b];
-// cosmetic enums: must match public/character.js (HATS / OUTFITS)
+// cosmetic enums: must match src/characters/character.js (HATS / OUTFITS)
 const HATS = ['none', 'cap', 'beanie', 'bucket', 'crown'];
 const OUTFITS = ['plain', 'stripes', 'dots', 'overalls'];
 const MODES = ['classic', 'prophunt'];
@@ -34,8 +36,8 @@ const MODES = ['classic', 'prophunt'];
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = MAG, PICKUP_SHOTS = 6; // a hit earns a whole extra mag
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
-let WORLDS = null; // mapId -> { colliders, props, meta, spawns, rayBox } from public/worlddata.js, built before listening
-let MAPS = null;   // the map registry from public/worlddata.js
+let WORLDS = null; // mapId -> { colliders, props, meta, spawns, rayBox } from src/shared/worlddata.js, built before listening
+let MAPS = null;   // the map registry from src/shared/worlddata.js
 const worldOf = (room) => WORLDS[room.map];
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -64,7 +66,7 @@ const server = http.createServer((req, res) => {
   }
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.resolve(ROOT, '.' + path.sep + path.normalize(rel));
-  // reject traversal outside public/
+  // reject traversal outside dist/
   if (!file.startsWith(ROOT + path.sep)) {
     res.writeHead(403);
     return res.end('Forbidden');
@@ -78,7 +80,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, {
       'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream',
       'Content-Length': data.length,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache', // Vite hashes everything under /assets/
     });
     res.end(req.method === 'HEAD' ? undefined : data);
   });
@@ -439,8 +441,9 @@ setInterval(() => {
 
 const port = process.env.PORT || 3000;
 // the shared worlds (colliders + prop table per map) are an ES module; build them all before accepting connections
-import('../public/worlddata.js').then((m) => {
+import('../src/shared/worlddata.js').then((m) => {
   MAPS = m.MAPS; WORLDS = {};
   for (const [id, map] of Object.entries(MAPS)) WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
+  if (!fs.existsSync(path.join(ROOT, 'index.html'))) console.warn('dist/ is missing: run `npm run build` (only /ws and /health will work)');
   server.listen(port, () => console.log(`Hide & Seek on http://localhost:${port} (${Object.entries(WORLDS).map(([id, w]) => `${id}: ${w.colliders.length} colliders, ${w.props.length} props`).join('; ')})`));
-}).catch((e) => { console.error('failed to load public/worlddata.js', e); process.exit(1); });
+}).catch((e) => { console.error('failed to load src/shared/worlddata.js', e); process.exit(1); });

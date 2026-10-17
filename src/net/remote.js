@@ -1,6 +1,8 @@
 // Avatars (character or disguised prop) for the local hider and for remote players, plus snapshot interpolation.
-import { THREE, scene, makePropClone } from './game.js';
-import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint } from './char.js';
+import * as THREE from 'three';
+import { scene } from '../render/renderer.js';
+import { makePropClone } from '../world/build.js';
+import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint } from '../characters/index.js';
 
 const INTERP = 0.1; // render remote players 100ms in the past
 export const remotes = new Map(); // id -> avatar

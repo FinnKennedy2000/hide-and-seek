@@ -4,12 +4,21 @@
   "description": "3D hide and seek in a dusk suburban house and garden (Three.js, no build step)",
   "private": true,
   "scripts": {
-    "start": "node server/index.js"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "smoke": "playwright test",
+    "test:server": "node tests/server/run.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "dependencies": {
+    "three": "0.170.0",
     "ws": "^8.18"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "vite": "^8.3.4"
   }
 }

@@ -1,2 +1,5 @@
 server
+tests
+test-results
 node_modules
+.superpowers

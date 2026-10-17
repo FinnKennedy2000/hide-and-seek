@@ -1,8 +1,17 @@
 // Prop Hunt, local side. Hiders: third-person camera, disguise (F), camouflage (G), rotation lock (R + wheel), taunt (T).
 // Seekers: first-person paint blaster (click, R reload), ammo crate, spectator free-cam when out.
 // The server is authoritative for everything; this sends requests and renders the broadcasts.
-import { THREE, camera, P, G, keys, solids, props, sfx, burst, toast, updatePlayer, setText, $ } from './game.js';
-import * as R from './remote.js';
+import * as THREE from 'three';
+import { $, setText } from '../core/util.js';
+import { P, G } from '../core/state.js';
+import { keys } from '../core/input.js';
+import { camera } from '../render/renderer.js';
+import { solids, props } from '../world/build.js';
+import { sfx } from '../audio/sfx.js';
+import { burst } from '../render/fx.js';
+import { toast } from '../ui/hud.js';
+import { updatePlayer } from '../player/controller.js';
+import * as R from '../net/remote.js';
 import * as B from './blaster.js';
 
 const me = { on: false, id: 0, role: 'hider', send() {}, colorOf: () => 0xffffff, av: null, propId: null, rotLock: false, propRot: 0, rotY: 0, heading: 0, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: 6, res: 12, reloading: false, lastFire: 0, grabT: 0, phase: 'hide', fc: new THREE.Vector3() };

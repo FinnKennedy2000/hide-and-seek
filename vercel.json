@@ -1,1 +1,6 @@
-{"buildCommand": "", "outputDirectory": "public", "framework": null, "installCommand": ""}
+{
+  "framework": "vite",
+  "outputDirectory": "dist",
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci"
+}

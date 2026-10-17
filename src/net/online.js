@@ -1,11 +1,22 @@
 // Online mode: lobby UI, round flow and HUD. The server is authoritative; this only renders its state
-// and sends our own position / tag requests. Reuses the world, player controller and audio from game.js.
-import { enterFull, setWorld, worldId, THREE, camera, canvas, P, G, losClear, sfx, burst, toast, show, fmt, setText, requestLock, initAudio, updatePlayer, toMenu, hooks, $ } from './game.js';
+// and sends our own position / tag requests. Reuses the world, player controller and audio from the core modules.
+import * as THREE from 'three';
+import { $, fmt, setText } from '../core/util.js';
+import { P, G, hooks } from '../core/state.js';
+import { requestLock } from '../core/input.js';
+import { camera, canvas } from '../render/renderer.js';
+import { setWorld, worldId } from '../world/build.js';
+import { losClear } from '../ai/nav.js';
+import { initAudio, sfx } from '../audio/sfx.js';
+import { burst } from '../render/fx.js';
+import { toast, show } from '../ui/hud.js';
+import { enterFull, toMenu } from '../ui/menus.js';
+import { updatePlayer } from '../player/controller.js';
 import { connect } from './net.js';
 import * as R from './remote.js';
-import * as PH from './prophunt.js';
-import { HATS, OUTFITS } from './char.js';
-import { MAPS } from './worlddata.js';
+import * as PH from '../modes/prophunt.js';
+import { HATS, OUTFITS } from '../characters/index.js';
+import { MAPS } from '../shared/worlddata.js';
 
 const NAME_KEY = 'hs-name', COS_KEY = 'hs-cos';
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b]; // server palette

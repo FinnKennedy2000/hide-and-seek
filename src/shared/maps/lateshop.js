@@ -7,7 +7,7 @@
 export const FLICKER = 0xd8ffe6; // b.light colour that marks a fluorescent strip: game.js may flicker lights with this colour
 
 export const meta = {
-  id: 'lateshop', name: 'Late Shop', size: 44,
+  id: 'lateshop', name: 'Late Shop', size: 44, blurb: 'A supermarket after closing. The strip lights are failing.',
   fog: { color: 0x151c28, near: 14, far: 80 }, sky: 'night',
   ambient: { color: 0xb4c0dc, ground: 0x646c84, intensity: 1.5 }, // hemisphere fill: lit shop at night, not a horror game
   seekerStart: { x: 0, z: 9.5, yaw: 0 }, // car park, in front of the automatic doors (server spreads seekers along x by 1.4)
@@ -41,6 +41,7 @@ export const materials = {
 };
 
 // AI hiding spots. crouch:true = best/only reachable crouched (under something, or a low gap).
+export const mix = [['floor', 2], ['back', 1], ['bay', 1], ['outside', 1]]; // [kind, count] pairs for the 5 single-player hiders
 export const spots = [
   // shop floor
   { x: -12.5, z: -2.0, kind: 'floor', crouch: false }, // slip-through gap between shelf units

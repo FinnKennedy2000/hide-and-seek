@@ -1,6 +1,9 @@
 // Seeker's cartoon paint blaster: first-person viewmodel with recoil, paint tracers, capped splat decals, and the ammo crate.
-import { THREE, scene, camera, solids, burst } from './game.js';
-import { splatMat } from './char.js';
+import * as THREE from 'three';
+import { scene, camera } from '../render/renderer.js';
+import { solids } from '../world/build.js';
+import { burst } from '../render/fx.js';
+import { splatMat } from '../characters/index.js';
 
 const M = (color, e = 0.3) => new THREE.MeshStandardMaterial({ color, roughness: 0.4, emissive: color, emissiveIntensity: e });
 const bx = (w, h, d, m, x, y, z, p) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); p.add(o); return o; };

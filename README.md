@@ -1,6 +1,6 @@
 # Hide & Seek
 
-A quick 3D hide-and-seek game for Chrome. Procedural house and garden at dusk, Three.js from a CDN, synthesized WebAudio sound, no assets and no build step.
+A quick 3D hide-and-seek game for Chrome. Procedural house and garden at dusk, Three.js bundled with Vite, synthesized WebAudio sound, no assets.
 
 ## Modes
 - **Seek**: 5 AI hiders hide during a 10s blackout. Find them all in 120s. Get within 3m, look at one, press **E** or click. They peek and rustle, and may bolt if you get too close.
@@ -20,14 +20,20 @@ WASD move, mouse look, Shift sprint, Space jump, C crouch, E / click tag, Esc or
 ## Run
 ```
 npm install
-npm start        # http://localhost:3000 (PORT env var respected)
+npm run build    # Vite -> dist/
+npm start        # http://localhost:3000 (PORT env var respected); serves dist/ and /ws
+npm run dev      # Vite dev server on :5173 with /ws proxied to `npm start`
+npm run smoke    # Playwright: SEEK on every map, no console errors, draw-call counts in test-results/perf.json
+npm run test:server
 ```
-Needs internet for the Three.js CDN (pinned to 0.170.0). Single-player works from any static file server pointed at `public/`; online needs `npm start`.
 
 ## Architecture
-- `public/`: static client (no build step). `game.js` is the world, player controller, AI and audio; `net.js` the WebSocket client (the Railway URL constant lives at its top; `?server=wss://host/ws` overrides); `online.js` lobby, round flow and HUD; `remote.js` avatars (character or disguised prop) and interpolation; `worlddata.js` the deterministic world layout (colliders, disguisable props, ray helper) imported by both client and server; `character.js` procedural characters (`char.js` adapts them); `prophunt.js` + `blaster.js` the Prop Hunt client; `bossscreen.js` the fake work screen. `public/package.json` marks the folder as ES modules so Node can import `worlddata.js`.
-- `server/index.js`: Node server that serves `public/`, `GET /health`, and a WebSocket endpoint at `/ws` on the same port. It is authoritative for rooms, roles, phases, timers, tags and scores. Clients send position at ~15Hz; the server broadcasts snapshots at ~15Hz and clients interpolate with a 100ms buffer.
-- Deploy: the client is static on Vercel (`vercel.json` serves only `public/`); the server runs on Railway (`npm start`). Off Railway/localhost the client connects to the Railway WebSocket URL.
+- `index.html` + `public/style.css`: the page. `src/main.js` wires the modules and registers the frame systems (`src/core/loop.js`).
+- `src/core`: `bus` (events), `loop` (ordered systems), `state` (P, G, hooks), `settings` (persisted options), `assets` (loader with failure fallback), `input`, `util`.
+- `src/render` (renderer, composer, particles + `render` facade), `src/world` (materials, sky, map building), `src/player` (controller), `src/ai` (nav, hiders, seeker), `src/audio` (synthesized sfx + `audio` facade), `src/ui` (hud, menus, boss screen + `ui` facade), `src/perf` (`perf` facade), `src/characters` (procedural characters), `src/modes` (single-player flow, Prop Hunt, blaster), `src/net` (WebSocket client in `net.js` with the Railway URL at its top and `?server=wss://host/ws` override, `online.js` lobby/round flow/HUD, `remote.js` avatars and interpolation).
+- `src/shared`: imported by both client and server. `worlddata.js` builds a map's colliders and disguisable props deterministically (plus the ray helper); `maps/index.js` is the append-only map registry (one file per map); `protocol.js` holds `PROTOCOL`.
+- `server/index.js`: Node server that serves `dist/`, `GET /health`, and a WebSocket endpoint at `/ws` on the same port. It is authoritative for rooms, roles, phases, timers, tags and scores. Clients send position at ~15Hz; the server broadcasts snapshots at ~15Hz and clients interpolate with a 100ms buffer.
+- Deploy: Vercel runs `npm run build` and serves `dist/`; Railway runs `npm ci --include=dev && npm run build`, then `npm start`. Off Railway/localhost the client connects to the Railway WebSocket URL.
 - Test knobs: `HIDE_SECS` and `SEEK_SECS` env vars shorten the round phases.
 
 ### Protocol (JSON `{t, ...}`)
