@@ -9,7 +9,23 @@ const DEFAULTS = {
 };
 const FALLBACK = { zones: [], outdoor: { reverb: 'outdoor', surface: 'grass' } };
 
-const cfg = () => (meta?.zones ? { zones: meta.zones, outdoor: meta.outdoor || FALLBACK.outdoor } : DEFAULTS[meta?.id] || FALLBACK);
+// Maps may give zones as {box:{x0..}, reverb:'small'|'hall'|'outdoor'} with no surface (the world remaster's shape):
+// flatten the box, map 'small' to 'room', and take the surface from this map's defaults. Cached per meta object.
+const REVERB = { small: 'room' };
+let cMeta = null, cCfg = FALLBACK;
+function cfg() {
+  if (meta === cMeta) return cCfg;
+  const d = DEFAULTS[meta?.id] || FALLBACK, inSurf = d.zones[0]?.surface || 'wood';
+  cMeta = meta;
+  cCfg = !meta?.zones ? d : {
+    outdoor: meta.outdoor || d.outdoor,
+    zones: meta.zones.map((q) => {
+      const b = q.box || q, reverb = REVERB[q.reverb] || q.reverb || 'room';
+      return { ...q, x0: b.x0, x1: b.x1, z0: b.z0, z1: b.z1, reverb, surface: q.surface || (reverb === 'outdoor' ? d.outdoor.surface : inSurf) };
+    }),
+  };
+  return cCfg;
+}
 export function zoneAt(x, z) {
   const c = cfg();
   for (const q of c.zones) if (x >= q.x0 && x <= q.x1 && z >= q.z0 && z <= q.z1) return q;
