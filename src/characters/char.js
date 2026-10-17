@@ -3,16 +3,40 @@
 // Also owns the paint-splat texture/material (world decals and splats stuck on characters).
 import * as THREE from 'three';
 import { createCharacter as createProcedural, HATS, OUTFITS } from './character.js';
-import { createRigCharacter, rigStatus } from './rig.js';
+import { createRigCharacter, rigStatus, onRigReady } from './rig.js';
+import { bus, EV } from '../core/bus.js';
 export { HATS, OUTFITS };
 
-// glTF rig once it has loaded, otherwise (still loading, or the load failed) the procedural character: same API either way
+// glTF rig once it has loaded. A character made BEFORE that (or if loading fails) is procedural, behind a facade: when the rig
+// arrives it is swapped in place (same root, colour, hat, outfit, seeker and tint), so callers never notice.
+const waiting = new Set();
 export function createCharacter(opts) {
   if (rigStatus() === 'ready') {
     try { return createRigCharacter(opts); } catch (e) { console.warn('rig character failed, using procedural', e); }
   }
-  return createProcedural(opts);
+  let impl = createProcedural(opts), seeker = !!opts?.seeker, tint = null, mode = null;
+  const f = {
+    get kind() { return impl.kind; }, root: impl.root,
+    update: (dt, a) => impl.update(dt, a),
+    play: (n) => { mode = n === 'tagged' || n === 'victory' ? n : n === 'reset' || n === 'idle' ? null : mode; impl.play(n); },
+    setSeeker: (v) => { seeker = !!v; impl.setSeeker(v); },
+    setTint: (c, amt) => { tint = [c, amt]; impl.setTint(c, amt); },
+    dispose: () => { waiting.delete(f); impl.dispose(); },
+    swap() {
+      waiting.delete(f);
+      const kids = [...f.root.children]; kids.forEach((c) => f.root.remove(c));
+      let rig;
+      try { rig = createRigCharacter({ ...opts, seeker }, f.root); } catch (e) { console.warn('rig swap failed, keeping procedural', e); kids.forEach((c) => f.root.add(c)); return; }
+      impl.dispose(); impl = rig;
+      if (tint) rig.setTint(...tint);
+      if (mode) rig.play(mode);
+    },
+  };
+  waiting.add(f);
+  return f;
 }
+onRigReady(() => { for (const f of [...waiting]) f.swap(); });
+bus.on(EV.ROUND, () => { for (const f of waiting) f.play('reset'); });
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const S = THREE.SRGBColorSpace;

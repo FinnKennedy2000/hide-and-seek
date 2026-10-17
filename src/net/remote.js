@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { scene } from '../render/renderer.js';
 import { makePropClone } from '../world/build.js';
-import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint } from '../characters/index.js';
+import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint, playChar } from '../characters/index.js';
 
 const INTERP = 0.1; // render remote players 100ms in the past
 export const remotes = new Map(); // id -> avatar
@@ -96,6 +96,12 @@ export function addRemote(id, name, color, seeker, hat, pattern) {
   remotes.set(id, a);
   return a;
 }
+// tagged: topples briefly (the tagged player becomes a seeker), victory: results-screen dance for the winners
+export function tagPose(id) {
+  const a = remotes.get(id); if (!a || a.prop) return;
+  playChar(a.body, 'tagged'); setTimeout(() => { if (remotes.get(id) === a) playChar(a.body, 'reset'); }, 1500);
+}
+export const victoryPose = (id) => { const a = remotes.get(id); if (a && !a.prop) playChar(a.body, 'victory'); };
 export const setSeeker = (id, on) => { const a = remotes.get(id); if (a) setSeekerLook(a, on); };
 export function removeRemote(id) {
   const a = remotes.get(id); if (!a) return;

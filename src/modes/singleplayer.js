@@ -11,7 +11,7 @@ import { S, seekerGroup, updateSeeker } from '../ai/seeker.js';
 import { initAudio, sfx } from '../audio/sfx.js';
 import { toast, show } from '../ui/hud.js';
 import { enterFull, spMap } from '../ui/menus.js';
-import { makeChar, HATS, OUTFITS } from '../characters/index.js';
+import { makeChar, playChar, HATS, OUTFITS } from '../characters/index.js';
 import { updatePlayer, noises } from '../player/controller.js';
 
 // single-player round flow: reset / start / end, tagging, and the per-frame update for SEEK and HIDE
@@ -70,6 +70,7 @@ export function tryTag() {
   const h = tagTarget(); if (!h) return;
   h.found = true; h.state = 'found'; h.popT = 0.3; G.found++;
   if (h.spot) { h.spot.owner = null; h.spot = null; }
+  playChar(h.mesh, 'tagged');
   sfx.found(); burst(h.x, 0.8, h.z, h.color);
   toast(G.found === N_HIDERS ? 'ALL FOUND!' : `FOUND ${G.found}/${N_HIDERS}`, '#ffb44d');
   if (G.found === N_HIDERS) setTimeout(() => G.phase === 'play' && endGame(true, 'YOU FOUND THEM ALL', `Cleared in ${fmt(G.t)}`), 700);

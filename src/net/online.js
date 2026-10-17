@@ -171,6 +171,7 @@ const handlers = {
     st.hidersLeft = m.hl;
     feed(`${nameOf(m.by)} tagged ${nameOf(m.target)}`, by && hex(by.color));
     R.setSeeker(m.target, true);
+    R.tagPose(m.target);
     if (st.mode === 'prophunt') PH.onTagged(m);
     const a = R.remotes.get(m.target);
     burst(a ? a.x : P.x, 0.8, a ? a.z : P.z, target?.color ?? 0xffffff);
@@ -194,6 +195,7 @@ const handlers = {
     const mine = m.players.find((p) => p.id === st.id);
     const won = (m.winner === 'seekers') === (mine?.role === 'seeker');
     (won ? sfx.win : sfx.lose)();
+    for (const p of m.players) if ((m.winner === 'seekers') === (p.role === 'seeker')) R.victoryPose(p.id);
     $('resTitle').textContent = m.winner === 'seekers' ? 'SEEKERS WIN' : 'HIDERS WIN';
     $('resTitle').style.color = won ? '#80ed99' : '#ff4d5e';
     $('resSub').textContent = m.winner === 'seekers' ? 'Every hider was tagged.' : m.mode === 'prophunt' ? 'The seekers ran out of time, health or ammo.' : 'Time ran out with hiders still free.';

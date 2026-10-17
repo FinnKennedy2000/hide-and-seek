@@ -22,6 +22,8 @@ const HEAD_K = 1.25, HEAD_Y = 0.6 / 100;     // hat size multiplier and head-cen
 let tpl = null, status = 'idle', loading = null;
 const live = new Set();
 export const rigStatus = () => status;      // 'idle' | 'loading' | 'ready' | 'failed'
+const readyHooks = new Set();
+export const onRigReady = (fn) => { readyHooks.add(fn); if (status === 'ready') fn(); }; // fn runs once the model has loaded
 export const lod = { camera: null };         // set by index.js (kept out of here so Node can import this file)
 
 const UPPER = /^(Head|Neck|Shoulder[LR]|UpperArm[LR]|LowerArm[LR]|Palm|Middle|Thumb|Index|Ring)/;
@@ -36,19 +38,26 @@ function buildTemplate(gltf) {
   const by = (n) => gltf.animations.find((a) => a.name === n);
   const wave = by(CLIP.taunt).clone();
   wave.tracks = wave.tracks.filter((t) => UPPER.test(t.name));
+  // each locomotion clip is split into lower and upper-body halves so the taunt can cross-fade the arm exactly (weights sum to 1)
+  const split = (c) => {
+    const lo = c.clone(), up = c.clone();
+    lo.tracks = c.tracks.filter((t) => !UPPER.test(t.name)); up.tracks = c.tracks.filter((t) => UPPER.test(t.name));
+    return [lo, up];
+  };
   return {
     scene: gltf.scene,
     clips: {
-      idle: by(CLIP.idle), walk: by(CLIP.walk), run: by(CLIP.run), tagged: by(CLIP.tagged), victory: by(CLIP.victory), taunt: wave,
-      jumpStart: THREE.AnimationUtils.subclip(by(CLIP.jump), 'JumpStart', 0, 9, 30),
-      jumpLand: THREE.AnimationUtils.subclip(by(CLIP.jump), 'JumpLand', 12, 21, 30),
+      idle: split(by(CLIP.idle)), walk: split(by(CLIP.walk)), run: split(by(CLIP.run)),
+      jumpStart: split(THREE.AnimationUtils.subclip(by(CLIP.jump), 'JumpStart', 0, 9, 30)),
+      jumpLand: split(THREE.AnimationUtils.subclip(by(CLIP.jump), 'JumpLand', 12, 21, 30)),
+      tagged: by(CLIP.tagged), victory: by(CLIP.victory), taunt: wave,
     },
   };
 }
 // `gltf` = a parsed GLTF (tests call this directly); null marks a failed load
 export function setRigAsset(gltf) {
   if (!gltf) { status = 'failed'; return false; }
-  try { tpl = buildTemplate(gltf); status = 'ready'; return true; } catch (e) { console.warn('character rig unusable', e); status = 'failed'; return false; }
+  try { tpl = buildTemplate(gltf); status = 'ready'; for (const fn of readyHooks) try { fn(); } catch (e) { console.warn('rig ready hook failed', e); } return true; } catch (e) { console.warn('character rig unusable', e); status = 'failed'; return false; }
 }
 export function loadRig() {
   if (!loading) { status = 'loading'; loading = loadGroup('characters', [{ key: 'robot', url: MODEL_URL, type: 'gltf' }]).then((r) => setRigAsset(r.get('robot'))); }
@@ -79,13 +88,13 @@ function makeMaterial(tint, pat) {
 }
 
 // ---- LOD / visibility (module-wide: one frustum refresh serves every character) ----
-const fr = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere(new THREE.Vector3(), 1.4), wp = new THREE.Vector3(), cp = new THREE.Vector3();
+const fr = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere(new THREE.Vector3(), 2), wp = new THREE.Vector3(), cp = new THREE.Vector3();
 let frT = -1e9;
 function view(root) { // -> { d (metres to camera), vis }
   for (let o = root; o; o = o.parent) if (!o.visible) return { d: 0, vis: false };
   const cam = lod.camera; if (!cam) return { d: 0, vis: true };
   const now = performance.now();
-  if (now - frT > 3) { pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); fr.setFromProjectionMatrix(pm); cam.getWorldPosition(cp); frT = now; }
+  if (now - frT > 1) { cam.updateMatrixWorld(); pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); fr.setFromProjectionMatrix(pm); cam.getWorldPosition(cp); frT = now; }
   root.updateWorldMatrix(true, false); wp.setFromMatrixPosition(root.matrixWorld);
   sph.center.copy(wp).y += 0.8;
   return { d: wp.distanceTo(cp), vis: fr.intersectsSphere(sph) };
@@ -104,7 +113,8 @@ const sstep = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0);
 const _pq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3();
 
-export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plain', seeker = false } = {}) {
+// `into`: an existing Group to build inside (used when a procedural character is swapped for the rig in place)
+export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'plain', seeker = false } = {}, into = null) {
   if (!tpl) throw new Error('character rig not loaded');
   if (!HATS.includes(hat)) hat = 'none';
   if (!OUTFITS.includes(outfit)) outfit = 'plain';
@@ -116,12 +126,13 @@ export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'p
   skin.material = mat; skin.castShadow = true; skin.receiveShadow = false;
 
   const pivot = new THREE.Group(); pivot.rotation.y = Math.PI; pivot.scale.setScalar(SCALE); pivot.add(model); // character.js faces -Z
-  const root = new THREE.Group(); root.add(pivot);
+  const root = into || new THREE.Group(); root.add(pivot);
 
   const B = {}; // bones by sanitised name
   for (const n of ['Body', 'Abdomen', 'Torso', 'Neck', 'Head', 'UpperArmR', 'LowerArmR', 'Palm2R', 'UpperLegL', 'LowerLegL', 'UpperLegR', 'LowerLegR']) B[n] = model.getObjectByName(n);
   const handled = Object.values(B).filter(Boolean);
-  const baseQ = new Map(handled.map((b) => [b, b.quaternion.clone()])), baseY = B.Body.position.y;
+  const baseQ = new Map(handled.map((b) => [b, b.quaternion.clone()]));
+  let clipY = B.Body.position.y; // Body height as the mixer left it (jump arc, bob, death drop); procedural offsets go on top
 
   // gear: one merged mesh each, children of the head bone (+Z is forward in bone space, hats are authored facing -Z)
   const mkGear = (name, m) => {
@@ -129,26 +140,29 @@ export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'p
     const g = new THREE.Mesh(geo, m); g.scale.setScalar(U); g.position.y = HEAD_Y; g.rotation.y = Math.PI; B.Head.add(g); return g;
   };
   if (hat !== 'none') mkGear(hat, gearMat);
-  const seekerGear = mkGear('seeker', seekerGearMat);
-  const setSeeker = (v) => { S.seeker = !!v; seekerGear.visible = !!v; };
+  let seekerGear = null; // built the first time it is needed (most characters are never seekers)
+  const setSeeker = (v) => { S.seeker = !!v; S.hold = v ? 1 : 0; if (v && !seekerGear) seekerGear = mkGear('seeker', seekerGearMat); if (seekerGear) seekerGear.visible = !!v; };
 
   // ---- animation ----
   const mixer = new THREE.AnimationMixer(model);
   const act = (clip, loop) => { const a = mixer.clipAction(clip); a.setLoop(loop, loop === THREE.LoopOnce ? 1 : Infinity); a.clampWhenFinished = loop === THREE.LoopOnce; return a; };
   const C = tpl.clips;
-  const A = {
-    idle: act(C.idle, THREE.LoopRepeat), walk: act(C.walk, THREE.LoopRepeat), run: act(C.run, THREE.LoopRepeat),
-    js: act(C.jumpStart, THREE.LoopOnce), jl: act(C.jumpLand, THREE.LoopOnce), taunt: act(C.taunt, THREE.LoopOnce),
-    tag: act(C.tagged, THREE.LoopOnce), vic: act(C.victory, THREE.LoopRepeat),
-  };
+  const pair = (clips) => clips.map((c) => act(c, THREE.LoopRepeat));
+  const A = { idle: pair(C.idle), walk: pair(C.walk), run: pair(C.run),
+    js: C.jumpStart.map((c) => act(c, THREE.LoopOnce)), jl: C.jumpLand.map((c) => act(c, THREE.LoopOnce)),
+    taunt: act(C.taunt, THREE.LoopOnce), tag: act(C.tagged, THREE.LoopOnce), vic: act(C.victory, THREE.LoopRepeat) };
   A.taunt.clampWhenFinished = false;
-  for (const k of ['idle', 'walk', 'run']) { A[k].play(); A[k].time = Math.random() * 0.9; } // desync neighbours
-  for (const a of Object.values(A)) a.setEffectiveWeight(0);
+  const start = Math.random() * 0.9;
+  for (const k of ['idle', 'walk', 'run']) for (const a of A[k]) { a.play(); a.time = start; } // desync neighbours; halves stay together
+  const flat = Object.values(A).flat();
+  for (const a of flat) a.setEffectiveWeight(0);
+  const w2 = (pairActs, w, tw) => { pairActs[0].setEffectiveWeight(w); pairActs[1].setEffectiveWeight(w * (1 - tw)); };
+  const reset2 = (pairActs) => pairActs.forEach((a) => a.reset().play());
 
-  const S = { seeker: false, move: 0, run: 0, crouch: 0, air: 0, hold: 0, look: 0, pitch: 0, ov: 0, mode: null, vicT: 0,
+  const S = { seeker: false, move: 0, run: 0, crouch: 0, air: 0, hold: 0, look: 0, pitch: 0, ov: 0, mode: null, lastOv: null, vicT: 0, tw: 0,
     taunt: -1, hit: -1, landT: -1, wasAir: false, acc: 0, any: false };
-  setSeeker(seeker); S.hold = seeker ? 1 : 0;
-  const TAUNT_T = C.taunt.duration, LAND_T = C.jumpLand.duration + 0.1, HIT_T = 0.4;
+  setSeeker(seeker);
+  const TAUNT_T = C.taunt.duration, LAND_T = C.jumpLand[0].duration + 0.1, HIT_T = 0.4;
 
   function rot(bone, axis, ang) { // rotate `bone` by `ang` about a MODEL-space axis (independent of the bone's own axes)
     if (!bone || Math.abs(ang) < 1e-4) return;
@@ -166,10 +180,22 @@ export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'p
   }
   const HOLD_UP = new THREE.Vector3(), HOLD_LO = new THREE.Vector3();
 
+  function timers(h) {
+    if (S.mode === 'victory' && (S.vicT += h) > C.victory.duration * 2) S.mode = null;
+    if (S.landT >= 0 && (S.landT += h) > LAND_T) S.landT = -1;
+    if (S.taunt >= 0 && (S.taunt += h) > TAUNT_T) S.taunt = -1;
+    if (S.hit >= 0 && (S.hit += h) > HIT_T) S.hit = -1;
+  }
+
   function update(dt, { speed = 0, crouch = false, airborne = false, lookYaw = 0, aimPitch = 0 } = {}) {
     dt = clamp(dt || 0, 0, 0.1);
     const { d, vis } = view(root);
-    if (!vis) { S.any = false; return; } // off-screen or hidden: the mixer is paused, state resumes when it returns
+    if (!vis) { // off-screen or hidden: no skeleton evaluation, but the clocks keep running so it pops back in mid-cycle
+      S.any = false; S.acc = 0;
+      for (const a of flat) if (a.enabled && a.isRunning()) a.time += dt * a.timeScale;
+      timers(dt);
+      return;
+    }
     S.acc += dt;
     const step = stepFor(d);
     if (S.acc < step && S.any) { applyPose(); return; } // reduced-rate bone update: re-apply the held pose only
@@ -182,44 +208,41 @@ export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'p
     S.look = damp(S.look, clamp(lookYaw, -1.2, 1.2), 10, h);
     S.pitch = damp(S.pitch, clamp(aimPitch, -1.2, 1.2), 14, h);
     S.ov = damp(S.ov, S.mode ? 1 : 0, 9, h);
-    if (S.mode === 'victory' && (S.vicT += h) > C.victory.duration * 2) S.mode = null;
+    timers(h);
 
-    if (airborne && !S.wasAir) { A.js.reset().play(); S.landT = -1; }
-    if (!airborne && S.wasAir) { A.jl.reset().play(); S.landT = 0; }
+    if (airborne && !S.wasAir) { reset2(A.js); S.landT = -1; }
+    if (!airborne && S.wasAir) { reset2(A.jl); S.landT = 0; }
     S.wasAir = airborne;
-    if (S.landT >= 0 && (S.landT += h) > LAND_T) S.landT = -1;
-    if (S.taunt >= 0 && (S.taunt += h) > TAUNT_T) S.taunt = -1;
-    if (S.hit >= 0 && (S.hit += h) > HIT_T) S.hit = -1;
 
     const free = 1 - S.ov, landW = S.landT >= 0 ? 1 - sstep(S.landT / LAND_T) : 0;
     const loco = free * (1 - Math.max(S.air, landW));
-    A.idle.setEffectiveWeight(loco * (1 - S.move));
-    A.walk.setEffectiveWeight(loco * S.move * (1 - S.run));
-    A.run.setEffectiveWeight(loco * S.move * S.run);
-    A.js.setEffectiveWeight(free * S.air);
-    A.jl.setEffectiveWeight(free * landW * (1 - S.air));
-    // walk and run clips share one duration, so one time scale keeps their feet in phase
-    const ts = clamp(speed / (2.2 + 2.8 * S.run), 0.6, 1.5); A.walk.timeScale = A.run.timeScale = ts;
     const tw = S.taunt >= 0 ? sstep(Math.min(1, S.taunt / 0.15, (TAUNT_T - S.taunt) / 0.25)) : 0;
-    A.taunt.setEffectiveWeight(tw * free * 12); // the clip only drives the arm, so it must out-weigh the locomotion on those tracks
-    A.tag.setEffectiveWeight(S.mode === 'tagged' ? S.ov : 0);
-    A.vic.setEffectiveWeight(S.mode === 'victory' ? S.ov : 0);
     S.tw = tw;
+    w2(A.idle, loco * (1 - S.move), tw);
+    w2(A.walk, loco * S.move * (1 - S.run), tw);
+    w2(A.run, loco * S.move * S.run, tw);
+    w2(A.js, free * S.air, tw);
+    w2(A.jl, free * landW * (1 - S.air), tw);
+    A.taunt.setEffectiveWeight(tw * free); // arm tracks: loco upper halves carry (1 - tw), so the arm sums to exactly 1
+    A.tag.setEffectiveWeight(S.lastOv === 'tagged' ? S.ov : 0); // fades with S.ov (no dip to the bind pose on reset)
+    A.vic.setEffectiveWeight(S.lastOv === 'victory' ? S.ov : 0);
+    // walk and run clips share one duration, so one time scale keeps their feet in phase
+    const ts = clamp(speed / (2.2 + 2.8 * S.run), 0.6, 1.5); for (const a of [...A.walk, ...A.run]) a.timeScale = ts;
 
-    for (const b of handled) b.quaternion.copy(baseQ.get(b)); B.Body.position.y = baseY; // undo last frame's procedural pose
+    for (const b of handled) b.quaternion.copy(baseQ.get(b)); B.Body.position.y = clipY; // undo last frame's procedural pose
     mixer.update(h);
     for (const b of handled) baseQ.get(b).copy(b.quaternion); // (bones the clips don't drive keep their rest value)
+    clipY = B.Body.position.y;
     applyPose();
   }
 
   function applyPose() {
     const { crouch: cr, pitch: p, hold, look } = S, free = 1 - S.ov;
-    const bq = baseQ;
-    for (const b of handled) b.quaternion.copy(bq.get(b));
-    B.Body.position.y = baseY;
+    for (const b of handled) b.quaternion.copy(baseQ.get(b));
+    B.Body.position.y = clipY;
     const c = cr * free * (1 - S.air);
     if (c > 0.01) {
-      B.Body.position.y = baseY - 0.19 * c * U;
+      B.Body.position.y = clipY - 0.19 * c * U;
       rot(B.UpperLegL, AX, -0.8 * c); rot(B.UpperLegR, AX, -0.8 * c);
       rot(B.LowerLegL, AX, 1.6 * c); rot(B.LowerLegR, AX, 1.6 * c);
       rot(B.Abdomen, AX, 0.25 * c);
@@ -239,8 +262,8 @@ export function createRigCharacter({ color = 0x4cc9f0, hat = 'none', outfit = 'p
   function play(name) {
     if (name === 'taunt') { S.taunt = 0; A.taunt.reset().play(); }
     else if (name === 'hit') S.hit = 0;
-    else if (name === 'tagged') { S.mode = 'tagged'; A.tag.reset().play(); }
-    else if (name === 'victory') { S.mode = 'victory'; S.vicT = 0; A.vic.reset().play(); }
+    else if (name === 'tagged') { S.mode = S.lastOv = 'tagged'; A.tag.reset().play(); }
+    else if (name === 'victory') { S.mode = S.lastOv = 'victory'; S.vicT = 0; A.vic.reset().play(); }
     else if (name === 'reset' || name === 'idle') { S.mode = null; S.hit = S.taunt = -1; }
   }
   function setTint(c, amount = 0) { tint.copy(base).lerp(new THREE.Color(c), clamp(amount, 0, 1)); }
