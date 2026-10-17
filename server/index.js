@@ -40,6 +40,7 @@ const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
 const NOISE_RANGE = 30;         // m: `noise` cues are only sent to players who could hear them
 const REVEAL_S = 1.0, HOLD_S = 0.4; // a sound reveals the maker's position for 1 s; a player that just left LOS lingers 0.4 s so interpolation does not pop
 const BUDGET_CAP = 1.5;         // m: speed-budget bucket (accrues MAX_SPEED m/s of server time), so jittered / bunched packets are not mistaken for teleports
+const RECONNECT_MS = (Number(process.env.RECONNECT_SECS) || 30) * 1000; // how long a dropped player's seat is held (matches src/shared/protocol.js RECONNECT_SECS)
 const BOT_TARGET = 6;           // "fill bots" tops a lobby up to this many players
 let PR = null;      // src/shared/protocol.js
 let BOTSPOTS = null; // mapId -> hiding spots the bots may use
@@ -76,7 +77,7 @@ const server = http.createServer((req, res) => {
     let humans = 0, bots = 0;
     for (const r of rooms.values()) for (const q of r.players.values()) q.bot ? bots++ : humans++;
     res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
-    return res.end(req.method === 'HEAD' ? undefined : `hs_rooms ${rooms.size}\nhs_players ${humans}\nhs_bots ${bots}\nhs_connections ${wss ? wss.clients.size : 0}\nhs_tick_ms ${tickMs.last.toFixed(3)}\nhs_tick_ms_avg ${tickMs.avg.toFixed(3)}\nhs_tick_ms_max ${tickMs.max.toFixed(3)}\nhs_uptime_s ${Math.round(process.uptime())}\n`);
+    return res.end(req.method === 'HEAD' ? undefined : `hs_rooms ${rooms.size}\nhs_players ${humans}\nhs_bots ${bots}\nhs_tokens ${tokens.size}\nhs_history_samples ${[...rooms.values()].reduce((n, r) => n + [...r.players.values()].reduce((m, q) => m + q.hist.length, 0), 0)}\nhs_connections ${wss ? wss.clients.size : 0}\nhs_tick_ms ${tickMs.last.toFixed(3)}\nhs_tick_ms_avg ${tickMs.avg.toFixed(3)}\nhs_tick_ms_max ${tickMs.max.toFixed(3)}\nhs_uptime_s ${Math.round(process.uptime())}\n`);
   }
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.resolve(ROOT, '.' + path.sep + path.normalize(rel));
@@ -106,6 +107,11 @@ const server = http.createServer((req, res) => {
 const rooms = new Map();   // code -> room
 const tokens = new Map();  // reconnect token -> player (only players currently in a room)
 let nextId = 1;
+const liveIds = new Set(); // ids are u16 on the wire: allocate from 1..65535, skipping ids still in use, so a long-running server never truncates or collides
+function allocId() {
+  for (let i = 0; i < 65535; i++) { const id = nextId; nextId = nextId >= 65535 ? 1 : nextId + 1; if (!liveIds.has(id)) { liveIds.add(id); return id; } }
+  throw new Error('out of player ids');
+}
 const tickMs = { last: 0, avg: 0, max: 0 };
 const now = () => Date.now() / 1000;
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -116,7 +122,7 @@ const BOT_WS = { readyState: 0, send() {} }; // bots have no socket: every send(
 
 function newPlayer(ws, bot = false) {
   return {
-    id: nextId++, ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
+    id: allocId(), ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, c: 0, lastPos: 0, lastTag: 0, lastNoise: 0, tokens: 120, tokT: Date.now(),
     ack: 0, budget: BUDGET_CAP, budgetT: Date.now(), rtt: 0, disc: 0,
     hist: [], sent: new Map(), seen: new Map(), reveal: new Map(), // lag-comp history; per-receiver snapshot state (what we sent / when each player was last in LOS / sound reveals)
@@ -167,7 +173,7 @@ function syncBots(room) {
   if (room.phase !== 'lobby') return;
   const want = room.fill ? Math.max(0, BOT_TARGET - humansOf(room).length) : 0;
   const bots = [...room.players.values()].filter((q) => q.bot);
-  while (bots.length > want) room.players.delete(bots.pop().id);
+  while (bots.length > want) { const b = bots.pop(); room.players.delete(b.id); liveIds.delete(b.id); }
   while (bots.length < want) { const b = newPlayer(BOT_WS, true); b.name = `Bot ${++room.botN}`; joinRoom(b, room, true); bots.push(b); }
 }
 
@@ -177,7 +183,10 @@ function leaveRoom(p) {
   p.room = null; p.role = null; p.disc = 0;
   if (p.token) tokens.delete(p.token);
   room.players.delete(p.id);
-  if (!humansOf(room).length) { rooms.delete(room.code); return; }
+  p.hist = []; p.sent.clear(); p.seen.clear(); p.reveal.clear();
+  for (const q of room.players.values()) { q.sent.delete(p.id); q.seen.delete(p.id); q.reveal.delete(p.id); }
+  if (!p.bot && p.ws.readyState !== 1) liveIds.delete(p.id); // a human whose socket is gone frees its id
+  if (!humansOf(room).length) { for (const q of room.players.values()) liveIds.delete(q.id); room.players.clear(); rooms.delete(room.code); return; }
   if (room.hostId === p.id) room.hostId = humansOf(room)[0].id;
   syncBots(room);
   sendRoom(room);
@@ -204,7 +213,11 @@ function startRound(room) {
   });
   room.phase = 'hide'; room.lt = 0;
   room.t0 = now(); room.phaseEnd = room.t0 + HIDE_SECS; room.pickup = null; room.pickupDone = false; room.pickupAt = 0;
-  broadcast(room, { t: 'round', mode: room.mode, map: room.map, seekers: ps.slice(0, nSeek).map((p) => p.id), spawns, hide: HIDE_SECS, seek: SEEK_SECS });
+  // spawns are per recipient: your own plus your own side's (seekers start at the door, which is public). A seeker never learns where hiders spawned.
+  for (const p of ps) {
+    if (p.bot) continue;
+    send(p, { t: 'round', mode: room.mode, map: room.map, seekers: ps.slice(0, nSeek).map((q) => q.id), spawns: spawns.filter((sp) => sp.id === p.id || room.players.get(sp.id).role === p.role), hide: HIDE_SECS, seek: SEEK_SECS });
+  }
   if (room.mode === 'prophunt') for (const p of ps.slice(0, nSeek)) sendAmmo(p);
 }
 
@@ -218,7 +231,7 @@ function endRound(room, winner) {
   const players = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, role: p.role, score: p.score, total: p.total, tags: p.tags, shots: p.shots, hits: p.hits, surv: p.first ? null : r2((p.role === 'hider' ? t : p.tagT) - room.t0) }))
     .sort((a, b) => b.score - a.score);
   room.phase = 'lobby';
-  for (const p of room.players.values()) p.role = null;
+  for (const p of room.players.values()) { p.role = null; p.hist = []; p.sent.clear(); p.seen.clear(); p.reveal.clear(); }
   broadcast(room, { t: 'end', winner, mode: room.mode, players });
   syncBots(room);
   sendRoom(room);
@@ -283,6 +296,7 @@ function sendSnapshots(room, t) {
       if (!visible(room, r, o, t)) { if (r.sent.delete(o.id)) ents.push({ id: o.id, q: GONE_Q, flags: PR.F_GONE }); continue; }
       const q = PR.quantise(o), prev = r.sent.get(o.id);
       if (prev && sameQ(prev, q)) continue; // delta: unchanged since the last snapshot this receiver got
+      if (!prev) { if (o.disguise != null) send(r, { t: 'disguise', id: o.id, propId: o.disguise }); if (o.tint != null) send(r, { t: 'camo', id: o.id, c: o.tint }); } // newly visible: bring it up to date
       r.sent.set(o.id, q); ents.push({ id: o.id, q, flags: 0 });
     }
     r.ws.send(PR.encodeSnap({ tl, hl, ack: r.ack, st }, ents));
@@ -320,7 +334,7 @@ function tickRoom(room, t) {
 setInterval(() => {
   const t = now(), t0 = performance.now();
   for (const room of [...rooms.values()]) {
-    for (const q of [...room.players.values()]) if (q.disc && Date.now() - q.disc > PR.RECONNECT_SECS * 1000) leaveRoom(q); // reconnect window over
+    for (const q of [...room.players.values()]) if (q.disc && Date.now() - q.disc > RECONNECT_MS) leaveRoom(q); // reconnect window over
     if (rooms.get(room.code) !== room) continue;
     try { tickRoom(room, t); } catch (e) {
       console.error('tick error', room.code, e);
@@ -340,7 +354,12 @@ process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 // ======================================================================
 // actions shared by players and bots
 // ======================================================================
-function applyDisguise(room, p, id) { p.lastDisguise = now(); p.disguise = id; p.tint = null; broadcast(room, { t: 'disguise', id: p.id, propId: id }); }
+// a message about player `o` (disguise, tint) only goes to players who may currently know where `o` is; the snapshot code re-sends it when `o` next becomes visible
+function sendAbout(room, o, msg) {
+  const t = now(), s = JSON.stringify(msg);
+  for (const r of room.players.values()) if (r.ws.readyState === 1 && (r === o || visible(room, r, o, t))) r.ws.send(s);
+}
+function applyDisguise(room, p, id) { p.lastDisguise = now(); p.disguise = id; p.tint = null; sendAbout(room, p, { t: 'disguise', id: p.id, propId: id }); }
 function startReload(p) { p.reloadEnd = now() + RELOAD_S; sendAmmo(p); }
 
 // the seeker `p` fires from (ox,oy,oz) along unit (ux,uy,uz); hiders are judged where they were at wall-clock ms T. False when the shot is refused.
@@ -491,16 +510,16 @@ const handlers = {
   },
   reconnect(p, m, conn) { // take over a player whose socket dropped within the last 30 s of a live round
     const old = typeof m.token === 'string' ? tokens.get(m.token) : null;
-    if (!old || !old.disc || !old.room || Date.now() - old.disc > PR.RECONNECT_SECS * 1000) return send(p, { t: 'err', msg: 'Session expired' });
+    if (!old || !old.disc || !old.room || Date.now() - old.disc > RECONNECT_MS) return send(p, { t: 'err', msg: 'Session expired' });
     if (old.ws.readyState === 1) old.ws.terminate();
     old.ws = p.ws; old.ok = true; old.disc = 0; old.sent = new Map(); old.seen = new Map(); old.rtt = p.rtt;
-    p.ws.alive = true; conn.p = old;
+    p.ws.alive = true; conn.p = old; liveIds.delete(p.id); // the throwaway player this socket started with is dropped
     const room = old.room;
     send(old, roomMsg(room, old));
     broadcast(room, { t: 'conn', id: old.id, on: true }, old);
     if (room.phase === 'hide' || room.phase === 'seek') {
       send(old, { t: 'round', resume: 1, phase: room.phase, mode: room.mode, map: room.map, seekers: seekersOf(room).map((q) => q.id), spawns: [{ id: old.id, x: r2(old.x), z: r2(old.z), yaw: r2(old.yaw) }], hide: HIDE_SECS, seek: SEEK_SECS, tl: Math.max(0, r2(room.phaseEnd - now())), role: old.role, score: old.score });
-      for (const q of room.players.values()) { if (q.disguise != null) send(old, { t: 'disguise', id: q.id, propId: q.disguise }); if (q.tint != null) send(old, { t: 'camo', id: q.id, c: q.tint }); }
+      // others' disguise / tint are re-sent by the snapshot code the moment each player is next visible to us
       if (room.mode === 'prophunt') { if (old.role === 'seeker') sendAmmo(old); if (room.pickup) send(old, { t: 'pickup', x: room.pickup.x, z: room.pickup.z }); }
     }
   },
@@ -598,7 +617,7 @@ const handlers = {
     if (!Number.isInteger(m.c) || m.c < 0 || m.c > 0xffffff) return;
     const t = now(); if (t - p.lastCamo < 0.5) return;
     p.lastCamo = t; p.tint = m.c;
-    broadcast(room, { t: 'camo', id: p.id, c: m.c });
+    sendAbout(room, p, { t: 'camo', id: p.id, c: m.c });
   },
   taunt(p) {
     const room = p.room;
@@ -616,8 +635,9 @@ const handlers = {
     const len = Math.hypot(dx, dy, dz);
     if (Math.abs(len - 1) > 0.05) return;                                              // direction must be a unit vector
     if (Math.hypot(ox - p.x, oz - p.z) > ORIGIN_TOL || oy < p.y || oy > p.y + 2.2) return sendAmmo(p); // origin near where the seeker really is
-    // the shooter saw hiders one way trip plus its own interpolation delay (`d`, claimed by the client, clamped to 0.2 s) in the past; never more than MAX_REWIND
-    const rewind = Math.min(PR.MAX_REWIND, p.rtt / 2 + (num(m.d, 0, 0.2) ?? 0));
+    // the shooter saw hiders (one-way trip + its own interpolation delay `d`, claimed by the client and clamped to 0.2 s) in the past, and the shot
+    // took another one-way trip to get here: rewind by rtt + d, never more than MAX_REWIND (250 ms)
+    const rewind = Math.min(PR.MAX_REWIND, p.rtt + (num(m.d, 0, 0.2) ?? 0));
     if (!fireShot(room, p, ox, oy, oz, dx / len, dy / len, dz / len, Date.now() - rewind * 1000)) sendAmmo(p);
   },
   reload(p) {
@@ -670,7 +690,7 @@ wss.on('connection', (ws) => {
       // reconnect window. A close frame (the player pressed leave or closed the page) frees the seat at once.
       if (code === 1006 && p.room && (p.room.phase === 'hide' || p.room.phase === 'seek')) {
         p.disc = Date.now(); broadcast(p.room, { t: 'conn', id: p.id, on: false }, p);
-      } else leaveRoom(p);
+      } else { leaveRoom(p); if (!p.room) liveIds.delete(p.id); }
     } catch (e) { console.error('close handler error', e); }
   });
   ws.on('message', (raw, isBinary) => {

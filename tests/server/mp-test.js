@@ -46,7 +46,7 @@ function client(label) {
 
   A.send('start');
   const rounds = await Promise.all([A, B, C].map((c) => c.wait((m) => m.t === 'round')));
-  const r = rounds[0];
+  const r = WIRE.mergeRounds(rounds);
   ok(r.seekers.length === 1 && r.spawns.length === 3, `round: 1 seeker (${r.seekers}), 3 spawns`);
   const by = { A, B, C }, all = [A, B, C];
   const seeker = all.find((c) => c.id === r.seekers[0]), hiders = all.filter((c) => c !== seeker);

@@ -73,7 +73,7 @@ async function lobby(url, n, mode) {
 }
 async function startRound(cs) {
   cs[0].send('start');
-  const r = (await Promise.all(cs.map((c) => c.wait((m) => m.t === 'round'))))[0];
+  const rounds = await Promise.all(cs.map((c) => c.wait((m) => m.t === 'round'))), r = WIRE.mergeRounds(rounds);
   for (const sp of r.spawns) { const c = cs.find((k) => k.id === sp.id); c.at = [sp.x, sp.z]; }
   return r;
 }
@@ -149,6 +149,7 @@ async function startRound(cs) {
     // 6.8 m/s (sprint) along z = 14 for 3.5 s, one update per 66 ms
     H.snaps.length = 0; H.sent = new Map();
     await H.walk(12, 14, 6.8, 66);
+    await sleep(150); H.pos(H.at[0], H.at[1]); // (a real client keeps sending while idle)
     await sleep(900);
     const acked = H.snaps.map((s) => { const sp = H.sent.get(s.ack), me = s.p.find((e) => e[7] & 2); return sp && me ? Math.hypot(me[1] - sp[0], me[3] - sp[1]) : null; }).filter((e) => e !== null);
     const worst = Math.max(...acked);
@@ -248,7 +249,8 @@ async function startRound(cs) {
     ok(room.players.length >= 4 && room.players.filter((p) => p.bot).length === room.players.length - 1, `1 human + fill bots: ${room.players.length} players in the lobby (${room.players.filter((p) => p.bot).length} bots)`);
     A.send('start');
     const r = await A.wait((m) => m.t === 'round');
-    ok(r.spawns.length >= 4 && r.seekers.length >= 1, `the round starts with ${r.spawns.length} players`);
+    const first = await A.wait((m) => m.t === 'snap');
+    ok(first.hl + r.seekers.length >= 4, `the round starts with ${first.hl + r.seekers.length} players (${r.seekers.length} seekers, ${first.hl} hiders)`);
     // the bots play: after the hide time, the human sees tagging / shots or the round just keeps running without server errors
     await A.wait((m) => m.t === 'phase', 4000);
     A.at = r.spawns.find((s) => s.id === A.id) ? [r.spawns.find((s) => s.id === A.id).x, r.spawns.find((s) => s.id === A.id).z] : [0, 0];
@@ -262,6 +264,80 @@ async function startRound(cs) {
     const rb2 = await B.wait((m) => m.t === 'room' && !m.fill);
     ok(rb.players.length >= 4 && rb2.players.length === 1 && !botIds.has(rb2.players[0].id), 'turning fill off removes the bots again');
     B.ws.close();
+  }
+
+
+  // ===== 8. no disclosure through side channels: round spawns, disguise and camo only reach a seeker that may know where the hider is
+  {
+    const cs = await lobby(URL, 2, 'prophunt');
+    cs[0].send('start');
+    const rounds = await Promise.all(cs.map((c) => c.wait((m) => m.t === 'round'))), r = WIRE.mergeRounds(rounds);
+    for (const sp of r.spawns) cs.find((k) => k.id === sp.id).at = [sp.x, sp.z];
+    const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S), sr = rounds[cs.indexOf(S)], hr = rounds[cs.indexOf(H)];
+    ok(!sr.spawns.some((sp) => sp.id === H.id) && sr.spawns.some((sp) => sp.id === S.id), "the seeker's round message does not contain the hider's spawn");
+    ok(hr.spawns.some((sp) => sp.id === H.id), "the hider's round message has its own spawn");
+    const prop = world.props.find((p) => !sees(S0[0], S0[1], p.x, p.z) && Math.hypot(p.x - S0[0], p.z - S0[1]) < 30);
+    let V = null;
+    for (let x = -20; x <= 20; x += 1) for (let z = -20; z <= 20; z += 1) { const d = Math.hypot(x - S0[0], z - S0[1]); if (d > 6 && d < 18 && sees(S0[0], S0[1], x, z) && (!V || d < Math.hypot(V[0] - S0[0], V[1] - S0[1]))) V = [x, z]; }
+    await H.walk(prop.x, prop.z, 8, 50);
+    await S.wait((m) => m.t === 'phase');
+    await sleep(700); S.snaps.length = 0; S.log.length = 0; // past the linger of any line of sight the walk crossed
+    H.send('disguise', { propId: prop.id }); H.send('camo', { c: 0x123456 });
+    await H.wait((m) => m.t === 'disguise' && m.id === H.id); await sleep(700);
+    ok(!S.log.some((m) => (m.t === 'disguise' || m.t === 'camo') && m.id === H.id), 'a hidden hider\'s disguise and camo are not sent to the seeker');
+    ok(!S.snaps.some((s) => s.p.some((e) => e[0] === H.id && !(e[7] & 1))), 'and neither is its position');
+    await H.walk(V[0], V[1], 8, 50); await sleep(600);
+    const dg = S.log.find((m) => m.t === 'disguise' && m.id === H.id);
+    ok(!!dg && dg.propId === prop.id && S.log.some((m) => m.t === 'camo' && m.id === H.id && m.c === 0x123456), 'once the hider is in line of sight the seeker is told its disguise and tint');
+    cs.forEach((c) => c.ws.close());
+  }
+
+  // ===== 9. protocol robustness: malformed binary never throws, writes are clamped, the declared count always matches
+  {
+    const P = WIRE.P, { encodeSnap, decodeSnap, quantise } = P, bad = (v) => { try { return decodeSnap(v) === null; } catch { return false; } };
+    const good = encodeSnap({ tl: 12.3, hl: 2, ack: 7, st: 99 }, [{ id: 3, q: quantise({ x: 1, y: 0, z: 2, yaw: 0, pitch: 0, c: 0 }), flags: 0 }]);
+    const extra = new Uint8Array(good.byteLength + 1); extra.set(new Uint8Array(good));
+    const lying = good.slice(0); new DataView(lying).setUint8(5, 200);
+    ok([null, undefined, 'x', 5, {}, [], new ArrayBuffer(0), new ArrayBuffer(11), good.slice(0, good.byteLength - 1), extra, lying, new Uint8Array(3)].every(bad), 'decodeSnap returns null (never throws) for wrong types, short buffers and a size that does not match the declared count');
+    ok(decodeSnap(good) && decodeSnap(good).p.length === 1 && decodeSnap(new Uint8Array(good)).p[0][0] === 3, 'a well-formed snapshot decodes (ArrayBuffer or typed array)');
+    let threw = false;
+    try { for (let i = 0; i < 3000; i++) { const b = new Uint8Array(Math.floor(Math.random() * 80)); for (let j = 0; j < b.length; j++) b[j] = Math.random() * 256; if (b.length) b[0] = 1; decodeSnap(b); } } catch { threw = true; }
+    ok(!threw, 'random buffers never throw out of decodeSnap');
+    const many = Array.from({ length: 300 }, (_, i) => ({ id: i, q: quantise({ x: 1e9, y: -5, z: NaN, yaw: Infinity, pitch: 9, c: 5 }), flags: 255 }));
+    many.push({ id: 70000, q: many[0].q, flags: 0 }, { id: -1, q: many[0].q, flags: 0 }, { id: NaN, q: many[0].q, flags: 0 });
+    const enc = encodeSnap({ tl: NaN, hl: 9999, ack: -5, st: 2 ** 40 }, many), dec = decodeSnap(enc);
+    ok(dec && dec.p.length === 255 && enc.byteLength === P.HEAD + 255 * P.ENTRY, 'at most 255 entries are written and the length matches the count; invalid ids are skipped');
+    ok(dec && dec.p.every((e) => e[1] <= 327.67 && e[1] >= -327.68 && e[2] >= 0 && Math.abs(e[5]) <= 1.6 + 1e-9 && e[6] <= 1 && e[7] <= 3) && dec.hl === 255 && dec.tl === 0, 'out-of-range coordinates, flags, counters and NaN are clamped');
+    // the server shrugs off junk frames
+    const j = client(URL, 'junk'); await j.open;
+    j.ws.send(Buffer.from(good)); j.ws.send(Buffer.alloc(20000)); j.ws.send('{"t":"hello","protocol":{"a":1}}'); j.ws.send('{"t":"pos","x":"1"}');
+    await sleep(200);
+    j.ws.close();
+    const k = client(URL, 'after'); await k.open; k.send('create', { name: 'Still up' });
+    ok((await k.wait((m) => m.t === 'room').catch(() => null)) !== null, 'the server is still serving after junk frames'); k.ws.close();
+  }
+
+  // ===== 10. nothing outlives its player: reconnect tokens expire, histories and rooms are released
+  {
+    const metric = async (name) => { const body = await new Promise((res, rej) => http.get(URL.replace('ws:', 'http:').replace('/ws', '/metrics'), (r) => { let s = ''; r.on('data', (d) => (s += d)); r.on('end', () => res(s)); }).on('error', rej)); return Number(new RegExp(`^${name} (\\S+)$`, 'm').exec(body)[1]); };
+    const secs = Number(process.env.RECONNECT_SECS) || 30;
+    if (secs > 6) console.log('SKIP token expiry (set RECONNECT_SECS=3)');
+    else {
+      await sleep(300);
+      const base = { tokens: await metric('hs_tokens'), rooms: await metric('hs_rooms') };
+      const cs = await lobby(URL, 3); const r = await startRound(cs);
+      const S = cs.find((c) => c.id === r.seekers[0]), [H1, H2] = cs.filter((c) => c !== S);
+      await sleep(500);
+      ok(await metric('hs_tokens') === base.tokens + 3 && await metric('hs_history_samples') > 0, 'three seats hold three tokens and lag-comp history is being kept');
+      const token = H1.token; H1.ws.terminate();
+      await sleep(secs * 1000 + 700);
+      ok(await metric('hs_tokens') === base.tokens + 2, `the dropped player's token is gone ${secs}s after the drop`);
+      const late = client(URL, 'late'); await late.open; late.send('reconnect', { token });
+      ok(/Session expired/.test((await late.wait((m) => m.t === 'err').catch(() => ({ msg: '' }))).msg), 'an expired token cannot be used'); late.ws.close();
+      ok((await H2.wait((m) => m.t === 'room' && m.players.length === 2).catch(() => null)) !== null, 'the seat was freed for the others');
+      cs.forEach((c) => c.ws.close()); await sleep(400);
+      ok(await metric('hs_tokens') === base.tokens && await metric('hs_rooms') === base.rooms && await metric('hs_history_samples') === 0, 'when everyone leaves the room, tokens, room and history are released');
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

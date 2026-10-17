@@ -54,7 +54,7 @@ async function game(n = 2, mode = 'prophunt') {
   const g = await lobby(n);
   if (mode !== 'classic') { g.host.send('mode', { mode }); await g.host.wait((m) => m.t === 'room' && m.mode === mode); }
   g.host.send('start');
-  const r = (await Promise.all(g.cs.map((c) => c.wait((m) => m.t === 'round'))))[0];
+  const r = await WIRE.mergeRounds(await Promise.all(g.cs.map((c) => c.wait((m) => m.t === 'round'))));
   g.r = r;
   for (const sp of r.spawns) g.cs.find((k) => k.id === sp.id).at = [sp.x, sp.z];
   g.seeker = g.cs.find((c) => c.id === r.seekers[0]); g.hiders = g.cs.filter((c) => c !== g.seeker);
@@ -69,7 +69,7 @@ async function mapGame(n, map, mode = 'prophunt') {
   g.host.send('map', { map }); await g.host.wait((m) => m.t === 'room' && m.map === map);
   if (mode !== 'classic') { g.host.send('mode', { mode }); await g.host.wait((m) => m.t === 'room' && m.mode === mode); }
   g.host.send('start');
-  const r = (await Promise.all(g.cs.map((c) => c.wait((m) => m.t === 'round'))))[0];
+  const r = await WIRE.mergeRounds(await Promise.all(g.cs.map((c) => c.wait((m) => m.t === 'round'))));
   g.r = r;
   for (const sp of r.spawns) g.cs.find((k) => k.id === sp.id).at = [sp.x, sp.z];
   g.seeker = g.cs.find((c) => c.id === r.seekers[0]); g.hiders = g.cs.filter((c) => c !== g.seeker);

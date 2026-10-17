@@ -8,3 +8,5 @@ exports.parse = (d, isBinary) => {
   const s = P.decodeSnap(d);
   return s && { t: 'snap', ...s };
 };
+// the server sends each player only its own side's spawns (a seeker must not learn where hiders spawned): merge every player's `round` message back into one
+exports.mergeRounds = (rs) => ({ ...rs[0], spawns: [...new Map(rs.flatMap((x) => x.spawns).map((sp) => [sp.id, sp])).values()] });
