@@ -10,12 +10,14 @@
     "smoke": "playwright test",
     "test:server": "node tests/server/run.js",
     "test:audio": "node --test tests/audio/cues.test.mjs",
-    "test:chars": "node --test tests/chars/rig.test.mjs"
+    "test:chars": "node --test tests/chars/rig.test.mjs",
+    "test:player": "node tests/player/controller.test.mjs"
   },
   "engines": {
     "node": ">=20.19"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "three": "0.170.0",
     "ws": "^8.18"
   },

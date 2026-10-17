@@ -1,6 +1,6 @@
 import { $, clamp } from '../core/util.js';
-import { P, G, hooks, inGame } from '../core/state.js';
-import { keys, releaseAll, requestLock } from '../core/input.js';
+import { G, hooks, inGame } from '../core/state.js';
+import { canon, releaseAll, requestLock } from '../core/input.js'; // input.js owns the key state, mouse look, ADS and focus-loss release
 import { settings } from '../core/settings.js';
 import { canvas } from '../render/renderer.js';
 import { setWorld } from '../world/build.js';
@@ -50,21 +50,16 @@ addEventListener('keydown', (e) => {
   if (bossOn()) { if (e.code === 'Escape' || e.code === 'KeyP' || e.code === 'Tab') { e.preventDefault(); closeBoss(); } return; }
   if (e.target.tagName === 'INPUT') return; // typing in the online name / room-code fields
   if (e.ctrlKey || e.metaKey || e.altKey) { if (inGame()) e.preventDefault(); return; } // game keys never double as browser shortcuts
-  if (inGame() && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyT', 'ShiftLeft', 'ShiftRight', 'Tab'].includes(e.code)) e.preventDefault();
+  if (inGame() && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyT', 'ShiftLeft', 'ShiftRight', 'Tab'].includes(canon(e.code) ?? e.code)) e.preventDefault();
   if ((e.code === 'KeyP' || e.code === 'Tab') && !e.repeat && inGame()) { if (G.mode === 'online') openBoss(); else pause(); return; }
-  keys[e.code] = true;
-  if (!e.repeat && G.mode === 'online') hooks.key?.(e.code);
-  if (e.code === 'KeyE' && !e.repeat) tryTag();
+  const code = canon(e.code);
+  if (!e.repeat && G.mode === 'online') hooks.key?.(code);
+  if (code === 'KeyE' && !e.repeat) tryTag();
   if (e.code === 'Escape') pause();
 });
-addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('blur', () => { releaseAll(); pause(); });
-addEventListener('mousemove', (e) => {
-  if (document.pointerLockElement !== canvas || G.paused) return;
-  P.yaw -= e.movementX * settings.sens; P.pitch = clamp(P.pitch - e.movementY * settings.sens, -1.5, 1.5);
-});
-addEventListener('mousedown', () => {
-  if (bossOn()) return;
+addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || bossOn()) return;
   if (G.phase !== 'play' && G.phase !== 'countdown') return;
   if (G.paused) return;
   if (document.pointerLockElement !== canvas) requestLock(); else if (G.mode === 'online') hooks.fire?.(); else tryTag();

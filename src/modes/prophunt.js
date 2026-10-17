@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { $, setText } from '../core/util.js';
 import { P, G } from '../core/state.js';
-import { keys } from '../core/input.js';
+import { keys, mouse } from '../core/input.js';
+import { bus, EV } from '../core/bus.js';
 import { camera } from '../render/renderer.js';
 import { solids, props } from '../world/build.js';
 import { sfx } from '../audio/sfx.js';
@@ -13,9 +14,14 @@ import { toast } from '../ui/hud.js';
 import { updatePlayer } from '../player/controller.js';
 import * as R from '../net/remote.js';
 import * as B from './blaster.js';
+import { applyTps, swapShoulder, resetArm } from '../camera/index.js';
+import { setAds, updateGun, spreadDir } from '../fx/gun.js';
+import { impact, clearImpacts } from '../fx/impact.js';
+import { addShake, clearShake } from '../fx/shake.js';
 
 const me = { on: false, id: 0, role: 'hider', send() {}, colorOf: () => 0xffffff, av: null, propId: null, rotLock: false, propRot: 0, rotY: 0, heading: 0, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: 6, res: 12, reloading: false, lastFire: 0, grabT: 0, phase: 'hide', fc: new THREE.Vector3() };
 export const ph = me;
+if (typeof window !== 'undefined') { window.__ph = me; window.__phFire = () => fire(); } // debug + smoke tests
 const ray = new THREE.Raycaster();
 const _f = new THREE.Vector3(), _p = new THREE.Vector3(), _b = new THREE.Vector3(), _o = new THREE.Vector3(), _q = new THREE.Vector3();
 const QPI = Math.PI / 4;
@@ -31,7 +37,7 @@ function resetPlayerBody(r = R_PH) { Object.assign(P, { r, fixedPh: 0, mul: 1, m
 export function begin(ctx) {
   end();
   Object.assign(me, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, colorOf: ctx.colorOf, propId: null, rotLock: false, propRot: 0, rotY: P.yaw + Math.PI, heading: P.yaw + Math.PI, cdDis: 0, cdTaunt: 0, cdCamo: 0, scrapeT: 0, out: false, hp: 100, mag: MAG, res: 12, reloading: false, lastFire: 0, phase: 'hide', self: ctx.self });
-  R.opts.cone = false; camera.near = 0.05; camera.updateProjectionMatrix();
+  R.opts.cone = false; camera.near = 0.05; camera.updateProjectionMatrix(); resetArm(); clearShake();
   setRole(ctx.role);
 }
 function setRole(role) {
@@ -43,7 +49,7 @@ function setRole(role) {
 }
 export function end() {
   if (me.av) { R.disposeAvatar(me.av); me.av = null; }
-  me.on = false; resetPlayerBody(0.3); camera.near = 0.08; camera.updateProjectionMatrix(); B.showBlaster(false); B.clearFx(); R.opts.cone = true;
+  me.on = false; resetPlayerBody(0.3); camera.near = 0.08; camera.updateProjectionMatrix(); B.showBlaster(false); B.clearFx(); clearImpacts(); setAds(false); R.opts.cone = true;
   $('ammoHud').classList.add('hidden');
 }
 // fields sent with every position update
@@ -54,8 +60,8 @@ export function frame(dt, frozen, phase) {
   me.phase = phase; me.cdDis -= dt; me.cdTaunt -= dt; me.cdCamo -= dt;
   const disguised = me.propId != null;
   P.mul = disguised ? 0.6 : 1; P.mute = disguised;
-  if (me.out) { updatePlayer(dt, false); freeCam(dt); return; }
-  updatePlayer(dt, !frozen);
+  if (me.out) { updatePlayer(dt, false, false); freeCam(dt); return; }
+  updatePlayer(dt, !frozen, me.role === 'seeker'); // hiders use the third-person arm below
   const spd = Math.hypot(P.vx, P.vz);
   if (me.role === 'hider') hiderFrame(dt, spd, disguised); else seekerFrame(dt, spd, phase);
 }
@@ -67,16 +73,9 @@ function hiderFrame(dt, spd, disguised) {
   av.root.position.set(P.x, P.y, P.z); av.root.rotation.y = me.rotY;
   Object.assign(av.anim, { speed: spd, crouch: disguised ? 0 : P.crouch, air: P.air, vy: P.vy, lat: 0 });
   R.animAvatar(av, dt);
-  // orbit camera behind the player, pulled in by the first solid in the way
-  const pr = disguised ? props[me.propId] : null, cp = Math.cos(P.pitch);
-  _f.set(-Math.sin(P.yaw) * cp, Math.sin(P.pitch), -Math.cos(P.yaw) * cp);
-  const dist = 3.2 + (pr ? Math.max(pr.w, pr.d) * 0.6 : 0);
-  _p.set(P.x, P.y + (pr ? Math.max(0.9, pr.h * 0.8) : 1.35 - 0.4 * P.crouch), P.z);
-  _b.copy(_f).negate(); ray.set(_p, _b); ray.far = dist;
-  const h = ray.intersectObjects(solids, false)[0];
-  camera.position.copy(_p).addScaledVector(_b, h ? Math.max(0.1, h.distance - 0.15) : dist);
-  camera.position.y = Math.max(0.12, camera.position.y);
-  camera.rotation.set(P.pitch, P.yaw, 0);
+  // spring-arm orbit camera behind the player, pulled in by the first solid in the way
+  const pr = disguised ? props[me.propId] : null;
+  applyTps(P, dt, pr ? Math.max(0.9, pr.h * 0.8) : 1.35 - 0.4 * P.crouch, 3.2 + (pr ? Math.max(pr.w, pr.d) * 0.6 : 0));
   // moving disguised makes a soft scrape everyone nearby can hear
   if (disguised && spd > 0.5 && !P.air) { me.scrapeT -= dt; if (me.scrapeT <= 0) { me.scrapeT = 0.8; me.send('noise', { k: 'scrape' }); sfx.scrape(null); } } else me.scrapeT = 0;
   const t = me.cdDis <= 0 ? targetProp() : null;
@@ -85,7 +84,8 @@ function hiderFrame(dt, spd, disguised) {
 }
 
 function seekerFrame(dt, spd, phase) {
-  B.updateBlaster(dt, spd > 0.5);
+  setAds(mouse.ads && phase === 'seek' && !me.reloading && !me.out); updateGun(dt);
+  B.updateBlaster(dt);
   B.updateCrate(dt, true);
   $('crosshair').classList.remove('hot'); $('prompt').classList.remove('show');
   const c = B.cratePos();
@@ -140,6 +140,7 @@ function setReloading() {
 }
 export function onKey(code) {
   if (!me.on || me.out) return;
+  if (code === 'KeyQ' && me.role === 'hider') return swapShoulder();
   if (me.role === 'seeker') {
     if (code === 'KeyR' && !me.reloading && me.mag < MAG && me.res > 0) { setReloading(); me.send('reload'); sfx.reload(); }
     return;
@@ -163,7 +164,7 @@ export function fire() {
   const t = now(); if (t - me.lastFire < 0.3) return;
   if (me.mag <= 0) { sfx.empty(); toast(me.res > 0 ? 'EMPTY - PRESS R' : 'OUT OF AMMO', '#ffd166'); me.lastFire = t; return; }
   me.lastFire = t; me.mag--;
-  camera.getWorldDirection(_f);
+  camera.getWorldDirection(_f); spreadDir(_f);
   me.send('shoot', { ox: r3(camera.position.x), oy: r3(camera.position.y), oz: r3(camera.position.z), dx: r3(_f.x), dy: r3(_f.y), dz: r3(_f.z) });
   B.recoil(); sfx.shoot(); updateHud();
 }
@@ -194,13 +195,14 @@ export function onShot(m) {
   if (!mine) sfx.shoot(where(sa) || m);
   B.tracer(start, p, color, () => {
     const pos = { x: p.x, z: p.z };
-    if (m.hit) { burst(p.x, p.y, p.z, color, 22, 0.6, 2.2, 0.14); sfx.splat(pos); return; }
+    if (m.hit) { burst(p.x, p.y, p.z, color, 22, 0.6, 2.2, 0.14); sfx.splat(pos); if (mine) bus.emit(EV.HITMARKER, { kill: false }); return; }
     const n = B.surfaceNormal(o, p);
-    if (n) { B.splat(p, n, color); sfx.splat(pos); }
+    if (n) { impact(p, n, color); sfx.splat(pos); }
   });
 }
 export function onTagged(m) {
   const a = avatarOf(m.target);
+  if (m.by === me.id) bus.emit(EV.HITMARKER, { kill: true });
   if (a) { R.setDisguise(a, null); R.flinchAvatar(a); R.paintAvatar(a, me.colorOf(m.by)); R.setSeeker(m.target, true); }
   if (m.target === me.id) { me.out = false; setRole('seeker'); me.mag = MAG; me.res = 0; me.hp = 100; sfx.hurt(); }
 }
@@ -210,7 +212,7 @@ export function onOut(m) {
   } else { const a = R.remotes.get(m.id); if (a) a.root.visible = false; }
 }
 export function onAmmo(m) {
-  if (m.hp < me.hp && me.on) sfx.hurt();
+  if (m.hp < me.hp && me.on) { sfx.hurt(); addShake(0.4); }
   clearTimeout(rlTimer);
   Object.assign(me, { mag: m.mag, res: m.res, hp: m.hp, reloading: !!m.rl }); updateHud();
 }
@@ -228,6 +230,6 @@ function updateHud() {
 export function hints() {
   if (me.out) return 'SPECTATING  -  WASD fly, Space/C up/down, Shift fast';
   const cd = (v) => (v > 0 ? ` (${Math.ceil(v)}s)` : '');
-  if (me.role === 'seeker') return 'CLICK shoot  -  R reload  -  wrong shots cost health  -  grab the glowing crate';
-  return `F disguise${cd(me.cdDis)}  -  G camouflage  -  R ${me.rotLock ? 'unlock' : 'lock'} rotation (wheel: turn 45)  -  T taunt${cd(me.cdTaunt)}`;
+  if (me.role === 'seeker') return 'CLICK shoot  -  RIGHT CLICK aim  -  R reload  -  wrong shots cost health  -  grab the glowing crate';
+  return `F disguise${cd(me.cdDis)}  -  G camouflage  -  R ${me.rotLock ? 'unlock' : 'lock'} rotation (wheel: turn 45)  -  T taunt${cd(me.cdTaunt)}  -  Q swap shoulder`;
 }

@@ -4,9 +4,10 @@ import { bus, EV } from './bus.js';
 
 const KEY = 'hs-opts';
 const QUALITY = ['low', 'med', 'high', 'ultra'];
+const SHAKE = ['off', 'low', 'med', 'high'];
 const num = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
 
-export const settings = { quality: 'high', fov: 72, sens: 0.0022, volume: 0.8, music: 0.6, sfx: 1, ui: 1, cues: true, invertY: false }; // volume = master bus; music / sfx / ui = the other audio buses (0..1)
+export const settings = { quality: 'high', fov: 72, sens: 0.0022, volume: 0.8, music: 0.6, sfx: 1, ui: 1, cues: true, invertY: false, headBob: 1, shake: 'med', binds: {} }; // volume = master bus; music / sfx / ui = the other audio buses (0..1)
 
 try {
   const o = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -16,11 +17,13 @@ try {
   if (QUALITY.includes(o.quality)) settings.quality = o.quality;
   settings.fov = num(o.fov, 50, 110, 72); settings.sens = num(o.sens, 0.0005, 0.01, 0.0022);
   if (typeof o.invertY === 'boolean') settings.invertY = o.invertY;
+  settings.headBob = num(o.headBob, 0, 1, 1); if (SHAKE.includes(o.shake)) settings.shake = o.shake;
+  if (o.binds && typeof o.binds === 'object') for (const [a, c] of Object.entries(o.binds)) if (typeof c === 'string') settings.binds[a] = c; // action -> KeyboardEvent.code
 } catch { /* storage blocked: defaults */ }
 
 const save = () => {
-  const { quality, fov, sens, volume, music, sfx, ui, cues, invertY } = settings;
-  try { localStorage.setItem(KEY, JSON.stringify({ quality, fov, sens, vol: volume, music, sfx, ui, cues, invertY })); } catch { /* storage blocked: fine */ }
+  const { quality, fov, sens, volume, music, sfx, ui, cues, invertY, headBob, shake, binds } = settings;
+  try { localStorage.setItem(KEY, JSON.stringify({ quality, fov, sens, vol: volume, music, sfx, ui, cues, invertY, headBob, shake, binds })); } catch { /* storage blocked: fine */ }
 };
 
 Object.defineProperty(settings, 'set', {
@@ -28,6 +31,7 @@ Object.defineProperty(settings, 'set', {
   value(k, v) {
     if (!Object.hasOwn(settings, k)) throw new Error(`unknown setting ${k}`);
     if (k === 'quality' && !QUALITY.includes(v)) throw new Error(`bad quality ${v}`);
+    if (k === 'shake' && !SHAKE.includes(v)) throw new Error(`bad shake ${v}`);
     settings[k] = v; save();
     bus.emit(EV.SETTINGS, { key: k, value: v });
   },
