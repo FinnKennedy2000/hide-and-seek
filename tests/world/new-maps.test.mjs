@@ -118,6 +118,10 @@ for (const id of IDS) {
     books: () => groups.add('books'),
   }, id);
   console.log(`INFO ${id}: ~${groups.size} draw calls after merge (build.js grouping), ~${inst.size} if repeated prop kinds are instanced (one draw per kind+material), ${w.colliders.length} colliders, size ${(m.bounds.x1 - m.bounds.x0).toFixed(0)}x${(m.bounds.z1 - m.bounds.z0).toFixed(0)}`);
+  const used = new Set(), unused = Object.keys(map.materials);
+  buildWorld({ box: (a, b2, c, d, e, mat) => used.add(mat), mesh: (g, mat) => used.add(mat) }, id);
+  ok([...used].every((n) => n in map.materials), `${id}: every material used is declared in the map's own materials${[...used].filter((n) => !(n in map.materials)).join(',')}`);
+  ok(Object.keys(map.materials).every((n) => n.startsWith({ school: 'sc_', museum: 'mu_', funfair: 'ff_', office: 'of_' }[id])), `${id}: material names are prefixed (the client table is global)`);
   ok(groups.size <= 200, `${id}: draw calls ${groups.size} <= 200 before perf.instanceStatic`);
 }
 process.exit(fail ? 1 : 0);
