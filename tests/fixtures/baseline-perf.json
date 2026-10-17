@@ -1,0 +1,12 @@
+{
+  "HOUSE": {
+    "frames": 5,
+    "callsPerFrame": 265,
+    "trisPerFrame": 51610
+  },
+  "LATE SHOP": {
+    "frames": 2,
+    "callsPerFrame": 285,
+    "trisPerFrame": 22382
+  }
+}
