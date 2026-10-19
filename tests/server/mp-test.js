@@ -59,7 +59,7 @@ function client(label) {
   for (const sp of r.spawns) { const c = all.find((k) => k.id === sp.id); c.at = [sp.x, sp.z]; }
   const pos = async (c, x, z) => {
     for (;;) {
-      const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = Math.min(1, 0.4 / (d || 1));
+      const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), s = d <= 0.4 ? 1 : 0.4 / d; // (d = 0 must finish too)
       c.at = [cx + (x - cx) * s, cz + (z - cz) * s];
       c.send('pos', { x: c.at[0], y: 0, z: c.at[1], yaw: 0, pitch: 0, c: 0 }); await sleep(50);
       if (s === 1) return;
