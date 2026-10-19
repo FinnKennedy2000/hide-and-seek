@@ -76,19 +76,31 @@ bus.on(EV.AMMO, (m = {}) => {
   if (mag != null) put('ammoTxt', m.reloading ? 'Reloading' : res != null ? `${mag} / ${res}` : String(mag));
   if (m.hp != null) { const f = clamp(m.hp / (m.hpMax ?? 100), 0, 1); put('hpTxt', `Health ${Math.round(f * (m.hpMax ?? 100))}`); $('hpFill').style.width = `${f * 100}%`; }
 });
-// stamina {value: 0..1} or {cur, max}. Bar shows only while not full.
+// stamina {value: 0..1, exhausted, sprinting}. Bar shows only while not full; exhausted turns it to the warning colour.
+let exh = false;
 bus.on(EV.STAMINA, (m = {}) => {
-  const v = clamp(m.value ?? (m.cur != null ? m.cur / (m.max || 1) : 1), 0, 1), el = $('stam');
-  el.classList.toggle('hidden', v >= 0.999);
+  const v = clamp(m.value ?? 1, 0, 1), el = $('stam');
+  el.classList.toggle('hidden', v >= 0.999 && !m.exhausted);
   $('stamFill').style.transform = `scaleX(${v.toFixed(3)})`;
+  if (!!m.exhausted !== exh) { exh = !!m.exhausted; $('stamFill').style.background = exh ? 'var(--bad)' : ''; }
 });
 bus.on(EV.CUE, (m = {}) => { const p = m.pos || (m.x != null ? { x: m.x, z: m.z } : null); cueAt(m.type, p, m.vol ?? 0.3); });
-// net {ping, loss, state: 'ok'|'degraded'|'down'}: chip appears only when the link is not healthy
+// net {kind}: 'rtt' {ms} | 'open' | 'close' | 'reconnecting' | 'resumed' | 'reconnect-failed' | 'err' {msg} | 'correct' (prediction fix, ignored).
+// The chip shows ping when it is poor (or with the perf overlay on) and a status word while the link is down.
+let rtt = 0, down = '';
+const paintNet = () => {
+  const chip = $('netChip'), slow = rtt > 150, show = !!down || slow || (settings.perfHud && rtt > 0);
+  chip.classList.toggle('hidden', !show); chip.classList.toggle('bad', !!down || slow);
+  const t = down || `${rtt} ms`; if (chip.textContent !== t) chip.textContent = t;
+};
 bus.on(EV.NET, (m = {}) => {
-  const chip = $('netChip'), bad = m.state === 'degraded' || m.state === 'down' || m.ping > 150 || m.loss > 0.03;
-  chip.classList.toggle('hidden', !bad && !settings.perfHud);
-  chip.classList.toggle('bad', bad);
-  if (m.ping != null || m.state) chip.textContent = m.state === 'down' ? 'Link down' : `${Math.round(m.ping ?? 0)} ms${m.loss > 0.01 ? `  ${Math.round(m.loss * 100)}% loss` : ''}`;
+  if (m.kind === 'rtt') rtt = m.ms;
+  else if (m.kind === 'reconnecting' || m.kind === 'close') down = m.kind === 'close' ? 'Link lost' : 'Reconnecting';
+  else if (m.kind === 'reconnect-failed') down = 'Offline';
+  else if (m.kind === 'open' || m.kind === 'resumed') down = '';
+  else if (m.kind === 'err' && /refresh/i.test(m.msg || '')) toast(m.msg, 'bad');
+  else return;
+  paintNet();
 });
 let failToast = 0;
 bus.on(EV.ASSET_FAIL, () => { const t = performance.now(); if (t - failToast > 8000) { failToast = t; toast('Some assets failed to load; using fallbacks', 'warn'); } });

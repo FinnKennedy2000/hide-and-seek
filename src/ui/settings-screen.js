@@ -82,7 +82,6 @@ const TABS = {
 const LABELS = { forward: 'Move forward', back: 'Move back', left: 'Move left', right: 'Move right', sprint: 'Sprint', jump: 'Jump', crouch: 'Crouch', tag: 'Tag', disguise: 'Disguise (Prop Hunt)', camo: 'Camouflage (Prop Hunt)', rotate: 'Lock / rotate (Prop Hunt)', taunt: 'Taunt (Prop Hunt)', swapShoulder: 'Swap shoulder' };
 const keyName = (c) => (c || '').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Shift(Left|Right)$/, 'Shift').replace(/^Arrow/, '') || '-';
 let listening = null;
-const RESERVED = ['Escape', 'Tab', 'Backquote', 'F3', 'KeyP', 'Enter'];
 function bindRows() {
   const rows = Object.keys(ACTIONS).map((id) => {
     const btn = el('button', { type: 'button', className: 'bind', textContent: keyName(bindOf(id)) });
@@ -100,8 +99,9 @@ function startListen(id, btn) {
   const onKey = (e) => {
     e.preventDefault(); e.stopImmediatePropagation(); // Esc must cancel here, not close the screen
     if (e.code === 'Escape') return stopListen();
-    if (RESERVED.includes(e.code)) return void toast(`${keyName(e.code)} is reserved`, 'warn');
-    rebind(id, e.code); stopListen(); build();
+    if (e.code === 'F3') return void toast('F3 is the performance overlay', 'warn');
+    try { rebind(id, e.code); } catch (err) { return void toast(err.message, 'warn'); } // input.js rejects modifiers and the pause / boss keys
+    stopListen(); build();
   };
   listening = { onKey, btn, id };
   addEventListener('keydown', onKey, true);
