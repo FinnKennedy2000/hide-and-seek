@@ -39,8 +39,10 @@ const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 *
 const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
 const NOISE_RANGE = 30;         // m: `noise` cues are only sent to players who could hear them
 const REVEAL_S = 1.0, HOLD_S = 0.4; // a sound reveals the maker's position for 1 s; a player that just left LOS lingers 0.4 s so interpolation does not pop
-const BUDGET_CAP = 1.1;         // m: speed-budget bucket (accrues MAX_SPEED m/s of server time): a small burst allowance so jittered / bunched packets are not mistaken for teleports
+const BUDGET_CAP = 1.5;         // m: speed-budget bucket (accrues MAX_SPEED m/s of server time): a small burst allowance so jittered / bunched packets are not mistaken for teleports
 const MAX_ROOMS = Number(process.env.MAX_ROOMS) || 200, MAX_ROOMS_PER_IP = Number(process.env.MAX_ROOMS_PER_IP) || 3, BOT_HZ = 10;
+const MAX_CONNS_PER_IP = Number(process.env.MAX_CONNS_PER_IP) || 16, MAX_BOTS = Number(process.env.MAX_BOTS) || 120, HELLO_MS = Number(process.env.HELLO_MS) || 10000;
+const HEAVY = new Set(['create', 'join', 'fill', 'start', 'reconnect']); // handlers that allocate or search: separately rate limited (burst 12, 2/s)
 const RECONNECT_MS = (Number(process.env.RECONNECT_SECS) || 30) * 1000; // how long a dropped player's seat is held (matches src/shared/protocol.js RECONNECT_SECS)
 const BOT_TARGET = 6;           // "fill bots" tops a lobby up to this many players
 let PR = null;      // src/shared/protocol.js
@@ -178,8 +180,10 @@ function joinRoom(p, room, quiet) {
 // "fill bots": in the lobby, top the room up with bots to BOT_TARGET players (humans always win a slot)
 function syncBots(room) {
   if (room.phase !== 'lobby') return;
-  const want = room.fill ? Math.max(0, Math.min(BOT_TARGET, MAX_PLAYERS) - humansOf(room).length) : 0;
+  let want = room.fill ? Math.max(0, Math.min(BOT_TARGET, MAX_PLAYERS) - humansOf(room).length) : 0;
   const bots = [...room.players.values()].filter((q) => q.bot);
+  let total = 0; for (const r of rooms.values()) for (const q of r.players.values()) if (q.bot) total++;
+  want = Math.min(want, bots.length + Math.max(0, MAX_BOTS - total)); // server-wide bot cap: bots cost CPU
   while (bots.length > want) { const b = bots.pop(); room.players.delete(b.id); liveIds.delete(b.id); }
   while (bots.length < want) { const b = newPlayer(BOT_WS, true); b.name = `Bot ${++room.botN}`; joinRoom(b, room, true); bots.push(b); }
 }
@@ -585,7 +589,10 @@ const handlers = {
   fill(p, m) { // host toggles "fill with bots"
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby' || typeof m.on !== 'boolean') return;
-    room.fill = m.on; syncBots(room); sendRoom(room);
+    room.fill = m.on; syncBots(room);
+    if (m.on && !room.players.size) return;
+    if (m.on && [...room.players.values()].filter((q) => q.bot).length < Math.min(BOT_TARGET, MAX_PLAYERS) - humansOf(room).length) send(p, { t: 'err', msg: 'Bot capacity reached, fewer bots added' });
+    sendRoom(room);
   },
   cosmetic(p, m) { // colour from the palette, hat / outfit from the enums; anything else is rejected whole
     const room = p.room;
@@ -615,7 +622,7 @@ const handlers = {
     if (x === null || y === null || z === null || yaw === null || pitch === null || c === null) return;
     const seq = Number.isInteger(m.s) ? m.s & 0xffff : null;
     const dt = Math.min(1, (t - p.lastPos) / 1000);
-    // speed check: BOTH must hold. The per-move rule (9 m/s * dt + 0.5 m) and the bucket (9 m/s of server time, capped at BUDGET_CAP = 1.1 m; a 1.0 m cap refused ~7% of jittered 6.8 m/s walks in simulation),
+    // speed check: BOTH must hold. The per-move rule (9 m/s * dt + 0.5 m) and the bucket (9 m/s of server time, capped at BUDGET_CAP = 1.5 m; 1.0 m refused ~7% of simulated jittered 6.8 m/s walks and an overloaded host bunches packets further),
     // so the sustained speed is at most 9 m/s plus a ~1 m burst, and a jittered 6.8 m/s walker (bunched packets) still fits.
     p.budget = Math.min(BUDGET_CAP, p.budget + ((t - p.budgetT) / 1000) * MAX_SPEED); p.budgetT = t;
     const dist = Math.hypot(x - p.x, z - p.z);
@@ -710,8 +717,14 @@ const handlers = {
 
 const ipOf = (req) => (process.env.TRUST_PROXY || process.env.RAILWAY_ENVIRONMENT ? String(req.headers['x-forwarded-for'] || '').split(',').pop().trim() : '') || req.socket.remoteAddress || '';
 wss.on('connection', (ws, req) => {
+  const ip = ipOf(req);
+  let n = 0; for (const w of wss.clients) if (w.ip === ip) n++;
+  if (n >= MAX_CONNS_PER_IP) { ws.close(1013, "too many connections"); return; } // (this socket is not counted yet)
+  ws.ip = ip;
   const conn = { p: newPlayer(ws) };
-  conn.p.ip = ipOf(req);
+  conn.p.ip = ip;
+  const helloTimer = setTimeout(() => { if (!conn.p.ok) ws.terminate(); }, HELLO_MS); // sockets that never say hello are not kept
+  ws.on('close', () => clearTimeout(helloTimer));
   ws.conn = conn; ws.alive = true;
   ws.on('pong', () => { ws.alive = true; });
   ws.on('error', (e) => console.warn('ws error', e.message));
@@ -741,6 +754,11 @@ wss.on('connection', (ws, req) => {
     if (!p.ok && m.t !== 'hello') return refuse(p); // a client that skips hello is an older build
     const h = Object.hasOwn(handlers, m.t) ? handlers[m.t] : null;
     if (!h) return;
+    if (HEAVY.has(m.t)) { // separate, much smaller budget for handlers that allocate or search
+      p.heavy = Math.min(12, (p.heavy ?? 12) + ((t - (p.heavyT || t)) / 1000) * 2); p.heavyT = t;
+      if (p.heavy < 1) return send(p, { t: 'err', msg: 'Slow down' });
+      p.heavy--;
+    }
     try { h(p, m, conn); } catch (e) { console.error('handler error', m.t, e); }
   });
 });

@@ -68,7 +68,7 @@ function client(url, label, hello = true) {
   // walk to (x,z) at `speed` m/s, one update every `gap` ms
   c.walk = async (x, z, speed, gap = 50) => {
     for (;;) {
-      const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), step = speed * gap / 1000, s = Math.min(1, step / (d || 1));
+      const [cx, cz] = c.at, d = Math.hypot(x - cx, z - cz), step = speed * gap / 1000, s = d <= step ? 1 : step / d;
       c.pos(cx + (x - cx) * s, cz + (z - cz) * s); await sleep(gap);
       if (s === 1) return;
     }
@@ -176,7 +176,7 @@ async function startRound(cs) {
     for (let i = 0; i < 60; i++) { H.pos(start[0] + 0.6 * (i + 1), start[1]); await sleep(50); }
     const el = (Date.now() - t0) / 1000; await sleep(400);
     const fin = H.snaps[H.snaps.length - 1].p.find((e) => e[7] & 2);
-    ok(Math.hypot(fin[1] - start[0], fin[3] - start[1]) <= 9 * el + 1.0, `12 m/s for ${el.toFixed(1)} s: server advanced ${Math.hypot(fin[1] - start[0], fin[3] - start[1]).toFixed(2)} m <= ${(9 * el + 1).toFixed(2)} m`);
+    ok(Math.hypot(fin[1] - start[0], fin[3] - start[1]) <= 9 * el + 1.5, `12 m/s for ${el.toFixed(1)} s: server advanced ${Math.hypot(fin[1] - start[0], fin[3] - start[1]).toFixed(2)} m <= ${(9 * el + 1.5).toFixed(2)} m`);
     H.at = [fin[1], fin[3]]; // (the client would have been snapped back)
     // a 15 m jump in one update is refused and the ack tells the client (so it can snap back)
     H.snaps.length = 0; const before = H.at.slice(); H.pos(before[0], before[1] - 15); await sleep(500);
@@ -459,6 +459,28 @@ async function startRound(cs) {
       cs.forEach((c) => c.ws.close());
     }
     small.kill();
+  }
+
+
+  // ===== 12. DoS audit: connection / bot caps, hello timeout, heavy-message rate limit
+  {
+    const srv = await spawnServer({ MAX_CONNS_PER_IP: '3', MAX_BOTS: '5', HELLO_MS: '700', MAX_ROOMS_PER_IP: '50' });
+    const idle = client(srv.url, 'idle', false); await idle.open;
+    ok(await new Promise((r) => { idle.ws.on('close', () => r(true)); setTimeout(() => r(false), 2000); }), 'a socket that never says hello is dropped after the hello timeout');
+    const cs = []; for (let i = 0; i < 4; i++) { const c = client(srv.url, 'C' + i); c.ws.on('error', () => {}); cs.push(c); await sleep(100); }
+    await sleep(300);
+    ok(cs.slice(0, 3).every((c) => c.ws.readyState === 1) && cs[3].ws.readyState !== 1, 'the 4th simultaneous connection from one IP is refused');
+    cs.forEach((c) => c.ws.terminate()); await sleep(200);
+    const A = client(srv.url, 'A'); await A.open; A.send('create', { name: 'A' }); await A.wait((m) => m.t === 'room'); A.send('fill', { on: true });
+    const fa = await A.wait((m) => m.t === 'room' && m.fill);
+    const B = client(srv.url, 'B'); await B.open; B.send('create', { name: 'B' }); await B.wait((m) => m.t === 'room'); B.send('fill', { on: true });
+    const e = await B.wait((m) => m.t === 'err' && /Bot capacity/.test(m.msg)).catch(() => null);
+    ok(fa.players.filter((p) => p.bot).length === 5 && !!e, 'server-wide bot cap: the room over the cap gets fewer bots and an err');
+    let slow = 0; B.ws.on('message', (d, bin) => { if (!bin && /Slow down/.test(d.toString())) slow++; });
+    for (let i = 0; i < 40; i++) B.send('reconnect', { token: 'f'.repeat(32) });
+    await sleep(500);
+    ok(slow > 20, `a burst of 40 reconnect attempts is rate limited (${slow} told to slow down)`);
+    A.ws.close(); B.ws.close(); srv.kill();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
