@@ -34,7 +34,7 @@ test('R reload, boss key for 2 s, boss key again: reloading resolves via the ser
   test.setTimeout(300_000);
   const errs = [];
   const mk = async () => { const ctx = await browser.newContext(); const page = await ctx.newPage(); errors(page, errs); await page.goto('/?debug=1'); return { ctx, page }; };
-  const a = await mk(), b = await mk();
+  const [a, b] = await Promise.all([mk(), mk()]); // parallel: a second goto stalls for minutes while the first tab's SwiftShader render loop runs
   await a.page.click('#btnOnline'); await a.page.fill('#olName', 'Ann'); await a.page.click('#olCreate');
   await a.page.waitForSelector('#lobCode');
   const code = (await a.page.textContent('#lobCode')).trim().slice(-4);
