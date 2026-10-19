@@ -13,13 +13,12 @@ import { loadGroup } from '../core/assets.js';
 const PRESETS = {
   potato: { pr: 1, lambert: true, env: false, shadow: 'off', aa: 'fxaa' },
   low: { pr: 1.25, lambert: true, env: false, shadow: 'off', aa: 'fxaa' },
-  med: { pr: 1.25, lambert: false, env: true, shadow: 'sun', size: 1024, aa: 'smaa', bloom: true, lut: true, vignette: true, ca: true },
-  high: { pr: 1.5, lambert: false, env: true, shadow: 'csm', cascades: 2, size: 1024, aa: 'smaa', bloom: true, lut: true, vignette: true, grain: true, ca: true },
-  ultra: { pr: 1.5, lambert: false, env: true, shadow: 'csm', cascades: 2, size: 2048, aa: 'smaa', bloom: true, lut: true, vignette: true, grain: true, ca: true, ao: true },
+  med: { pr: 1.25, lambert: false, env: true, shadow: 'sun', size: 1024, casters: 100, aa: 'smaa', bloom: true, lut: true, vignette: true, ca: true },
+  high: { pr: 1.5, lambert: false, env: true, shadow: 'csm', cascades: 2, size: 1024, casters: 55, aa: 'smaa', bloom: true, lut: true, vignette: true, grain: true, ca: true },
+  ultra: { pr: 1.5, lambert: false, env: true, shadow: 'csm', cascades: 2, size: 2048, casters: 65, aa: 'smaa', bloom: true, lut: true, vignette: true, grain: true, ca: true, ao: true },
 };
 const isCharacter = (o) => { for (let p = o.parent; p; p = p.parent) if (p.userData.keepShadow) return true; return false; };
 const LOW_FILL = 1.7;
-const SMALL_CASTER = 0.3; // m, bounding-sphere radius
 const ENV_URL = { dusk: '/env/dusk.hdr', night: '/env/night.hdr' };
 
 let level = null, cfg = PRESETS.high, pipe = null, N8AO = null, csm = null, csmMats = new WeakSet();
@@ -78,14 +77,17 @@ function refresh(force) {
     if (!o.isMesh || !o.material) return;
     for (const m of [].concat(o.material)) if (!csmMats.has(m) && m.isMeshStandardMaterial) { csm.setupMaterial(m); m.needsUpdate = true; csmMats.add(m); }
   });
-  // Cascades multiply shadow-pass draw calls: meshes smaller than SMALL_CASTER stop casting under CSM, except characters (anything under an object given to blobShadow, or skinned).
+  // Shadow passes re-draw every caster per cascade, so cap the casters per preset (biggest first). Characters (under a blobShadow root, or skinned) always cast.
+  const cand = [];
   scene.traverse((o) => {
     if (!o.isMesh || o.isSkinnedMesh || isCharacter(o)) return;
+    o.userData.cast0 ??= o.castShadow;
+    if (!o.userData.cast0) return;
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-    const small = o.geometry.boundingSphere.radius * Math.max(o.scale.x, o.scale.y, o.scale.z) < SMALL_CASTER;
-    if (csm && small && o.castShadow) { o.castShadow = false; o.userData.csmOff = true; }
-    else if (!csm && o.userData.csmOff) { o.castShadow = true; o.userData.csmOff = false; }
+    cand.push([o.geometry.boundingSphere.radius * Math.max(o.scale.x, o.scale.y, o.scale.z), o]);
   });
+  cand.sort((x, y) => y[0] - x[0]);
+  cand.forEach(([, o], i) => { o.castShadow = i < (cfg.casters ?? Infinity); });
   if (force) scene.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
 }
 
