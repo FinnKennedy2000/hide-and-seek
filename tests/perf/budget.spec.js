@@ -20,7 +20,7 @@ test('perf budget: every map x tier', async ({ browser }) => {
 
   for (let mi = 0; mi < maps; mi++) for (const tier of TIERS) {
     const ctx = await browser.newContext({ viewport: { width: 640, height: 360 } }); // small canvas: SwiftShader fill-rate is not what is measured
-    await ctx.addInitScript((t) => { localStorage.setItem('hs-perf', JSON.stringify({ auto: false, eco: false })); localStorage.setItem('hs-opts', JSON.stringify({ quality: t })); }, tier);
+    await ctx.addInitScript((t) => { localStorage.setItem('hs-opts', JSON.stringify({ quality: t, autoQuality: false })); }, tier);
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });

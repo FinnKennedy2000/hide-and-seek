@@ -16,7 +16,6 @@ import './audio/index.js'; // bus listeners + audio system
 import { initPerf } from './perf/runtime.js';
 
 initPerf(); // GPU tiering, frame governor, culling, F3 HUD. First: it picks settings.quality, which the first map build (bevels, garden density, PBR set) reads
-initPerf(); // GPU tiering, frame governor, culling, F3 HUD. First: it picks settings.quality, which the first map build reads
 setWorld('house'); // initial map; the title screen / online rounds switch it
 
 // game: menu orbit camera, or the active mode's per-frame update (online replaces it via hooks.update)

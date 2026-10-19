@@ -11,22 +11,16 @@ import { perf } from './index.js';
 import { budget, TIERS } from './budget.js';
 import { pickTier, benchTier, BENCH } from './tier.js';
 import { Governor } from './governor.js';
-import { createHud } from './hud.js';
-
-const PREFS = 'hs-perf';
-const prefs = { auto: true, eco: false };
-try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || '{}')); } catch { /* storage blocked: defaults */ }
-const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch { /* fine */ } };
 
 export function initPerf() {
   const gl = renderer.getContext();
   const info = gl.getExtension('WEBGL_debug_renderer_info');
   const rendererName = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
   const detected = pickTier(rendererName, { memGB: navigator.deviceMemory });
-  const start = prefs.auto || !TIERS.includes(settings.quality) ? detected : settings.quality;
+  const start = settings.autoQuality || !TIERS.includes(settings.quality) ? detected : settings.quality;
 
   // ---- frame stats: calls / tris summed over every render pass of a frame (shadow, scene, post)
-  const st = { calls: 0, tris: 0, fps: 0, ms: 0, gpuMs: 0, tier: start, scale: 1, auto: prefs.auto, eco: prefs.eco };
+  const st = { calls: 0, tris: 0, fps: 0, ms: 0, gpuMs: 0, tier: start, scale: 1, auto: settings.autoQuality, eco: settings.fpsCap === 30 };
   let fCalls = 0, fTris = 0, pC = 0, pT = 0;
   const origRender = renderer.render.bind(renderer);
   renderer.render = (s, c) => {
@@ -39,7 +33,7 @@ export function initPerf() {
 
   // ---- GPU timer (when the browser exposes it) + the boot micro-benchmark, both around the composer's render
   const tq = gl.getExtension('EXT_disjoint_timer_query_webgl2');
-  let pending = null, gpuMs = 0, benchFrames = 0, benchT0 = 0, benchDone = !prefs.auto;
+  let pending = null, gpuMs = 0, benchFrames = 0, benchT0 = 0, benchDone = !settings.autoQuality;
   const samples = [];
   let renderMs = 0; // time spent inside composer.render (GL submit; on SwiftShader it also absorbs rasterisation)
   const origComposer = composer.render.bind(composer);
@@ -68,7 +62,7 @@ export function initPerf() {
   };
 
   // ---- applying a tier
-  let selfSet = false;
+  let selfSet = false, booted = false;
   function applyTier(t) {
     budget.setCurrent(t); perf.tier = t; st.tier = t;
     selfSet = true; if (settings.quality !== t) settings.set('quality', t); selfSet = false;
@@ -76,26 +70,37 @@ export function initPerf() {
     setLite(budget.cur.lambert);
     render.setScale(gov.scale);
     skip = 40;
-    bus.emit(EV.QUALITY, { level: t, auto: prefs.auto });
+    if (booted) bus.emit(EV.QUALITY, { level: t, auto: settings.autoQuality }); // (the UI toasts governor changes)
   }
   const gov = new Governor({
     tier: start, maxTier: TIERS.indexOf(start) > 3 ? start : 'high',
     onScale: (s) => { st.scale = s; render.setScale(s); },
     onTier: applyTier,
   });
-  if (!prefs.auto) gov.minTier = gov.maxTier = start; // a manual tier is never moved by the governor
+  if (!settings.autoQuality) gov.minTier = gov.maxTier = start; // a manual tier is never moved by the governor
   perf.governor = gov; perf.detected = detected; perf.rendererName = rendererName;
-  perf.setAuto = (on) => { prefs.auto = !!on; st.auto = prefs.auto; savePrefs(); gov.minTier = 'potato'; gov.maxTier = 'high'; if (on) { benchDone = false; benchFrames = 0; benchT0 = 0; samples.length = 0; gov.setTier(detected); } };
-  perf.setEco = (on) => { prefs.eco = !!on; st.eco = prefs.eco; savePrefs(); setFrameCap(on ? 30 : 60); };
+  // settings.quality is always a concrete tier (other modules read it); settings.autoQuality says who owns it.
+  perf.setAuto = (on) => { if (settings.autoQuality !== !!on) settings.set('autoQuality', !!on); };
+  perf.setEco = (on) => settings.set('fpsCap', on ? 30 : 60);
   perf.stats = () => st;
-  bus.on(EV.SETTINGS, ({ key, value }) => { // a manual quality pick (menu) takes the tier away from the governor; the scale stays automatic
-    if (key !== 'quality' || selfSet || !TIERS.includes(value)) return;
-    prefs.auto = false; st.auto = false; savePrefs(); gov.minTier = gov.maxTier = value; gov.setTier(value);
+  bus.on(EV.SETTINGS, ({ key, value }) => {
+    if (key === 'quality' && !selfSet && TIERS.includes(value)) { // a manual pick pins the tier; the scale stays automatic
+      if (settings.autoQuality) { settings.set('autoQuality', false); return; }
+      gov.minTier = gov.maxTier = value; gov.setTier(value);
+    } else if (key === 'autoQuality') {
+      st.auto = !!value;
+      if (value) { gov.minTier = 'potato'; gov.maxTier = TIERS.indexOf(detected) > 3 ? detected : 'high'; benchDone = false; benchFrames = 0; benchT0 = 0; samples.length = 0; gov.setTier(detected); }
+      else gov.minTier = gov.maxTier = gov.tier; // keep the current tier, pinned
+    } else if (key === 'fpsCap') { st.eco = value === 30; setFrameCap(value); }
+    else if (key === 'perfHud') st.hud = !!value;
   });
+  addEventListener('keydown', (e) => { if (e.code === 'F3') { e.preventDefault(); settings.set('perfHud', !settings.perfHud); } });
+  // the UI's perf HUD reads render.stats(): hand it whole-frame totals (the stub / R's version only see the last pass)
+  render.stats = () => ({ calls: st.calls, tris: st.tris, fps: st.fps, scale: st.scale });
 
   let skip = 0;
   applyTier(start); st.scale = gov.scale;
-  setFrameCap(prefs.eco ? 30 : 60);
+  setFrameCap(settings.fpsCap); booted = true;
 
   // ---- character impostors: potato / low draw a distant character as one capsule (a character is ~19 meshes). Characters that
   // manage their own LOD (or are one mesh anyway: the glTF rig) are skipped, see lodChar.
@@ -131,7 +136,6 @@ export function initPerf() {
   })();
 
   // ---- per-frame systems
-  const hud = createHud(() => st);
   let t0 = 0, fpsAcc = 0, fpsN = 0, lastNow = performance.now(), ema = 16.7;
   addSystem({ name: 'perf-begin', order: -1, update() { t0 = performance.now(); } });
   addSystem({ name: 'perf-cull', order: 55, update: cullTick });
@@ -141,12 +145,11 @@ export function initPerf() {
       const now = performance.now(), cpu = now - t0, interval = now - lastNow; lastNow = now;
       if (tq) readGpu();
       st.calls = fCalls; st.tris = fTris; fCalls = fTris = 0;
-      const capMs = prefs.eco ? 33.3 : 16.7;
+      const capMs = st.eco ? 33.3 : 16.7;
       const work = interval > capMs * 1.1 ? interval : Math.max(cpu, gpuMs); // missed the cap: the whole interval is the cost; otherwise the measured work
       st.ms = work; st.cpu = cpu; st.js = cpu - renderMs; st.gpuMs = gpuMs; // js = everything except the render call
       fpsAcc += interval; fpsN++; if (fpsAcc >= 500) { st.fps = (fpsN * 1000) / fpsAcc; fpsAcc = fpsN = 0; }
       if (skip > 0) { skip--; } else if (benchDone) gov.frame(work);
-      hud.update(dt);
     },
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { skip = 20; lastNow = performance.now(); } });

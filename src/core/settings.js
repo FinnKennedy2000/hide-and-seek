@@ -10,7 +10,7 @@ const prefersReduced = () => { try { return matchMedia('(prefers-reduced-motion:
 
 // binds: action -> KeyboardEvent.code overrides (see src/ui/menus.js BINDINGS); onboarded: role -> true once the first-play overlay was seen
 export const DEFAULTS = Object.freeze({
-  quality: 'high', fov: 72, sens: 0.0022, invertY: false,
+  quality: 'high', autoQuality: true, fov: 72, sens: 0.0022, invertY: false,
   volume: 0.8, music: 0.6, sfx: 1, ui: 1, // master + buses
   cues: true, reducedMotion: prefersReduced(), colorBlind: false,
   headBob: 1, shake: 'med', // camera feel (read by the player controller / camera shake)
@@ -26,7 +26,7 @@ const VALID = {
   quality: (v) => { if (!QUALITY.includes(v)) throw new Error(`bad quality ${v}`); return v; },
   fov: (v) => num(v, 50, 110, 72), sens: (v) => num(v, 0.0005, 0.01, 0.0022),
   volume: (v) => num(v, 0, 1, 0.8), music: (v) => num(v, 0, 1, 0.6), sfx: (v) => num(v, 0, 1, 1), ui: (v) => num(v, 0, 1, 1),
-  invertY: bool, cues: bool, reducedMotion: bool, colorBlind: bool, perfHud: bool,
+  autoQuality: bool, invertY: bool, cues: bool, reducedMotion: bool, colorBlind: bool, perfHud: bool,
   headBob: (v) => num(v, 0, 1, 1),
   shake: (v) => { if (!SHAKE.includes(v)) throw new Error(`bad shake ${v}`); return v; },
   fpsCap: (v) => { if (v !== 60 && v !== 30) throw new Error(`bad fpsCap ${v}`); return v; },
