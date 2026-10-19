@@ -4,7 +4,7 @@ import fs from 'node:fs';
 // For every map x {potato, low, high}: start a SEEK round, freeze the game, fly the camera through 6 fixed waypoints (two headings each)
 // under SwiftShader with a 4x CPU throttle, and assert draw calls and triangles (all passes of a frame) stay under perf.budget and the
 // JS frame time (game logic, culling, HUD: everything but the render call) p95 stays <= 4 ms. Results go to test-results/perf.json. SwiftShader is the GPU, so only the CPU numbers and counts mean anything.
-const TIERS = ['potato', 'low', 'high'];
+const TIERS = ['high', 'low', 'potato'];
 const JS_P95_MS = 4;
 const results = {};
 test.afterAll(() => { fs.mkdirSync('test-results', { recursive: true }); fs.writeFileSync('test-results/perf.json', JSON.stringify(results, null, 2)); });
@@ -28,7 +28,7 @@ test('perf budget: every map x tier', async ({ browser }) => {
     const chip = page.locator('#spMap button').nth(mi), name = (await chip.textContent()).trim();
     await chip.click(); await page.click('#btnSeek');
     await page.waitForFunction(() => window.__perf, null, { timeout: 60_000 });
-    await page.evaluate(() => { window.__perf.gov.enabled = false; window.__hs.G.paused = true; }); // frozen game, fixed tier + scale
+    await page.evaluate(() => { const P = window.__perf; P.gov.enabled = false; P.gov.setScale(P.perf.budget[P.st.tier].scale); window.__hs.G.paused = true; }); // frozen game, fixed tier + scale
     await page.waitForTimeout(1500);
     const r = await page.evaluate(async ({ wps, limit }) => {
       const { camera } = window.__hs, P = window.__perf, b = P.bounds(), tier = P.st.tier;
