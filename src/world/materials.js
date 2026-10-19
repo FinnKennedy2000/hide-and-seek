@@ -68,17 +68,17 @@ export const mat = {
 
 // ----- potato/low: cheap Lambert twins of the Standard materials (no PBR, no env). Cached both ways so swapping is allocation-free.
 const toLam = new WeakMap(), toStd = new WeakMap();
-const COPY = ['color', 'map', 'emissive', 'emissiveIntensity', 'emissiveMap', 'alphaMap', 'alphaTest', 'transparent', 'opacity', 'side', 'vertexColors', 'flatShading', 'fog', 'depthWrite', 'name'];
+const COPY = ['color', 'map', 'emissive', 'emissiveIntensity', 'emissiveMap', 'aoMap', 'aoMapIntensity', 'lightMap', 'alphaMap', 'alphaTest', 'transparent', 'opacity', 'side', 'vertexColors', 'flatShading', 'fog', 'depthWrite', 'name'];
+function syncLambert(l, m) { // textures.js mutates the Standard originals after setWorld (async texture loads), so twins re-copy on every scan
+  for (const k of COPY) if (m[k] !== undefined) { if (l[k]?.copy && m[k]?.isColor) l[k].copy(m[k]); else if (l[k] !== m[k]) { l[k] = m[k]; if (k.endsWith('ap')) l.needsUpdate = true; } }
+}
 function lambertOf(m) {
   let l = toLam.get(m);
-  if (!l) {
-    l = new THREE.MeshLambertMaterial();
-    for (const k of COPY) if (m[k] !== undefined) l[k]?.copy ? l[k].copy(m[k]) : (l[k] = m[k]);
-    toLam.set(m, l); toStd.set(l, m);
-  }
+  if (!l) { l = new THREE.MeshLambertMaterial(); toLam.set(m, l); toStd.set(l, m); }
+  syncLambert(l, m);
   return l;
 }
-const swap = (m, lambert) => (lambert ? (m.isMeshStandardMaterial ? lambertOf(m) : m) : (toStd.get(m) ?? m));
+const swap = (m, lambert) => (lambert ? (m.isMeshStandardMaterial ? lambertOf(m) : toStd.has(m) ? (syncLambert(m, toStd.get(m)), m) : m) : (toStd.get(m) ?? m));
 // Swap every mesh under `root` to Lambert (true) or back to the original (false). Returns the number of meshes changed.
 export function useLambert(root, lambert) {
   let n = 0;
