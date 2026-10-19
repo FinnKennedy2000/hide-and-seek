@@ -5,7 +5,7 @@ import { renderer, composer, camera, scene } from '../render/renderer.js';
 import { render } from '../render/index.js';
 import { settings } from '../core/settings.js';
 import { bus, EV } from '../core/bus.js';
-import { addSystem, setFrameCap } from '../core/loop.js';
+import { addSystem } from '../core/loop.js';
 import { updateCulling, capLights, setLite, bounds, makePropClone, props } from '../world/build.js';
 import { perf } from './index.js';
 import { budget, TIERS } from './budget.js';
@@ -91,7 +91,7 @@ export function initPerf() {
       st.auto = !!value;
       if (value) { gov.minTier = 'potato'; gov.maxTier = TIERS.indexOf(detected) > 3 ? detected : 'high'; benchDone = false; benchFrames = 0; benchT0 = 0; samples.length = 0; gov.setTier(detected); }
       else gov.minTier = gov.maxTier = gov.tier; // keep the current tier, pinned
-    } else if (key === 'fpsCap') { st.eco = value === 30; setFrameCap(value); }
+    } else if (key === 'fpsCap') { st.eco = value === 30; } // (the loop reads settings.fpsCap itself)
     else if (key === 'perfHud') st.hud = !!value;
   });
   addEventListener('keydown', (e) => { if (e.code === 'F3') { e.preventDefault(); settings.set('perfHud', !settings.perfHud); } });
@@ -100,7 +100,7 @@ export function initPerf() {
 
   let skip = 0;
   applyTier(start); st.scale = gov.scale;
-  setFrameCap(settings.fpsCap); booted = true;
+  booted = true;
 
   // ---- character impostors: potato / low draw a distant character as one capsule (a character is ~19 meshes). Characters that
   // manage their own LOD (or are one mesh anyway: the glTF rig) are skipped, see lodChar.
