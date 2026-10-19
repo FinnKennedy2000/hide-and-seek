@@ -117,7 +117,7 @@ const liteMats = new Map();
 export function liteOf(m) {
   if (!m.isMeshStandardMaterial) return m;
   let c = liteMats.get(m);
-  if (!c) { c = new THREE.MeshLambertMaterial({ color: m.color.clone(), map: m.map, emissive: m.emissive.clone(), emissiveIntensity: m.emissiveIntensity, flatShading: m.flatShading }); liteMats.set(m, c); }
+  if (!c) { c = new THREE.MeshLambertMaterial({ color: m.color.clone(), map: m.map, emissive: m.emissive.clone(), emissiveIntensity: m.emissiveIntensity, flatShading: m.flatShading, vertexColors: m.vertexColors, side: m.side, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest }); liteMats.set(m, c); }
   return c;
 }
 const matFor = (name) => (liteOn ? liteOf(mat[name]) : mat[name]);
