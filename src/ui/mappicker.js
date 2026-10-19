@@ -11,7 +11,7 @@ export function playersLabel(meta) {
     const b = meta.bounds, area = b ? (b.x1 - b.x0) * (b.z1 - b.z0) : 2000;
     p = area < 1200 ? [2, 4] : area < 3000 ? [4, 6] : [6, 8];
   }
-  if (Array.isArray(p)) p = `${p[0]}–${p[1]}`; else if (typeof p === 'object') p = `${p.min}–${p.max}`;
+  if (Array.isArray(p)) p = `${p[0]}–${p[1]}`; else if (typeof p === 'object') p = p.recommended ? String(p.recommended).replace('-', '–') : `${p.min}–${p.max}`;
   return `${p} players`;
 }
 export const randomMapId = () => pick(Object.keys(MAPS));
