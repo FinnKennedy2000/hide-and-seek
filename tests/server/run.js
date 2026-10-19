@@ -8,7 +8,7 @@ const tests = ['core.test.js', 'worlddata.test.js', 'mp-test.js', 'mp-test2.js',
 
 (async () => {
   const port = await free();
-  const server = spawn('node', [path.join(__dirname, '..', '..', 'server', 'index.js')], { env: { ...process.env, PORT: String(port), HIDE_SECS: '1', SEEK_SECS: '20', RECONNECT_SECS: '3' }, stdio: 'ignore' });
+  const server = spawn('node', [path.join(__dirname, '..', '..', 'server', 'index.js')], { env: { ...process.env, PORT: String(port), HIDE_SECS: '1', SEEK_SECS: '20', RECONNECT_SECS: '3', MAX_ROOMS_PER_IP: '1000', MAX_ROOMS: '1000' }, stdio: 'ignore' });
   let bad = 0;
   try {
     await new Promise((r) => setTimeout(r, 1500));

@@ -30,13 +30,27 @@ function proxy(target, delay, jitter) {
   return { url: `ws://localhost:${srv.address().port}/ws`, close: () => { srv.clients.forEach((c) => c.terminate()); srv.close(); } };
 }
 
+// a private server instance with its own tunables (hide phase length, room caps)
+function spawnServer(env) {
+  const { spawn } = require('node:child_process'), net = require('node:net'), path = require('node:path');
+  return new Promise((res, rej) => {
+    const probe = net.createServer(); probe.listen(0, () => {
+      const port = probe.address().port; probe.close(() => {
+        const child = spawn('node', [path.join(__dirname, '..', '..', 'server', 'index.js')], { env: { ...process.env, ...env, PORT: String(port) }, stdio: 'ignore' });
+        const t0 = Date.now(), tryUp = () => http.get(`http://localhost:${port}/health`, (r) => { r.resume(); res({ url: `ws://localhost:${port}/ws`, kill: () => child.kill('SIGTERM') }); }).on('error', () => (Date.now() - t0 > 8000 ? rej(new Error('server did not start')) : setTimeout(tryUp, 150)));
+        tryUp();
+      });
+    });
+  });
+}
+
 function client(url, label, hello = true) {
   const ws = new WebSocket(url), log = [], waiters = [];
   const c = { label, ws, log, id: 0, token: '', at: [0, 0], seq: 0, snaps: [] };
   ws.on('message', (d, bin) => {
     const m = WIRE.parse(d, bin); if (!m) return;
     m.rx = Date.now() / 1000;
-    if (m.t === 'ping') ws.send(JSON.stringify({ t: 'pong', s: m.s })); // like the game client: lets the server measure rtt
+    if (m.t === 'ping') for (const q of c.forge ? [m.s - 1000, m.s - 5000, 1] : [m.s]) ws.send(JSON.stringify({ t: 'pong', s: q })); // like the game client (lets the server measure rtt); `forge` claims a huge rtt instead
     if (m.t === 'snap') c.snaps.push(m);
     log.push(m);
     if (m.t === 'room') { c.id = m.you; c.token = m.token || c.token; }
@@ -156,6 +170,14 @@ async function startRound(cs) {
     ok(acked.length > 20 && worst < 0.03, `walking at 6.8 m/s through ${px.url.slice(-8)}: ${acked.length} acks, worst server-vs-client error ${worst.toFixed(3)} m (never refused)`);
     const last = H.snaps[H.snaps.length - 1].p.find((e) => e[7] & 2);
     ok(Math.hypot(last[1] - H.at[0], last[3] - H.at[1]) < 0.05, 'the server ended up exactly where the client walked to');
+    // I-1: a client that sends 12 m/s for 3 s is held to 9 m/s * t + 1 m (both the per-move rule and the bucket must pass)
+    await H.walk(-12, 14, 8, 50); await sleep(400);
+    H.snaps.length = 0; const t0 = Date.now(), start = H.at.slice();
+    for (let i = 0; i < 60; i++) { H.pos(start[0] + 0.6 * (i + 1), start[1]); await sleep(50); }
+    const el = (Date.now() - t0) / 1000; await sleep(400);
+    const fin = H.snaps[H.snaps.length - 1].p.find((e) => e[7] & 2);
+    ok(Math.hypot(fin[1] - start[0], fin[3] - start[1]) <= 9 * el + 1.0, `12 m/s for ${el.toFixed(1)} s: server advanced ${Math.hypot(fin[1] - start[0], fin[3] - start[1]).toFixed(2)} m <= ${(9 * el + 1).toFixed(2)} m`);
+    H.at = [fin[1], fin[3]]; // (the client would have been snapped back)
     // a 15 m jump in one update is refused and the ack tells the client (so it can snap back)
     H.snaps.length = 0; const before = H.at.slice(); H.pos(before[0], before[1] - 15); await sleep(500);
     const snap = H.snaps[H.snaps.length - 1], me = snap.p.find((e) => e[7] & 2), sent = H.sent.get(snap.ack);
@@ -338,6 +360,105 @@ async function startRound(cs) {
       cs.forEach((c) => c.ws.close()); await sleep(400);
       ok(await metric('hs_tokens') === base.tokens && await metric('hs_rooms') === base.rooms && await metric('hs_history_samples') === 0, 'when everyone leaves the room, tokens, room and history are released');
     }
+  }
+
+
+  // ===== 11. round-1 review fixes, on a private server with a longer hide phase and tight room caps
+  {
+    const srv = await spawnServer({ HIDE_SECS: '8', SEEK_SECS: '90', RECONNECT_SECS: '3', MAX_ROOMS_PER_IP: '3', MAX_ROOMS: '1000' });
+    const free = (x, z) => !world.colliders.some((c) => c.y0 < 1.8 && x > c.x0 - 0.5 && x < c.x1 + 0.5 && z > c.z0 - 0.5 && z < c.z1 + 0.5);
+    const grid = []; for (let x = -20; x <= 20; x++) for (let z = -20; z <= 20; z++) if (free(x, z)) grid.push([x, z]);
+    const dS = (p) => Math.hypot(p[0] - S0[0], p[1] - S0[1]);
+    const V = grid.filter((p) => dS(p) > 6 && dS(p) < 18 && sees(S0[0], S0[1], p[0], p[1])).sort((a, b) => dS(a) - dS(b))[0];
+    // I-2: during the hide phase a seeker gets no hider entries and no hider noise, even in plain sight; once seeking starts the hider shows up
+    {
+      const cs = await lobby(srv.url, 2); const r = await startRound(cs);
+      const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S);
+      await H.walk(V[0], V[1], 8, 50); H.send('noise', { k: 'sprint' }); await sleep(900);
+      ok(S.snaps.length > 3 && !S.snaps.some((s) => s.p.some((e) => e[0] === H.id)) && !S.log.some((m) => m.t === 'noise'), 'hide phase: a hider in plain sight of the seeker is in no snapshot and makes no noise cue');
+      await S.wait((m) => m.t === 'phase', 12000); await sleep(600);
+      ok(S.snaps.some((s) => s.p.some((e) => e[0] === H.id && !(e[7] & 1))), 'seek phase: the same hider is now in the seeker\'s snapshots');
+      cs.forEach((c) => c.ws.close());
+    }
+    // I-7: classic tag through a wall (within 3.5 m) is refused, in line of sight it works
+    {
+      // a pair of points within 3 m of each other with a wall between them, and a partner for the seeker spot in plain sight
+      let A = null, Q = null;
+      for (const a of grid.slice().sort((x, y) => dS(x) - dS(y))) { Q = grid.find((b) => { const d = Math.hypot(a[0] - b[0], a[1] - b[1]); return d > 1 && d < 3 && !sees(a[0], a[1], b[0], b[1]); }); if (Q) { A = a; break; } }
+      const W = A && grid.find((b) => { const d = Math.hypot(A[0] - b[0], A[1] - b[1]); return d > 1.5 && d < 3 && sees(A[0], A[1], b[0], b[1]); });
+      ok(!!A && !!Q && !!W, 'a wall pocket for the tag test exists');
+      if (A && Q && W) {
+        const cs = await lobby(srv.url, 2); const r = await startRound(cs);
+        const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S);
+        await H.walk(Q[0], Q[1], 8, 50); await S.wait((m) => m.t === 'phase', 12000);
+        await S.walk(A[0], A[1], 8, 50); await sleep(300);
+        S.send('tag', { target: H.id });
+        ok(await sleep(500).then(() => !S.log.some((m) => m.t === 'tagged')), `tag through a wall at ${Math.hypot(Q[0] - A[0], Q[1] - A[1]).toFixed(1)} m is refused`);
+        await H.walk(W[0], W[1], 8, 50); await sleep(350); S.send('tag', { target: H.id });
+        ok(!!(await S.wait((m) => m.t === 'tagged', 1500).catch(() => null)), 'the same tag in line of sight is accepted');
+        cs.forEach((c) => c.ws.close());
+      }
+    }
+    // I-3: a client that forges pongs (claims a huge rtt) gets no extra rewind: a shot at the hider's current position still hits
+    {
+      const lane = (() => { for (let z = 11; z <= 16; z += 0.5) { let c = true; for (let x = -7; x <= 7 && c; x += 0.5) c = nav.losClear(S0[0], 1.5, S0[1], x, 0.9, z); if (c) return z; } return null; })();
+      const cs = await lobby(srv.url, 2, 'prophunt'); const r = await startRound(cs);
+      const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S);
+      S.forge = true;
+      await H.walk(-6, lane, 8, 50); await S.wait((m) => m.t === 'phase', 12000); await sleep(1500); // many forged pongs by now
+      const walk = H.walk(6, lane, 3.9, 50); await sleep(900);
+      const [hx, hz] = H.at, ox = S0[0], oy = 1.5, oz = S0[1], dx = hx + 0.1 - ox, dy = 0.9 - oy, dz = hz - oz, l = Math.hypot(dx, dy, dz);
+      S.send('shoot', { ox, oy, oz, dx: dx / l, dy: dy / l, dz: dz / l, d: 0 });
+      const shot = await S.wait((m) => m.t === 'shot', 2000).catch(() => null);
+      ok(!!shot && shot.hit === H.id, 'forged pongs do not buy a rewind: a shot at the current position hits (a 250 ms rewind would miss by ~1 m)');
+      await walk; cs.forEach((c) => c.ws.close());
+    }
+    // I-4: a hider that reverted to a person while out of the seeker's interest is shown as a person (propId null) when it comes back
+    {
+      const P1 = world.props.filter((p) => dS([p.x, p.z]) > 6 && dS([p.x, p.z]) < 18 && sees(S0[0], S0[1], p.x, p.z) && free(p.x, p.z) !== undefined)[0];
+      const B = grid.filter((p) => !sees(S0[0], S0[1], p[0], p[1]) && dS(p) < 25).sort((a, b) => Math.hypot(a[0] - P1.x, a[1] - P1.z) - Math.hypot(b[0] - P1.x, b[1] - P1.z))[0];
+      const cs = await lobby(srv.url, 2, 'prophunt'); const r = await startRound(cs);
+      const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S);
+      await H.walk(P1.x, P1.z, 8, 50); await S.wait((m) => m.t === 'phase', 12000); await sleep(700);
+      H.send('disguise', { propId: P1.id }); await H.wait((m) => m.t === 'disguise'); await sleep(300);
+      ok(S.log.some((m) => m.t === 'disguise' && m.id === H.id && m.propId === P1.id), 'a visible hider\'s disguise reaches the seeker');
+      await H.walk(B[0], B[1], 8, 50); await sleep(1000);
+      await sleep(2400); H.send('disguise', { propId: null }); await sleep(300); // reverts out of sight (cooldown has passed)
+      S.log.length = 0;
+      await H.walk(P1.x, P1.z, 8, 50); await sleep(700);
+      ok(S.log.some((m) => m.t === 'disguise' && m.id === H.id && m.propId === null), 'back in view the seeker is told the hider is no longer disguised');
+      cs.forEach((c) => c.ws.close());
+    }
+    // I-5: a reconnect from a socket that already sits in a room leaves that room (no zombie seat, no leaked room) and rotates the token
+    {
+      const cs = await lobby(srv.url, 2); const r = await startRound(cs);
+      const S = cs.find((c) => c.id === r.seekers[0]), H = cs.find((c) => c !== S), token = S.token;
+      S.ws.terminate(); await sleep(300);
+      const X = client(srv.url, 'X'); await X.open; X.send('create', { name: 'Zombie?' }); await X.wait((m) => m.t === 'room');
+      X.send('reconnect', { token });
+      const back = await X.wait((m) => m.t === 'room' && m.you === S.id);
+      ok(back.token && back.token !== token, 'the token is rotated on reconnect');
+      const Y = client(srv.url, 'Y'); await Y.open; Y.send('reconnect', { token });
+      ok(/Session expired/.test((await Y.wait((m) => m.t === 'err').catch(() => ({ msg: '' }))).msg), 'the old token no longer works'); Y.ws.close();
+      X.ws.close(); H.ws.close(); await sleep(500);
+      const body = await new Promise((res) => http.get(srv.url.replace('ws:', 'http:').replace('/ws', '/metrics'), (rr) => { let t = ''; rr.on('data', (d) => (t += d)); rr.on('end', () => res(t)); }));
+      ok(/^hs_rooms 0$/m.test(body) && /^hs_players 0$/m.test(body) && /^hs_tokens 0$/m.test(body), 'no zombie room, seat or token is left behind');
+    }
+    // I-6: rooms per IP are capped at 3
+    {
+      const cs = []; const errs = [];
+      for (let i = 0; i < 4; i++) { const c = client(srv.url, 'R' + i); await c.open; c.send('create', { name: 'R' + i }); cs.push(c); await sleep(120); }
+      ok(cs.slice(0, 3).every((c) => c.log.some((m) => m.t === 'room')) && cs[3].log.some((m) => m.t === 'err' && /Too many rooms/.test(m.msg)), 'the 4th room from one IP is refused with an err');
+      cs.forEach((c) => c.ws.close());
+    }
+    srv.kill();
+    const small = await spawnServer({ MAX_ROOMS: '2', MAX_ROOMS_PER_IP: '10' });
+    {
+      const cs = []; for (let i = 0; i < 3; i++) { const c = client(small.url, 'G' + i); await c.open; c.send('create', { name: 'G' + i }); cs.push(c); await sleep(120); }
+      ok(cs[2].log.some((m) => m.t === 'err' && /full/i.test(m.msg)) && cs[1].log.some((m) => m.t === 'room'), 'the server-wide room cap refuses the next create with an err');
+      cs.forEach((c) => c.ws.close());
+    }
+    small.kill();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
