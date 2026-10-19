@@ -1,4 +1,5 @@
 // Seeker's cartoon paint blaster: first-person viewmodel with recoil, paint tracers, capped splat decals, and the ammo crate.
+import { budget } from '../perf/budget.js';
 import * as THREE from 'three';
 import { scene, camera } from '../render/renderer.js';
 import { solids } from '../world/build.js';
@@ -50,7 +51,7 @@ export function updateTracers(dt) {
 }
 
 // ----- paint decals (last 60 only)
-const decals = [], MAX_DECALS = 60;
+const decals = [];
 const decalGeo = new THREE.PlaneGeometry(1, 1);
 const ray = new THREE.Raycaster(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
 export function splat(point, normal, color) {
@@ -58,7 +59,7 @@ export function splat(point, normal, color) {
   m.position.copy(point).addScaledVector(normal, 0.02);
   m.lookAt(_t.copy(point).add(normal)); m.rotateZ(Math.random() * 6.28); m.scale.setScalar(0.5 + Math.random() * 0.45);
   scene.add(m); decals.push(m);
-  if (decals.length > MAX_DECALS) scene.remove(decals.shift());
+  while (decals.length > Math.min(60, budget.cur.decals)) scene.remove(decals.shift()); // cap per quality tier (perf budget)
 }
 // surface normal where a shot from o along (p - o) ended; null if nothing solid was hit (sky)
 export function surfaceNormal(o, p) {
