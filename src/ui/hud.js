@@ -15,6 +15,9 @@ export function toast(msg, tone) {
   const rise = settings.reducedMotion ? '' : ' translateY(10px)';
   toastAnim = t.animate([{ opacity: 0, transform: `translateX(-50%)${rise}` }, { opacity: 1, transform: 'translateX(-50%)', offset: 0.1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 2200, easing: 'ease-out' });
 }
+// Fill bars (full-width element scaled from the left): transform only, written when the value changes.
+const barLast = {};
+export function setBar(id, v) { v = clamp(v, 0, 1); if (barLast[id] !== v) { barLast[id] = v; $(id).style.transform = `scaleX(${v.toFixed(3)})`; } }
 export function show(id, on) { $(id).classList.toggle('hidden', !on); }
 
 // ----- visual sound cues: every positional sfx also shows where it came from (ring around the crosshair + caption),
@@ -74,7 +77,7 @@ bus.on(EV.AMMO, (m = {}) => {
   const mag = m.mag ?? m.cur, res = m.reserve ?? m.max;
   $('ammoHud').classList.remove('hidden');
   if (mag != null) put('ammoTxt', m.reloading ? 'Reloading' : res != null ? `${mag} / ${res}` : String(mag));
-  if (m.hp != null) { const f = clamp(m.hp / (m.hpMax ?? 100), 0, 1); put('hpTxt', `Health ${Math.round(f * (m.hpMax ?? 100))}`); $('hpFill').style.width = `${f * 100}%`; }
+  if (m.hp != null) { const f = clamp(m.hp / (m.hpMax ?? 100), 0, 1); put('hpTxt', `Health ${Math.round(f * (m.hpMax ?? 100))}`); setBar('hpFill', f); }
 });
 // stamina {value: 0..1, exhausted, sprinting}. Bar shows only while not full; exhausted turns it to the warning colour.
 let exh = false;

@@ -29,8 +29,22 @@ export function initNav() {
   const t = $('title'); if (t && !t.classList.contains('hidden')) focusFirst(t);
 }
 
+// Esc / B. Lobby and connection screens ask before leaving: a stray key press must not drop you out of a room.
+// While the connection screen is only waiting for a round to end, Esc does nothing (the Cancel button is still there).
+let confirmFrom = null;
+export function ask(panel) {
+  confirmFrom = document.activeElement; $('cfTitle').textContent = panel.dataset.confirm;
+  $('cfYes').onclick = () => { closeConfirm(false); panel.querySelector(panel.dataset.back)?.click(); };
+  $('cfNo').onclick = () => closeConfirm(true);
+  $('confirm').classList.remove('hidden');
+}
+function closeConfirm(restore) { $('confirm').classList.add('hidden'); if (restore && confirmFrom?.isConnected) confirmFrom.focus(); confirmFrom = null; }
+// the room can change under the dialog (round starts, connection drops): close it if its screen is gone
+export function syncConfirm() { if (!$('confirm').classList.contains('hidden') && $('olLobby').classList.contains('hidden') && $('olConn').classList.contains('hidden')) closeConfirm(false); }
 export function back() {
   const p = active(); if (!p) return false;
+  if (p.id === 'olConn' && $('connRetry').classList.contains('hidden')) return true; // waiting for the round to finish
+  if (p.dataset.confirm) { ask(p); return true; }
   const sel = p.dataset.back; if (!sel) return false;
   const b = p.querySelector(sel); if (!b || b.disabled) return false;
   b.click(); return true;

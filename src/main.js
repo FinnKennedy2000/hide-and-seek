@@ -27,7 +27,7 @@ addSystem({
     } else if (!G.paused) {
       try { (G.mode === 'online' ? hooks.update : updateSingle)(dt); } catch (e) {
         console.error('update error', e);
-        const t = performance.now(); if (t - lastErrToast > 5000) { lastErrToast = t; toast('Something went wrong', '#ff4d5e'); }
+        const t = performance.now(); if (t - lastErrToast > 5000) { lastErrToast = t; toast('Something went wrong', 'bad'); }
       }
     }
     hooks.tick?.(dt);

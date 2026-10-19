@@ -16,8 +16,8 @@ function row(label, hint, ctl) {
   const r = el('div', { className: 'row' }, l, el('div', { className: 'ctl' }, ctl)); ctl.id ||= id; return r;
 }
 function slider(label, key, { min, max, step, show, hint }) {
-  const inp = el('input', { type: 'range', min, max, step, value: settings[key] }), val = el('span', { className: 'val' });
-  const paint = () => { val.textContent = show(settings[key]); inp.setAttribute('aria-valuetext', val.textContent); };
+  const inp = el('input', { type: 'range', min, max, step, value: settings.raw(key) }), val = el('span', { className: 'val' });
+  const paint = () => { val.textContent = show(settings.raw(key)); inp.setAttribute('aria-valuetext', val.textContent); };
   inp.oninput = () => { settings.set(key, Number(inp.value)); paint(); };
   paint();
   const r = row(label, hint, inp); r.querySelector('label span').append(val); return r;
@@ -26,7 +26,7 @@ function segmented(label, key, options, hint) {
   const g = el('div', { className: 'seg', role: 'radiogroup' }), btns = options.map(([v, t]) => {
     const b = el('button', { type: 'button', textContent: t, role: 'radio' }); b.onclick = () => { settings.set(key, v); paint(); }; g.append(b); return [v, b];
   });
-  const paint = () => btns.forEach(([v, b]) => b.setAttribute('aria-checked', String(settings[key] === v)));
+  const paint = () => btns.forEach(([v, b]) => b.setAttribute('aria-checked', String(settings.raw(key) === v)));
   paint(); g.setAttribute('aria-label', label);
   const r = row(label, hint, g); const lab = r.querySelector('label'); lab.removeAttribute('for'); lab.id = `lb${uid}`; g.setAttribute('aria-labelledby', lab.id); return r;
 }
@@ -133,7 +133,7 @@ export function initSettingsScreen() {
     const n = e.key === 'ArrowRight' ? (i + 1) % ids.length : e.key === 'ArrowLeft' ? (i + ids.length - 1) % ids.length : e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : -1;
     if (n >= 0) { e.preventDefault(); select(ids[n], true); }
   });
-  $('setReset').onclick = () => { for (const k of Object.keys(DEFAULTS)) if (k !== 'onboarded') settings.set(k, DEFAULTS[k]); build(); toast('Settings reset', 'info'); };
+  $('setReset').onclick = () => { for (const k of Object.keys(DEFAULTS)) settings.set(k, DEFAULTS[k]); build(); toast('Settings reset', 'info'); };
   $('setBack').onclick = () => { stopListen(); closeSettings(); };
   $('btnSettings').onclick = openSettings;
   scaleTimer = setInterval(() => { if (scaleOut && scaleOut.isConnected && !$('settings').classList.contains('hidden')) { const t = scaleText(); if (scaleOut.textContent !== t) scaleOut.textContent = t; } }, 500);

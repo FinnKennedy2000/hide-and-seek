@@ -10,7 +10,7 @@ import { camera } from '../render/renderer.js';
 import { solids, props } from '../world/build.js';
 import { sfx } from '../audio/sfx.js';
 import { burst } from '../render/fx.js';
-import { toast } from '../ui/hud.js';
+import { toast, setBar } from '../ui/hud.js';
 import { updatePlayer } from '../player/controller.js';
 import * as R from '../net/remote.js';
 import * as B from './blaster.js';
@@ -153,7 +153,7 @@ export function onKey(code) {
     const c = sampleSurface();
     if (c == null) return toast('NOTHING TO COPY', '#ffd166');
     me.cdCamo = 1; me.send('camo', { c });
-  } else if (code === 'KeyR') { me.rotLock = !me.rotLock; toast(me.rotLock ? 'ROTATION LOCKED (WHEEL TO TURN 45)' : 'ROTATION FREE', '#ffb44d'); }
+  } else if (code === 'KeyR') { me.rotLock = !me.rotLock; toast(me.rotLock ? 'ROTATION LOCKED (WHEEL TO TURN 45)' : 'ROTATION FREE', 'warn'); }
   else if (code === 'KeyT' && me.cdTaunt <= 0) { me.cdTaunt = 10.05; me.send('taunt'); }
 }
 export function onWheel(d) {
@@ -182,9 +182,9 @@ export function onDisguise(m) {
   me.propId = m.propId; me.cdDis = 3.05; me.propRot = me.rotY;
   const pr = m.propId != null ? props[m.propId] : null;
   P.r = pr ? Math.max(0.15, Math.min(0.45, Math.min(pr.w, pr.d) / 2)) : R_PH; P.fixedPh = pr ? Math.max(0.5, pr.h) : 0;
-  toast(pr ? `YOU ARE A ${pr.name.toUpperCase()}` : 'BACK TO NORMAL', '#80ed99');
+  toast(pr ? `YOU ARE A ${pr.name.toUpperCase()}` : 'BACK TO NORMAL', 'good');
 }
-export function onCamo(m) { const a = avatarOf(m.id); if (a) { R.tintAvatar(a, m.c); if (m.id === me.id) toast('CAMOUFLAGED', '#80ed99'); } }
+export function onCamo(m) { const a = avatarOf(m.id); if (a) { R.tintAvatar(a, m.c); if (m.id === me.id) toast('CAMOUFLAGED', 'good'); } }
 export function onTaunt(m) { sfx.taunt({ x: m.x, z: m.z }); const a = avatarOf(m.id); if (a) R.tauntAvatar(a); }
 export function onScrape(m) { sfx.scrape(m); }
 
@@ -208,7 +208,7 @@ export function onTagged(m) {
 }
 export function onOut(m) {
   if (m.id === me.id) {
-    me.out = true; me.fc.copy(camera.position); B.showBlaster(false); toast("YOU'RE OUT - SPECTATING", '#ff4d5e'); $('ammoHud').classList.add('hidden');
+    me.out = true; me.fc.copy(camera.position); B.showBlaster(false); toast("YOU'RE OUT - SPECTATING", 'bad'); $('ammoHud').classList.add('hidden');
   } else { const a = R.remotes.get(m.id); if (a) a.root.visible = false; }
 }
 export function onAmmo(m) {
@@ -225,7 +225,7 @@ function updateHud() {
   $('ammoHud').classList.toggle('hidden', !on);
   if (!on) return;
   setText('ammoTxt', me.reloading ? 'RELOADING...' : `${me.mag} / ${me.res}   ${Math.ceil(me.res / MAG)} MAG${Math.ceil(me.res / MAG) === 1 ? '' : 'S'}`);
-  $('hpFill').style.width = `${Math.max(0, me.hp)}%`; setText('hpTxt', `HEALTH ${Math.max(0, me.hp)}`);
+  setBar('hpFill', Math.max(0, me.hp) / 100); setText('hpTxt', `HEALTH ${Math.max(0, me.hp)}`);
 }
 export function hints() {
   if (me.out) return 'SPECTATING  -  WASD fly, Space/C up/down, Shift fast';

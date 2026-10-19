@@ -93,7 +93,7 @@
   </section>
 </div>
 
-<div id="olLobby" class="panelwrap hidden" data-screen="lobby" data-back="#lobLeave">
+<div id="olLobby" class="panelwrap hidden" data-screen="lobby" data-back="#lobLeave" data-confirm="Leave room?">
   <section class="card wide" aria-labelledby="lobCode">
     <div class="lobhead">
       <div><p class="eyebrow">Room code</p><h2 id="lobCode"></h2></div>
@@ -121,9 +121,14 @@
   <div id="resPodium" class="podium" aria-hidden="true"></div>
 </div>
 
-<div id="olConn" class="panelwrap hidden" data-screen="conn" data-back="#connMenu">
+<div id="olConn" class="panelwrap hidden" data-screen="conn" data-back="#connMenu" data-confirm="Leave room?">
   <section class="card" aria-labelledby="connTitle"><h2 id="connTitle">Connection lost</h2><p class="sub" id="connSub">The link to the server dropped. If you were in a round you have been removed from it; reconnecting puts you back in the room lobby.</p>
   <div class="modes"><button id="connRetry" class="primary" type="button"><b>Reconnect</b></button><button id="connMenu" type="button"><b>Menu</b></button></div></section>
+</div>
+
+<div id="confirm" class="panelwrap hidden" data-screen="confirm" data-back="#cfNo" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle">
+  <section class="card"><h2 id="cfTitle">Leave room?</h2><p class="sub" id="cfSub">You will lose your seat in this room.</p>
+  <div class="modes"><button id="cfNo" class="primary" type="button" data-focus><b>No, stay</b></button><button id="cfYes" type="button"><b>Yes, leave</b></button></div></section>
 </div>
 
 <div id="loading" class="panelwrap hidden" data-screen="loading" role="dialog" aria-modal="true" aria-label="Loading">

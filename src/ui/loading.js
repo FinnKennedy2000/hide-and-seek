@@ -3,21 +3,24 @@
 import { $ } from '../core/util.js';
 import { bus } from '../core/bus.js';
 import { loadGroup } from '../core/assets.js';
+import { toast } from './hud.js';
 
 const groups = new Map(); // name -> {done,total}
 // The overlay blocks input, so it only shows for boot-time loads (before the first click / key) and for explicit ui.preload() groups.
 // Loads the engine kicks off after a gesture (audio samples for the map, ...) stay in the background.
 let booting = true; const forced = new Set();
 for (const t of ['pointerdown', 'keydown']) addEventListener(t, () => { booting = false; }, { capture: true, once: true });
-let shown = 0, hideT = 0, label = 'Loading';
+let shown = 0, hideT = 0, stallT = 0, label = 'Loading';
+const STALL_MS = 20000; // no progress for this long: give the menu back (a hung fetch never settles loadGroup)
 
 export function loading(progress, text) { // progress 0..1 shows / updates; null|false hides
   const el = $('loading');
-  if (progress == null || progress === false) { clearTimeout(hideT); el.classList.add('hidden'); shown = 0; return; }
+  if (progress == null || progress === false) { clearTimeout(hideT); clearTimeout(stallT); el.classList.add('hidden'); shown = 0; return; }
   if (el.classList.contains('hidden')) {
     el.classList.remove('hidden'); shown = 0; // (the overlay covers the pointer; nav.js ignores keys while it shows)
   }
-  clearTimeout(hideT);
+  clearTimeout(hideT); clearTimeout(stallT);
+  if (progress < 1) stallT = setTimeout(() => { groups.clear(); loading(null); toast('Loading is taking too long; carrying on without the rest', 'warn'); focusMenu(); }, STALL_MS);
   shown = Math.max(shown, Math.min(1, progress)); // monotonic
   if (text) label = text;
   $('loadFill').style.transform = `scaleX(${shown.toFixed(3)})`;

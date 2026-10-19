@@ -45,8 +45,14 @@ try {
 
 const save = () => {
   const { volume, ...rest } = settings;
-  try { localStorage.setItem(KEY, JSON.stringify({ ...rest, vol: volume })); } catch { /* storage blocked: fine */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ...rest, shake: settings.raw('shake'), headBob: settings.raw('headBob'), vol: volume })); } catch { /* storage blocked: fine */ }
 };
+
+// Reduce motion is an override applied at read time: the user's own shake / head-bob values are kept and come back when it is turned off.
+// settings.raw(k) returns the stored value (the settings screen shows that one).
+const stored = { shake: settings.shake, headBob: settings.headBob };
+for (const [k, off] of [['shake', 'off'], ['headBob', 0]]) Object.defineProperty(settings, k, { enumerable: true, get: () => (settings.reducedMotion ? off : stored[k]), set: (v) => { stored[k] = v; } });
+Object.defineProperty(settings, 'raw', { enumerable: false, value: (k) => (k in stored ? stored[k] : settings[k]) });
 
 Object.defineProperty(settings, 'set', {
   enumerable: false,

@@ -17,13 +17,21 @@ export function playersLabel(meta) {
 export const randomMapId = () => pick(Object.keys(MAPS));
 
 // onPick(id); `current` is the selected id. Re-render to refresh. disabled: show but do not allow changes (lobby guests).
-export function renderMapPicker(box, { current, onPick, disabled = false }) {
+export function renderMapPicker(box, { current, onPick, disabled = false, onRandom = null }) {
+  const ids = Object.keys(MAPS), have = [...box.children].filter((n) => n.dataset.map).map((n) => n.dataset.map);
+  if (have.length === ids.length && have.every((id, i) => id === ids[i]) && !!box.querySelector('.rand') === !!onRandom) { // same cards: update state in place so keyboard focus survives
+    for (const b of box.children) {
+      if (b.dataset.map) { b.setAttribute('aria-checked', String(b.dataset.map === current)); b.disabled = disabled; b.onclick = () => onPick(b.dataset.map); }
+      else b.onclick = onRandom;
+    }
+    return;
+  }
   box.textContent = '';
   for (const [id, m] of Object.entries(MAPS)) {
     const meta = m.meta, b = document.createElement('button');
     b.type = 'button'; b.className = 'map'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(id === current)); b.dataset.map = id; b.disabled = disabled;
     const th = document.createElement('span'); th.className = 'th'; th.setAttribute('aria-hidden', 'true');
-    if (meta.thumbnail) th.style.backgroundImage = `url(${meta.thumbnail})`;
+    if (meta.thumbnail) th.style.backgroundImage = `url(${JSON.stringify(meta.thumbnail)})`;
     else { th.style.backgroundImage = `linear-gradient(155deg, ${hex(meta.ambient?.color)}, ${hex(meta.fog?.color)})`; th.textContent = meta.name.slice(0, 1); }
     const info = document.createElement('span'); info.className = 'meta';
     const nm = document.createElement('b'); nm.textContent = meta.name;
@@ -31,5 +39,9 @@ export function renderMapPicker(box, { current, onPick, disabled = false }) {
     info.append(nm, sm); b.append(th, info);
     b.onclick = () => onPick(id);
     box.append(b);
+  }
+  if (onRandom) { // host-only "Random" card, part of the same list so focus handling stays in one place
+    const r = document.createElement('button'); r.type = 'button'; r.className = 'map rand ghost';
+    r.innerHTML = '<span class="th" aria-hidden="true">?</span><span class="meta"><b>Random</b><small>Pick for me</small></span>'; r.onclick = onRandom; box.append(r);
   }
 }

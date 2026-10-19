@@ -9,7 +9,7 @@ import { bus, EV } from '../core/bus.js';
 import { addSystem } from '../core/loop.js';
 import { toast, show, updateCues, updatePerfHud, syncRole } from './hud.js';
 import { loading, preload } from './loading.js';
-import { initNav } from './nav.js';
+import { initNav, syncConfirm } from './nav.js';
 import { initSettingsScreen, openSettings, closeSettings } from './settings-screen.js';
 import { updateOnboarding } from './onboarding.js';
 import { updatePodium } from './podium.js';
@@ -33,12 +33,11 @@ const root = document.documentElement;
 const applyLook = () => { root.dataset.motion = settings.reducedMotion ? 'reduced' : 'full'; if (settings.colorBlind) root.dataset.cb = '1'; else delete root.dataset.cb; };
 bus.on(EV.SETTINGS, ({ key, value }) => {
   if (key === 'reducedMotion' || key === 'colorBlind') applyLook();
-  if (key === 'reducedMotion' && value) { settings.set('shake', 'off'); settings.set('headBob', 0); } // one switch quiets the camera too
 });
 applyLook();
 
 initSettingsScreen();
 initNav();
 // UI per-frame work: text / transform only, no layout reads. Order 45 = after anim (40), before the render pass.
-addSystem({ name: 'ui', order: 45, update(dt) { updateCues(dt); updatePerfHud(dt); syncRole(); updateOnboarding(); updatePodium(dt); } });
+addSystem({ name: 'ui', order: 45, update(dt) { updateCues(dt); updatePerfHud(dt); syncRole(); updateOnboarding(); updatePodium(dt); syncConfirm(); } });
 window.__hsUi = Object.assign(ui, { bus }); // tests (tests/ui.spec.js) drive loading / results through this; main.js owns window.__hs

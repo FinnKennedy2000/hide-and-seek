@@ -56,7 +56,7 @@ export function updateSeeker(dt) {
     }
     if (vis) {
       S.detect = Math.min(1.05, S.detect + dt / 0.6); S.lastSeen = { x: P.x, z: P.z }; S.lostT = 0;
-      if (S.state !== 'chase') { S.state = 'chase'; S.repath = 0; G.stats.spotted++; sfx.alert(); toast('HE SPOTTED YOU - RUN!', '#ff4d5e'); }
+      if (S.state !== 'chase') { S.state = 'chase'; S.repath = 0; G.stats.spotted++; sfx.alert(); toast('HE SPOTTED YOU - RUN!', 'bad'); }
       if (d < 1.0) S.detect = 1.05;
     } else S.detect = Math.max(0, S.detect - dt * 0.9);
     if (S.detect >= 1) { endGame(false, 'CAUGHT!', 'The seeker got you.'); return; }

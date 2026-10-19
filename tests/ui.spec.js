@@ -55,6 +55,41 @@ test('keyboard only: every menu screen is reachable and Esc goes back', async ({
   await expect(page.locator('#title')).toBeVisible();
 });
 
+test('keyboard: lobby, conn, results and end screens; Esc asks before leaving a room', async ({ page }) => {
+  const show = (n) => page.evaluate((x) => window.__hsUi.showScreen(x), n);
+  // lobby: Esc opens the confirm, Esc again keeps you in, Enter on "Yes" leaves
+  await show('lobby');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#confirm')).toBeVisible();
+  await expect(page.locator('#olLobby')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#confirm')).toBeHidden();
+  await expect(page.locator('#olLobby')).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(page.locator('#cfNo')).toBeFocused(); // the safe answer is focused
+  await page.keyboard.press('ArrowRight'); await expect(page.locator('#cfYes')).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(page.locator('#title')).toBeVisible();
+  // conn: while only waiting for a round, Esc does nothing; with the connection lost it asks first
+  await show('conn');
+  await page.evaluate(() => document.getElementById('connRetry').classList.add('hidden'));
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#confirm')).toBeHidden(); await expect(page.locator('#olConn')).toBeVisible();
+  await page.evaluate(() => document.getElementById('connRetry').classList.remove('hidden'));
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#confirm')).toBeVisible();
+  await page.keyboard.press('Escape');
+  // results: Esc goes back to the lobby view; end: Esc goes to the menu
+  await show('results'); await page.keyboard.press('Escape');
+  await expect(page.locator('#olResults')).toBeHidden();
+  await show('end'); await page.keyboard.press('Escape');
+  await expect(page.locator('#title')).toBeVisible();
+});
+
+test('map pick keeps keyboard focus', async ({ page }) => {
+  await page.locator('#spMap button').nth(1).focus(); await page.keyboard.press('Enter');
+  await expect(page.locator('#spMap button').nth(1)).toBeFocused();
+  await expect(page.locator('#spMap button').nth(1)).toHaveAttribute('aria-checked', 'true');
+});
+
 test('axe-core: no serious or critical violations on the menus', async ({ page }) => {
   await page.addScriptTag({ content: AXE });
   const scan = async (label) => {

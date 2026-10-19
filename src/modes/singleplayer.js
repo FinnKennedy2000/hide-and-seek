@@ -9,7 +9,7 @@ import { SPOTS } from '../ai/nav.js';
 import { hiders, sendHider, tagTarget, updateHiders } from '../ai/hiders.js';
 import { S, seekerGroup, updateSeeker } from '../ai/seeker.js';
 import { initAudio, sfx } from '../audio/sfx.js';
-import { toast, show } from '../ui/hud.js';
+import { toast, show, setBar } from '../ui/hud.js';
 import { bus, EV } from '../core/bus.js';
 import { enterFull, spMap } from '../ui/menus.js';
 import { makeChar, playChar, HATS, OUTFITS } from '../characters/index.js';
@@ -59,7 +59,7 @@ export function endGame(win, title, sub) {
   document.exitPointerLock?.();
   (win ? sfx.win : sfx.lose)();
   $('blackout').classList.remove('on'); $('detectWrap').classList.remove('show');
-  $('endTitle').textContent = title; $('endTitle').style.color = win ? '#80ed99' : '#ff4d5e'; $('endSub').textContent = sub;
+  $('endTitle').textContent = title; $('endTitle').style.color = win ? 'var(--good)' : 'var(--bad)'; $('endSub').textContent = sub;
   const st = G.mode === 'seek'
     ? [['TIME', fmt(G.t)], ['FOUND', `${G.found}/${N_HIDERS}`], ['BOLTS', G.stats.bolts]]
     : [['SURVIVED', `${Math.floor(G.t)}s`], ['SPOTTED', G.stats.spotted], ['LOUD STEPS', G.stats.loud]];
@@ -74,7 +74,7 @@ export function tryTag() {
   if (h.spot) { h.spot.owner = null; h.spot = null; }
   playChar(h.mesh, 'tagged');
   sfx.found(); burst(h.x, 0.8, h.z, h.color);
-  toast(G.found === N_HIDERS ? 'ALL FOUND!' : `FOUND ${G.found}/${N_HIDERS}`, '#ffb44d');
+  toast(G.found === N_HIDERS ? 'ALL FOUND!' : `FOUND ${G.found}/${N_HIDERS}`, 'warn');
   if (G.found === N_HIDERS) setTimeout(() => G.phase === 'play' && endGame(true, 'YOU FOUND THEM ALL', `Cleared in ${fmt(G.t)}`), 700);
 }
 let hb = 0;
@@ -91,8 +91,8 @@ export function update(dt) {
     }
     if (G.cd <= 0) {
       G.phase = 'play'; G.t = 0; sfx.go();
-      if (seek) { hiders.forEach((h) => { if (h.state === 'run') { h.x = h.spot.x; h.z = h.spot.z; h.state = 'hide'; h.nextPeek = rnd(4, 9); h.s = 0.55; } }); $('blackout').classList.remove('on'); toast('FIND THEM ALL!', '#ffb44d'); }
-      else toast('READY OR NOT, HERE HE COMES', '#ffb44d');
+      if (seek) { hiders.forEach((h) => { if (h.state === 'run') { h.x = h.spot.x; h.z = h.spot.z; h.state = 'hide'; h.nextPeek = rnd(4, 9); h.s = 0.55; } }); $('blackout').classList.remove('on'); toast('FIND THEM ALL!', 'warn'); }
+      else toast('READY OR NOT, HERE HE COMES', 'warn');
       setText('banner', '');
     } else if (!seek) setText('banner', `SEEKER IS COUNTING... ${n}   -   FIND A HIDING SPOT`);
   } else if (G.phase === 'play') {
@@ -111,8 +111,8 @@ export function update(dt) {
   } else {
     updateSeeker(dt);
     const lab = { count: 'COUNTING', patrol: 'SEARCHING', look: 'LOOKING AROUND', investigate: 'INVESTIGATING A NOISE', chase: 'CHASING YOU' }[S.state];
-    setText('seekerState', 'SEEKER: ' + lab); $('seekerState').style.color = S.state === 'chase' ? '#ff4d5e' : S.state === 'investigate' ? '#ffd166' : '#fff';
-    $('detectWrap').classList.toggle('show', S.detect > 0.02); $('detectFill').style.width = `${Math.min(1, S.detect) * 100}%`;
+    setText('seekerState', 'SEEKER: ' + lab); $('seekerState').style.color = S.state === 'chase' ? 'var(--bad)' : S.state === 'investigate' ? '#ffd166' : '#fff';
+    $('detectWrap').classList.toggle('show', S.detect > 0.02); setBar('detectFill', Math.min(1, S.detect));
     setText('detectLabel', crouching ? 'SPOTTED (crouched)' : 'SPOTTED');
     if (S.detect > 0.05) { hb -= dt; if (hb <= 0) { sfx.hb(); hb = lerp(0.8, 0.25, S.detect); } }
   }

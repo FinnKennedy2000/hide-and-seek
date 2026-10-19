@@ -136,7 +136,7 @@ const handlers = {
     if (st.recon) { st.recon = false; st.token = ''; st.net?.close(); st.net = null; st.retry = { name: st.retry?.name || readName(), code: st.code }; st.code = ''; return void setConn(false); } // seat gone: fall back to the normal lost-link screen
     if (/^Round in progress/.test(text) && st.retrying && st.retry?.code && !st.code) return void waitForRound();
     clearTimeout(st.waitT); st.waitT = 0; st.retrying = false;
-    if (st.code) return void (st.view === 'play' || st.view === 'results' ? toast(text, '#ff4d5e') : ($('lobHint').textContent = text)); // e.g. host pressed Start alone
+    if (st.code) return void (st.view === 'play' || st.view === 'results' ? toast(text, 'bad') : ($('lobHint').textContent = text)); // e.g. host pressed Start alone
     setView('menu'); msg(text); st.net?.close(); st.net = null;
   },
   room(m) {
@@ -176,7 +176,7 @@ const handlers = {
   phase(m) {
     st.phase = 'seek'; st.deadline = now() + m.tl;
     $('blackout').classList.remove('on');
-    sfx.go(); toast(st.role === 'seeker' ? 'GO FIND THEM!' : 'THEY ARE COMING!', '#ffb44d');
+    sfx.go(); toast(st.role === 'seeker' ? 'GO FIND THEM!' : 'THEY ARE COMING!', 'warn');
   },
   snap(m) {
     if (st.view !== 'play') return;
@@ -199,8 +199,8 @@ const handlers = {
     if (st.mode === 'prophunt') PH.onTagged(m);
     const a = R.remotes.get(m.target);
     burst(a ? a.x : P.x, 0.8, a ? a.z : P.z, target?.color ?? 0xffffff);
-    if (m.target === st.id) { st.role = 'seeker'; sfx.lose(); toast("TAGGED - YOU'RE A SEEKER NOW", '#ff4d5e'); }
-    else if (m.by === st.id) { sfx.found(); toast(`TAGGED ${nameOf(m.target).toUpperCase()}`, '#ffb44d'); }
+    if (m.target === st.id) { st.role = 'seeker'; sfx.lose(); toast("TAGGED - YOU'RE A SEEKER NOW", 'bad'); }
+    else if (m.by === st.id) { sfx.found(); toast(`TAGGED ${nameOf(m.target).toUpperCase()}`, 'warn'); }
     else sfx.found();
   },
   noise(m) {
@@ -211,7 +211,7 @@ const handlers = {
   camo(m) { PH.onCamo(m); },
   taunt(m) { PH.onTaunt(m); },
   shot(m) { PH.onShot(m); if (!m.hit) feed(`${nameOf(m.by)} missed`, hex(playerOf(m.by)?.color ?? 0xffffff)); },
-  out(m) { PH.onOut(m); feed(`${nameOf(m.id)} is out of health`, '#ff4d5e'); },
+  out(m) { PH.onOut(m); feed(`${nameOf(m.id)} is out of health`, 'var(--bad)'); },
   ammo(m) { PH.onAmmo(m); },
   pickup(m) { PH.onPickup(m); },
   picked(m) { PH.onPicked(m); },
@@ -221,7 +221,7 @@ const handlers = {
     (won ? sfx.win : sfx.lose)();
     for (const p of m.players) if ((m.winner === 'seekers') === (p.role === 'seeker')) R.victoryPose(p.id);
     $('resTitle').textContent = m.winner === 'seekers' ? 'SEEKERS WIN' : 'HIDERS WIN';
-    $('resTitle').style.color = won ? '#80ed99' : '#ff4d5e';
+    $('resTitle').style.color = won ? 'var(--good)' : 'var(--bad)';
     $('resSub').textContent = m.winner === 'seekers' ? 'Every hider was tagged.' : m.mode === 'prophunt' ? 'The seekers ran out of time, health or ammo.' : 'Time ran out with hiders still free.';
     const tbl = $('resTable'); tbl.textContent = '';
     const row = (cells, tag = 'td', color) => {
@@ -239,7 +239,7 @@ function onMsg(m) {
   if (!Object.hasOwn(handlers, m.t)) return;
   try { handlers[m.t](m); } catch (e) {
     console.error('handler error', m.t, e);
-    toast('Something went wrong \u2014 rejoining lobby', '#ff4d5e');
+    toast('Something went wrong \u2014 rejoining lobby', 'bad');
     if (st.code) { try { setView('lobby'); renderLobby(); } catch (e2) { console.error('lobby fallback failed', e2); } }
   }
 }
@@ -261,12 +261,20 @@ function renderLobby() {
     ul.append(li);
   }
   const host = st.id === st.hostId, enough = st.players.length >= 2;
-  const row = (id, items, cur, cb) => { const box = $(id); box.textContent = ''; for (const [v, label] of items) { const b = document.createElement('button'); b.className = 'chip' + (v === cur ? ' on' : ''); b.textContent = label ?? ''; if (label === undefined) { b.classList.add('sw'); b.style.background = hex(v); } b.onclick = () => cb(v); box.append(b); } };
+  // chip rows are updated in place when the item list is unchanged, so keyboard focus is not destroyed by every server update
+  const row = (id, items, cur, cb) => {
+    const box = $(id), same = box.children.length === items.length && items.every(([v], i) => box.children[i].dataset.v === String(v));
+    if (!same) box.textContent = '';
+    items.forEach(([v, label], i) => {
+      let b = same ? box.children[i] : document.createElement('button');
+      if (!same) { b.type = 'button'; b.dataset.v = String(v); b.textContent = label ?? ''; if (label === undefined) { b.classList.add('sw'); b.style.background = hex(v); b.setAttribute('aria-label', `Colour ${i + 1}`); } box.append(b); }
+      b.className = 'chip' + (label === undefined ? ' sw' : '') + (v === cur ? ' on' : ''); b.setAttribute('aria-pressed', String(v === cur)); b.onclick = () => cb(v);
+    });
+  };
   const me = playerOf(st.id) || {}, pick = (k) => (v) => { st.cos = { ...st.cos, [k]: v }; saveCos(); st.net?.send('cosmetic', { [k]: v }); };
   row('lobMode', Object.entries(MODE_NAMES), st.mode, (v) => host && st.net?.send('mode', { mode: v }));
   for (const b of $('lobMode').children) b.disabled = !host;
-  renderMapPicker($('lobMap'), { current: st.map, disabled: !host, onPick: (v) => host && st.net?.send('map', { map: v }) }); // everyone sees the pick; only the host can change it
-  if (host) { const r = document.createElement('button'); r.type = 'button'; r.className = 'map rand ghost'; r.innerHTML = '<span class="th" aria-hidden="true">?</span><span class="meta"><b>Random</b><small>Pick for me</small></span>'; r.onclick = () => st.net?.send('map', { map: randomMapId() }); $('lobMap').append(r); }
+  renderMapPicker($('lobMap'), { current: st.map, disabled: !host, onPick: (v) => host && st.net?.send('map', { map: v }), onRandom: host ? () => st.net?.send('map', { map: randomMapId() }) : null }); // everyone sees the pick; only the host can change it
   let fb = $('lobFill'); // "fill with bots": host-only toggle, created here so it needs no markup change
   if (!fb) { fb = document.createElement('button'); fb.id = 'lobFill'; fb.type = 'button'; fb.className = 'chip'; $('lobMode').after(fb); }
   fb.textContent = `Fill with bots: ${st.fill ? 'on' : 'off'}`; fb.setAttribute('aria-pressed', String(!!st.fill)); fb.disabled = !host; fb.onclick = () => host && st.net?.send('fill', { on: !st.fill });
