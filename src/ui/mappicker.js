@@ -4,7 +4,7 @@ import { MAPS } from '../shared/maps/index.js';
 import { pick } from '../core/util.js';
 
 const hex = (n, d = '#2b1f4d') => (Number.isFinite(n) ? '#' + n.toString(16).padStart(6, '0') : d);
-// meta.players: 4 | [2, 4] | {min, max} | '2-4'. Fallback: guessed from the map's footprint.
+// meta.players: 4 | [2, 4] | '2-4' | {min, max, recommended}. Fallback: guessed from the map's footprint.
 export function playersLabel(meta) {
   let p = meta.players ?? meta.recommended ?? meta.recommendedPlayers;
   if (p == null) {
