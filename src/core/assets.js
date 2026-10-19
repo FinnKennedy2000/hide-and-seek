@@ -23,6 +23,7 @@ const loaders = {
 export async function loadGroup(name, entries, onProgress) {
   const out = new Map();
   let done = 0;
+  bus.emit('progress', { group: name, done: 0, total: entries.length });
   await Promise.all(entries.map(async ({ key, url, type }) => {
     try {
       if (!Object.hasOwn(loaders, type)) throw new Error(`unknown asset type ${type}`);
@@ -32,7 +33,9 @@ export async function loadGroup(name, entries, onProgress) {
       console.warn(`asset ${name}/${key} failed`, error);
       bus.emit(EV.ASSET_FAIL, { group: name, key, url, error });
     }
-    onProgress?.(++done, entries.length);
+    done++; // (not inside the optional call: it would be skipped when onProgress is absent)
+    onProgress?.(done, entries.length);
+    bus.emit('progress', { group: name, done, total: entries.length }); // read by the UI loading screen (src/ui/loading.js)
   }));
   return out;
 }

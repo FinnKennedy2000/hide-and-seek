@@ -10,20 +10,19 @@ import { losClear } from '../ai/nav.js';
 import { initAudio, sfx } from '../audio/sfx.js';
 import { burst } from '../render/fx.js';
 import { toast, show } from '../ui/hud.js';
+import { bus, EV } from '../core/bus.js';
+import { renderMapPicker, randomMapId } from '../ui/mappicker.js';
 import { enterFull, toMenu } from '../ui/menus.js';
 import { updatePlayer } from '../player/controller.js';
 import { connect } from './net.js';
 import * as R from './remote.js';
 import * as PH from '../modes/prophunt.js';
 import { HATS, OUTFITS } from '../characters/index.js';
-import { MAPS } from '../shared/worlddata.js';
-import { bus, EV } from '../core/bus.js';
 import { RECONNECT_SECS, F_GONE, F_SELF } from '../shared/protocol.js';
 
 const NAME_KEY = 'hs-name', COS_KEY = 'hs-cos';
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b]; // server palette
 const MODE_NAMES = { classic: 'CLASSIC', prophunt: 'PROP HUNT' };
-const MAP_NAMES = Object.entries(MAPS).map(([id, m]) => [id, m.meta.name.toUpperCase()]);
 const TAG_RANGE = 3.0;   // client-side check; server accepts <= 3.5 to absorb latency
 const now = () => performance.now() / 1000;
 
@@ -233,6 +232,7 @@ const handlers = {
     const secs = (v) => (v == null ? '-' : `${(v / 60) | 0}:${String(Math.floor(v % 60)).padStart(2, '0')}`);
     for (const p of m.players) row([p.name + (p.id === st.id ? ' (you)' : ''), p.role === 'seeker' ? 'seeker' : 'hider', `+${p.score}`, p.total, p.tags, p.shots || '-', p.shots ? `${Math.round((p.hits / p.shots) * 100)}%` : '-', secs(p.surv)], 'td', hex(p.color));
     setView('results');
+    bus.emit(EV.END, m); // podium (src/ui/podium.js)
   },
 };
 function onMsg(m) {
@@ -265,11 +265,11 @@ function renderLobby() {
   const me = playerOf(st.id) || {}, pick = (k) => (v) => { st.cos = { ...st.cos, [k]: v }; saveCos(); st.net?.send('cosmetic', { [k]: v }); };
   row('lobMode', Object.entries(MODE_NAMES), st.mode, (v) => host && st.net?.send('mode', { mode: v }));
   for (const b of $('lobMode').children) b.disabled = !host;
-  row('lobMap', MAP_NAMES, st.map, (v) => host && st.net?.send('map', { map: v })); // everyone sees the pick; only the host's chips are enabled
-  for (const b of $('lobMap').children) b.disabled = !host;
+  renderMapPicker($('lobMap'), { current: st.map, disabled: !host, onPick: (v) => host && st.net?.send('map', { map: v }) }); // everyone sees the pick; only the host can change it
+  if (host) { const r = document.createElement('button'); r.type = 'button'; r.className = 'map rand ghost'; r.innerHTML = '<span class="th" aria-hidden="true">?</span><span class="meta"><b>Random</b><small>Pick for me</small></span>'; r.onclick = () => st.net?.send('map', { map: randomMapId() }); $('lobMap').append(r); }
   let fb = $('lobFill'); // "fill with bots": host-only toggle, created here so it needs no markup change
-  if (!fb) { fb = document.createElement('button'); fb.id = 'lobFill'; fb.className = 'chip'; $('lobMap').after(fb); }
-  fb.textContent = `FILL WITH BOTS: ${st.fill ? 'ON' : 'OFF'}`; fb.classList.toggle('on', st.fill); fb.disabled = !host; fb.onclick = () => host && st.net?.send('fill', { on: !st.fill });
+  if (!fb) { fb = document.createElement('button'); fb.id = 'lobFill'; fb.type = 'button'; fb.className = 'chip'; $('lobMode').after(fb); }
+  fb.textContent = `Fill with bots: ${st.fill ? 'on' : 'off'}`; fb.setAttribute('aria-pressed', String(!!st.fill)); fb.disabled = !host; fb.onclick = () => host && st.net?.send('fill', { on: !st.fill });
   row('cosColor', COLORS.map((c) => [c]), me.color, pick('color'));
   row('cosHat', HATS.map((h) => [h, h.toUpperCase()]), me.hat, pick('hat'));
   row('cosOutfit', OUTFITS.map((o) => [o, o.toUpperCase()]), me.outfit, pick('outfit'));

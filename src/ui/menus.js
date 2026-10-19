@@ -8,12 +8,14 @@ import { MAPS } from '../shared/maps/index.js';
 import { hiders } from '../ai/hiders.js';
 import { seekerGroup } from '../ai/seeker.js';
 import { setMuted, applyVol } from '../audio/sfx.js';
-import { show } from './hud.js';
+import { show, toast } from './hud.js';
+import { renderMapPicker, randomMapId } from './mappicker.js';
+import { bus, EV } from '../core/bus.js';
 import { showBoss, hideBoss, bossOn } from './bossscreen.js';
 import { startGame, tryTag } from '../modes/singleplayer.js';
 
 // title screen, pause / boss screen, keyboard + mouse input, fullscreen
-export function toMenu() { setWorld(spMap); G.phase = 'menu'; G.paused = false; leaveFull(); show('end', false); show('hud', false); show('title', true); $('blackout').classList.remove('on'); document.exitPointerLock?.(); seekerGroup.visible = false; hiders.forEach((h) => { h.mesh.visible = false; }); }
+export function toMenu() { setWorld(spMap); G.phase = 'menu'; G.paused = false; leaveFull(); show('end', false); show('hud', false); show('settings', false); show('title', true); $('onboard').classList.add('hidden'); $('blackout').classList.remove('on'); document.exitPointerLock?.(); seekerGroup.visible = false; hiders.forEach((h) => { h.mesh.visible = false; }); }
 // Fullscreen + keyboard lock so Ctrl+W / Ctrl+T etc. reach the game instead of the browser (needs a user gesture)
 export function enterFull() {
   try { document.documentElement.requestFullscreen?.()?.then(() => navigator.keyboard?.lock?.()).catch(() => {}); } catch { /* unsupported */ }
@@ -30,8 +32,8 @@ function openBoss() {
     onQuit: () => { hideBoss(); setMuted(false); G.paused = false; toMenu(); },
     onLeave: G.mode === 'online' && hooks.leave ? () => { hideBoss(); setMuted(false); hooks.leave(); } : null,
     labels: () => ({ cues: `Sound cues: ${settings.cues ? 'on' : 'off'}`, vol: `Volume: ${settings.volume ? Math.round(settings.volume * 100) + '%' : 'muted'}` }),
-    onCues: () => { settings.set('cues', !settings.cues); renderOpts(); },
-    onVol: () => { const v = settings.volume; settings.set('volume', v >= 0.99 ? 0 : Math.min(1, Math.floor(v * 4 + 1e-9) / 4 + 0.25)); renderOpts(); },
+    onCues: () => { settings.set('cues', !settings.cues); },
+    onVol: () => { const v = settings.volume; settings.set('volume', v >= 0.99 ? 0 : Math.min(1, Math.floor(v * 4 + 1e-9) / 4 + 0.25)); },
   });
 }
 function closeBoss() { hideBoss(); setMuted(false); G.paused = false; if (inGame()) requestLock(); }
@@ -48,6 +50,7 @@ addEventListener('keydown', (e) => {
     return openBoss();
   }
   if (bossOn()) { if (e.code === 'Escape' || e.code === 'KeyP' || e.code === 'Tab') { e.preventDefault(); closeBoss(); } return; }
+  if (e.code === 'F3') { e.preventDefault(); settings.set('perfHud', !settings.perfHud); return; }
   if (e.target.tagName === 'INPUT') return; // typing in the online name / room-code fields
   if (e.ctrlKey || e.metaKey || e.altKey) { if (inGame()) e.preventDefault(); return; } // game keys never double as browser shortcuts
   if (inGame() && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyT', 'ShiftLeft', 'ShiftRight', 'Tab'].includes(canon(e.code) ?? e.code)) e.preventDefault();
@@ -66,20 +69,12 @@ addEventListener('mousedown', (e) => {
 });
 addEventListener('wheel', (e) => { if (G.mode === 'online' && !G.paused) hooks.wheel?.(Math.sign(e.deltaY)); }, { passive: true });
 document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas) pause(); });
-function renderOpts() { $('optCues').textContent = `SOUND CUES: ${settings.cues ? 'ON' : 'OFF'}`; $('optCues').classList.toggle('on', settings.cues); $('optVol').value = Math.round(settings.volume * 100); applyVol(); }
-$('optCues').onclick = () => { settings.set('cues', !settings.cues); renderOpts(); };
-$('optVol').oninput = (e) => { settings.set('volume', clamp(Number(e.target.value) / 100, 0, 1)); applyVol(); };
-renderOpts();
+bus.on(EV.SETTINGS, ({ key }) => { if (key === 'volume' || key === 'sfx' || key === 'music' || key === 'ui') applyVol(); });
 // single-player map choice on the title screen (the lobby has its own picker in online.js)
 export let spMap = 'house'; // single-player map choice (read by modes/singleplayer.js as a live binding)
-function renderMapPick() {
-  const box = $('spMap'); box.textContent = '';
-  for (const [id, m] of Object.entries(MAPS)) {
-    const b = document.createElement('button'); b.className = 'chip' + (id === spMap ? ' on' : ''); b.textContent = m.meta.name.toUpperCase();
-    b.onclick = () => { spMap = id; setWorld(id); $('titleSub').textContent = m.meta.blurb; renderMapPick(); };
-    box.append(b);
-  }
-}
+function choose(id) { spMap = id; setWorld(id); $('titleSub').textContent = MAPS[id].meta.blurb; renderMapPick(); }
+function renderMapPick() { renderMapPicker($('spMap'), { current: spMap, onPick: choose }); }
 renderMapPick();
+$('spRandom').onclick = () => { const id = randomMapId(); choose(id); toast(`Random pick: ${MAPS[id].meta.name}`, 'info'); };
 $('btnSeek').onclick = () => startGame('seek'); $('btnHide').onclick = () => startGame('hide');
 $('btnAgain').onclick = () => startGame(G.mode); $('btnMenu').onclick = toMenu;
