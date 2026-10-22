@@ -75,7 +75,7 @@ function flushRecs() {
     const m = new THREE.Mesh(g, mat[r.matName]);
     m.castShadow = r.cast; m.receiveShadow = r.recv; m.matrixAutoUpdate = false; // identity matrix: geometry is already in world space
     const starts = [], ids = []; let tri = 0;
-    for (const x of list) { if (x.propId >= 0 && ids[ids.length - 1] !== x.propId) { starts.push(tri); ids.push(x.propId); } tri += x.g.attributes.position.count / 3; }
+    for (const x of list) { if (ids[ids.length - 1] !== x.propId) { starts.push(tri); ids.push(x.propId); } tri += x.g.attributes.position.count / 3; }
     if (ids.length) propRaycast(m, starts, ids);
     g.computeBoundsTree(); g.computeBoundingBox();
     m.userData.zone = r.zone; m.userData.hi = m.material;

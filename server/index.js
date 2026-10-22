@@ -36,7 +36,7 @@ const MODES = ['classic', 'prophunt'];
 // prop hunt tunables
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = MAG, PICKUP_SHOTS = 6; // a hit earns a whole extra mag
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
-const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6;
+const DISGUISE_CD = 3, TAUNT_CD = 10, CD_SLACK = 0.15, DISGUISE_RANGE = 6, DISGUISE_MAX = 30; // DISGUISE_MAX: s a hider may stay one prop, then it is dropped and can't be re-taken straight away
 const NOISE_RANGE = 30;         // m: `noise` cues are only sent to players who could hear them
 const REVEAL_S = 1.0, HOLD_S = 0.4; // a sound reveals the maker's position for 1 s; a player that just left LOS lingers 0.4 s so interpolation does not pop
 const BUDGET_CAP = 1.5;         // m: speed-budget bucket (accrues MAX_SPEED m/s of server time): a small burst allowance so jittered / bunched packets are not mistaken for teleports
@@ -214,7 +214,7 @@ function startRound(room) {
   ps.forEach((p, i) => {
     p.role = i < nSeek ? 'seeker' : 'hider';
     p.score = 0; p.tags = 0; p.lastTag = 0;
-    Object.assign(p, { hp: HP0, mag: MAG, res: RESERVE0, out: false, shots: 0, hits: 0, disguise: null, tint: null, lastDisguise: 0, lastTaunt: 0, lastShot: 0, lastCamo: 0, reloadEnd: 0, tagT: 0, first: i < nSeek });
+    Object.assign(p, { hp: HP0, mag: MAG, res: RESERVE0, out: false, shots: 0, hits: 0, disguise: null, bannedProp: null, disguiseAt: 0, tint: null, lastDisguise: 0, lastTaunt: 0, lastShot: 0, lastCamo: 0, reloadEnd: 0, tagT: 0, first: i < nSeek });
     if (p.role === 'seeker') { p.x = ss.x + (i - (nSeek - 1) / 2) * 1.4; p.z = ss.z; p.yaw = ss.yaw; }
     else { const [x, z] = spots[(i - nSeek) % spots.length]; p.x = x; p.z = z; p.yaw = Math.random() * Math.PI * 2; }
     p.y = 0; p.pitch = 0; p.c = 0;
@@ -330,6 +330,7 @@ function tickRoom(room, t) {
     broadcast(room, { t: 'phase', phase: 'seek', tl: SEEK_SECS });
     room.pickupAt = t + SEEK_SECS / 2;
   }
+  if (room.mode === 'prophunt') for (const p of hidersOf(room)) if (p.disguise != null && t - p.disguiseAt > DISGUISE_MAX) { p.bannedProp = p.disguise; applyDisguise(room, p, null); }
   if (room.mode === 'prophunt' && room.phase === 'seek') {
     if (!room.pickup && !room.pickupDone && t >= room.pickupAt) { // one ammo crate per round, midway through the seek phase
       const sp = worldOf(room).spawns, [x, z] = sp[(Math.random() * sp.length) | 0];
@@ -385,7 +386,7 @@ function sendAbout(room, o, msg) {
     r.told.set(o.id, tl);
   }
 }
-function applyDisguise(room, p, id) { p.lastDisguise = now(); p.disguise = id; p.tint = null; sendAbout(room, p, { t: 'disguise', id: p.id, propId: id }); }
+function applyDisguise(room, p, id) { p.lastDisguise = p.disguiseAt = now(); p.disguise = id; p.tint = null; sendAbout(room, p, { t: 'disguise', id: p.id, propId: id }); }
 function startReload(p) { p.reloadEnd = now() + RELOAD_S; sendAmmo(p); }
 
 // the seeker `p` fires from (ox,oy,oz) along unit (ux,uy,uz); hiders are judged where they were at wall-clock ms T. False when the shot is refused.
@@ -643,6 +644,7 @@ const handlers = {
       if (!Number.isInteger(m.propId) || m.propId < 0 || m.propId >= worldOf(room).props.length) return;
       const pr = worldOf(room).props[m.propId];
       if (Math.hypot(p.x - pr.x, p.z - pr.z) > DISGUISE_RANGE + Math.max(pr.w, pr.d) / 2) return; // must be near the prop
+      if (m.propId === p.bannedProp) return;
       id = m.propId;
     }
     applyDisguise(room, p, id);
