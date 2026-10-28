@@ -17,7 +17,7 @@ test('every preset keeps the same gameplay grass', () => {
   }
 });
 for (const [id, map] of Object.entries(MAPS)) {
-  if (!map.trial?.grass) continue;
+  if (!map.trial?.grass || map.meta.glb) continue; // (a GLB map draws its own authored grass: tests/world/coldwood.test.mjs audits it)
   test(`${id}: clumps stay in the rects, interior is dense, edges thin`, () => {
     const rects = map.trial.grass, cl = planClumps(rects, base), area = rects.reduce((s, r) => s + (r.x1 - r.x0) * (r.z1 - r.z0), 0);
     assert.ok(cl.length > area * base.clumpsPerM2 * 0.7, 'too sparse');

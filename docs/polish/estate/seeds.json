@@ -1,0 +1,50 @@
+[
+ {
+  "seed": 1,
+  "map": "coldwood",
+  "relics": "R3 R8 R7 R6 R5 R1",
+  "spawns": "-6,-56"
+ },
+ {
+  "seed": 2,
+  "map": "coldwood",
+  "relics": "R1 R7 R6 R5 R8 R4",
+  "spawns": "-6,-56"
+ },
+ {
+  "seed": 3,
+  "map": "coldwood",
+  "relics": "R4 R6 R7 R8 R5 R1",
+  "spawns": "17,39"
+ },
+ {
+  "seed": 4,
+  "map": "coldwood",
+  "relics": "R5 R7 R6 R2 R8 R4",
+  "spawns": "58,54"
+ },
+ {
+  "seed": 5,
+  "map": "coldwood",
+  "relics": "R6 R8 R1 R5 R3 R7",
+  "spawns": "58,54"
+ },
+ {
+  "seed": 6,
+  "map": "coldwood",
+  "relics": "R4 R7 R3 R8 R6 R1",
+  "spawns": "-6,-56"
+ },
+ {
+  "seed": 7,
+  "map": "coldwood",
+  "relics": "R5 R7 R2 R4 R6 R1",
+  "spawns": "-6,-56"
+ },
+ {
+  "seed": 8,
+  "map": "coldwood",
+  "relics": "R8 R1 R6 R4 R2 R5",
+  "spawns": "-6,-56"
+ }
+]

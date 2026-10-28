@@ -1,0 +1,42 @@
+{
+ "quality": "med",
+ "viewport": "1280x720",
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+ "views": {
+  "vista": {
+   "calls": 840,
+   "tris": 2541311,
+   "p50": 741.7,
+   "p95": 3066.3,
+   "fps": 1.1
+  },
+  "aerial": {
+   "calls": 161,
+   "tris": 661576,
+   "p50": 536.3,
+   "p95": 3488.3,
+   "fps": 0.6
+  },
+  "grass": {
+   "calls": 124,
+   "tris": 460127,
+   "p50": 681.6,
+   "p95": 1414.2,
+   "fps": 1.7
+  },
+  "barn": {
+   "calls": 420,
+   "tris": 1330137,
+   "p50": 763,
+   "p95": 1686.1,
+   "fps": 1.8
+  },
+  "busy": {
+   "calls": 459,
+   "tris": 1318104,
+   "p50": 940.3,
+   "p95": 1056.7,
+   "fps": 1.1
+  }
+ }
+}

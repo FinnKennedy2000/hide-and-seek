@@ -1,0 +1,17 @@
+{
+ "title": "KILLER WINS",
+ "end": {
+  "winner": "seekers",
+  "escaped": 0,
+  "out": 1
+ },
+ "round2": {
+  "n": 0,
+  "open": false,
+  "relics": 6,
+  "done": 0,
+  "alerts": 0
+ },
+ "errors": [],
+ "console": []
+}

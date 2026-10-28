@@ -1,4 +1,4 @@
-import { colliders } from '../world/build.js';
+import { colliders, bounds } from '../world/build.js';
 import { createNav } from '../shared/nav.js';
 
 // Client-side wrapper over the shared nav (src/shared/nav.js, also used by the server bots) bound to the current map's colliders.
@@ -7,7 +7,7 @@ export const SPOTS = []; // AI hiding spots of the current map (refilled in plac
 // (colliders is refilled in place by setWorld, so the nav built from it stays valid.)
 let _nav = null;
 const nav = () => (_nav ||= createNav(colliders));
-export const buildNav = () => nav().buildNav();
+export const buildNav = () => nav().buildNav(bounds); // (bounds: live binding, already the new map's when setWorld calls this)
 export const findPath = (...a) => nav().findPath(...a);
 export const follow = (...a) => nav().follow(...a);
 export const losClear = (...a) => nav().losClear(...a);

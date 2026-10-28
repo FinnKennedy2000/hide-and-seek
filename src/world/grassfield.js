@@ -51,11 +51,10 @@ function shadowPatches(rects) {
   return { mesh: m, mat };
 }
 
-export function buildGrassFields(world, ownMats, rects) {
-  if (!rects?.length) return () => {};
-  const spec = grassSpec(tier()), clumps = planClumps(rects, spec), uTime = { value: 0 }, uFade = { value: 0 };
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true, side: THREE.DoubleSide });
-  // Patched on whatever material the preset swaps in (Standard, or the Lambert twin on potato/low): both share these shader chunks.
+// Wind sway + the hider-only near-camera fade, as an onBeforeCompile patch. Shared by the procedural fields below and the authored GLB
+// grass (src/world/mapglb.js). drive(meshes) keeps the patch on whatever material a preset swaps in and returns a stop fn.
+export function grassShader() {
+  const uTime = { value: 0 }, uFade = { value: 0 };
   const patch = (s) => {
     s.uniforms.uTime = uTime; s.uniforms.uFade = uFade;
     s.vertexShader = 'uniform float uTime; varying float vCamD;\n' + s.vertexShader.replace('#include <begin_vertex>',
@@ -68,7 +67,26 @@ export function buildGrassFields(world, ownMats, rects) {
       `#include <clipping_planes_fragment>
        if (uFade > 0.5 && vCamD < ${NEAR_FADE.toFixed(2)}) { float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453); if (n > smoothstep(0.15, ${NEAR_FADE.toFixed(2)}, vCamD)) discard; }`);
   };
-  mat.onBeforeCompile = patch; mat.userData.gp = true;
+  const apply = (m) => { if (m.onBeforeCompile !== patch) { m.onBeforeCompile = patch; m.userData.gp = true; m.needsUpdate = true; } };
+  function drive(meshes) {
+    let seeker = false, off = false;
+    import('../modes/trial.js').then((m) => { if (!off) seeker = m.trial; }).catch(() => {}); // lazy: trial.js imports the world indirectly
+    const stop = addSystem({ name: 'grass-wind', order: 40, update: (dt, t) => {
+      uTime.value = t;
+      for (const im of meshes) apply(im.material); // the Lambert twin on potato / low
+      uFade.value = seeker && seeker.on && seeker.role === 'seeker' ? 0 : 1;
+    } });
+    return () => { off = true; stop(); };
+  }
+  return { patch, apply, drive, uTime, uFade };
+}
+
+export function buildGrassFields(world, ownMats, rects) {
+  if (!rects?.length) return () => {};
+  const spec = grassSpec(tier()), clumps = planClumps(rects, spec), sh = grassShader();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true, side: THREE.DoubleSide });
+  // Patched on whatever material the preset swaps in (Standard, or the Lambert twin on potato/low): both share these shader chunks.
+  sh.apply(mat);
   ownMats.push(mat);
   const im = new THREE.InstancedMesh(clumpGeometry(), mat, Math.max(1, clumps.length)), d = new THREE.Object3D(), col = new THREE.Color();
   // dusk palette: olive, straw, a cool violet-grey for variety (matches the 0xa8a4d0 ambient)
@@ -82,18 +100,12 @@ export function buildGrassFields(world, ownMats, rects) {
   const patches = shadowPatches(rects); world.add(patches.mesh); ownMats.push(patches.mat);
   im.userData.stats = { clumps: clumps.length, tris: clumps.length * 9 * 3 };
 
-  let seeker = false, off = false;
-  import('../modes/trial.js').then((m) => { if (!off) seeker = m.trial; }).catch(() => {}); // lazy: trial.js imports the world indirectly
-  const stop = addSystem({ name: 'grass-wind', order: 40, update: (dt, t) => {
-    uTime.value = t;
-    if (im.material.onBeforeCompile !== patch && !im.material.userData.gp) { im.material.onBeforeCompile = patch; im.material.userData.gp = true; im.material.needsUpdate = true; } // Lambert twin
-    uFade.value = seeker && seeker.on && seeker.role === 'seeker' ? 0 : 1;
-  } });
+  const stop = sh.drive([im]);
   // dev-only: hold the camera at x, y, z, yaw, pitch so comparison shots are repeatable (window.__grassTest.set(x, y, z, yaw, pitch); .set(null) releases)
   let hold = null, stopHold = () => {};
   if (DEBUG) {
     stopHold = addSystem({ name: 'grass-test', order: 90, update: () => { if (hold) { camera.position.set(hold[0], hold[1], hold[2]); camera.rotation.set(hold[4], hold[3], 0, 'YXZ'); } } });
     window.__grassTest = { set: (x, y, z, yaw = 0, pitch = 0) => { hold = x == null ? null : [x, y, z, yaw, pitch]; }, stats: () => im.userData.stats, rects };
   }
-  return () => { off = true; stop(); stopHold(); if (DEBUG) delete window.__grassTest; };
+  return () => { stop(); stopHold(); if (DEBUG) delete window.__grassTest; };
 }

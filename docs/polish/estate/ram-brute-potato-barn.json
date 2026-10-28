@@ -1,0 +1,34 @@
+{
+ "role": "seeker (Brute)",
+ "quality": "potato",
+ "backend": "aabb",
+ "rows": [
+  {
+   "name": "barn west wall from inside",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -9.55,
+    -10.51
+   ],
+   "travelled": 2.05,
+   "of": 8.5
+  },
+  {
+   "name": "barn post (-9.5, -4)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -8.99,
+    -3.83
+   ],
+   "travelled": 1.99,
+   "of": 7
+  }
+ ],
+ "samples": 120,
+ "penetrations": 0,
+ "inside": [],
+ "errors": [],
+ "console": []
+}

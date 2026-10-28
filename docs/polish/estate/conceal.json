@@ -1,0 +1,173 @@
+{
+ "cases": [
+  {
+   "case": "G05-mid-stand",
+   "pose": "stand",
+   "range": 6.1,
+   "seenBySeeker": true,
+   "quality": "med"
+  },
+  {
+   "case": "G05-mid-crouch",
+   "pose": "crouch",
+   "range": 6.1,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "G05-mid-crouchwalk",
+   "pose": "crouch-walk",
+   "range": 6.1,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "G05-mid-sprint",
+   "pose": "sprint",
+   "range": 6.1,
+   "seenBySeeker": true,
+   "quality": "med"
+  },
+  {
+   "case": "G05-near-crouch",
+   "pose": "crouch",
+   "range": 3.6,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "open-mid-stand",
+   "pose": "stand",
+   "range": 7.8,
+   "seenBySeeker": true,
+   "quality": "med"
+  },
+  {
+   "case": "G03-far-stand",
+   "pose": "stand",
+   "range": 22,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "G03-far-crouch",
+   "pose": "crouch",
+   "range": 22,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "open-far-stand",
+   "pose": "stand",
+   "range": 22.6,
+   "seenBySeeker": true,
+   "quality": "med"
+  },
+  {
+   "case": "G05-close-crouch",
+   "pose": "crouch",
+   "range": 1.4,
+   "seenBySeeker": true,
+   "quality": "med"
+  },
+  {
+   "case": "G05-south-crouch",
+   "pose": "crouch",
+   "range": 4.5,
+   "seenBySeeker": false,
+   "quality": "med"
+  },
+  {
+   "case": "G05-south-stand",
+   "pose": "stand",
+   "range": 4.5,
+   "seenBySeeker": true,
+   "quality": "med"
+  }
+ ],
+ "presets": [
+  {
+   "tier": "potato",
+   "grass": {
+    "meshes": 186,
+    "inScene": 186,
+    "visible": 186,
+    "instances": 19214,
+    "casting": 0,
+    "mat": [
+     "MeshLambertMaterial"
+    ]
+   },
+   "hiderSeen": true,
+   "calls": 7,
+   "tris": 14401
+  },
+  {
+   "tier": "low",
+   "grass": {
+    "meshes": 186,
+    "inScene": 186,
+    "visible": 186,
+    "instances": 19214,
+    "casting": 0,
+    "mat": [
+     "MeshLambertMaterial"
+    ]
+   },
+   "hiderSeen": true,
+   "calls": 7,
+   "tris": 14401
+  },
+  {
+   "tier": "med",
+   "grass": {
+    "meshes": 186,
+    "inScene": 186,
+    "visible": 186,
+    "instances": 19214,
+    "casting": 0,
+    "mat": [
+     "MeshStandardMaterial"
+    ]
+   },
+   "hiderSeen": true,
+   "calls": 50,
+   "tris": 106626
+  },
+  {
+   "tier": "high",
+   "grass": {
+    "meshes": 186,
+    "inScene": 186,
+    "visible": 186,
+    "instances": 19214,
+    "casting": 0,
+    "mat": [
+     "MeshStandardMaterial"
+    ]
+   },
+   "hiderSeen": true,
+   "calls": 21,
+   "tris": 40905
+  },
+  {
+   "tier": "ultra",
+   "grass": {
+    "meshes": 186,
+    "inScene": 186,
+    "visible": 186,
+    "instances": 19214,
+    "casting": 0,
+    "mat": [
+     "MeshStandardMaterial"
+    ]
+   },
+   "hiderSeen": true,
+   "calls": 32,
+   "tris": 41106
+  }
+ ],
+ "errors": [],
+ "console": [],
+ "failed": []
+}

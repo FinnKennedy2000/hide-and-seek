@@ -1,0 +1,34 @@
+{
+ "role": "seeker (Brute)",
+ "quality": "low",
+ "backend": "rapier",
+ "rows": [
+  {
+   "name": "barn west wall from inside",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -9.54,
+    -10.49
+   ],
+   "travelled": 2.04,
+   "of": 8.5
+  },
+  {
+   "name": "barn post (-9.5, -4)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -9.54,
+    -3.34
+   ],
+   "travelled": 2.54,
+   "of": 7
+  }
+ ],
+ "samples": 120,
+ "penetrations": 0,
+ "inside": [],
+ "errors": [],
+ "console": []
+}

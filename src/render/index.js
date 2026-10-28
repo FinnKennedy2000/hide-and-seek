@@ -59,9 +59,11 @@ function applyShadows() {
     if (cfg.shadow === 'csm') {
       if (!csm) {
         csm = new CSM({ camera, parent: scene, cascades: cfg.cascades, maxFar: 40, mode: 'practical', shadowMapSize: cfg.size, shadowBias: -0.0002,
-          lightDirection: sun.position.clone().normalize().negate(), lightIntensity: sun.intensity });
+          lightDirection: sun.position.clone().sub(sun.target.position).normalize().negate(), lightIntensity: sun.intensity });
         for (const l of csm.lights) { l.color.copy(sun.color); l.shadow.normalBias = 0.04; }
       } else for (const l of csm.lights) { l.shadow.mapSize.set(cfg.size, cfg.size); l.shadow.map?.dispose(); l.shadow.map = null; }
+      csm.lightDirection.copy(sun.position).sub(sun.target.position).normalize().negate(); // per-map sun (env.js meta.sun.dir), also when the CSM is kept
+      for (const l of csm.lights) { l.color.copy(sun.color); l.intensity = sun.intensity; }
       sun.castShadow = false;
     }
   }

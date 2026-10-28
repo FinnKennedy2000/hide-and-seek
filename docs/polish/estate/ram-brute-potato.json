@@ -1,0 +1,104 @@
+{
+ "role": "seeker (Brute)",
+ "quality": "potato",
+ "backend": "aabb",
+ "rows": [
+  {
+   "name": "barn west wall from inside",
+   "err": "stuck at -6,-8.05 heading -6,-7.3"
+  },
+  {
+   "name": "barn post row (x -9.5)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -4.89,
+    -5.77
+   ],
+   "travelled": -0.11,
+   "of": 9
+  },
+  {
+   "name": "tractor (rotated, sliced)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -46.81,
+    15.18
+   ],
+   "travelled": 2.82,
+   "of": 18
+  },
+  {
+   "name": "boulder_01_0000 (rotated)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -46.99,
+    -15.75
+   ],
+   "travelled": 0.99,
+   "of": 14
+  },
+  {
+   "name": "cage C5 back bars",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -30.67,
+    -10.46
+   ],
+   "travelled": 4.67,
+   "of": 8
+  },
+  {
+   "name": "west fence",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -65.53,
+    2.12
+   ],
+   "travelled": 7.53,
+   "of": 14
+  },
+  {
+   "name": "pickup wreck (rotated)",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    4.2,
+    38.87
+   ],
+   "travelled": 2.87,
+   "of": 12
+  },
+  {
+   "name": "chapel wall",
+   "rush": true,
+   "peakSpeed": 12.24,
+   "stoppedAt": [
+    -39.84,
+    -37.1
+   ],
+   "travelled": 9.1,
+   "of": 8
+  },
+  {
+   "name": "vault sill V01 (no vault key)",
+   "rush": true,
+   "peakSpeed": 7.02,
+   "stoppedAt": [
+    -16.52,
+    -7.34
+   ],
+   "travelled": 4.52,
+   "of": 10
+  }
+ ],
+ "samples": 480,
+ "penetrations": 0,
+ "inside": [],
+ "errors": [],
+ "console": []
+}

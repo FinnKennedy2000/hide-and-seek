@@ -9,6 +9,8 @@ import { updatePlayer } from '../player/controller.js';
 import * as R from '../net/remote.js';
 import { applyTps, applyFps, swapShoulder, resetArm } from '../camera/index.js';
 import { addShake, clearShake } from '../fx/shake.js';
+import { colliders, bounds } from '../world/build.js';
+import { MAPS } from '../shared/maps/index.js';
 
 // The UI / FX / audio modules are written by another engineer: load them if present and call through `?.` so a missing module or function is a no-op.
 const mods = import.meta.glob(['../ui/trialhud.js', '../fx/trialfx.js', '../audio/trial.js'], { eager: true });
@@ -48,7 +50,7 @@ export function begin(ctx) {
   for (const [id, s] of Object.entries(T.states)) if (+id === T.id) T.st = s === 'free' ? 'injured' : s;
   R.opts.cone = false; R.opts.hideHiders = false; camera.near = 0.05; camera.updateProjectionMatrix(); resetArm(); clearShake(); body();
   if (T.role === 'hider') T.av = R.makeAvatar(null, T.self.color, false, T.self.hat, T.self.pattern);
-  FX.clearRoundProps?.(); FX.buildRoundProps?.({ relics: T.relics, gates: T.gates, cages: T.cages, vaults: T.vaults });
+  FX.clearRoundProps?.(); FX.buildRoundProps?.({ relics: T.relics, gates: T.gates, cages: T.cages, vaults: T.vaults, scenery: !!MAPS[m.map]?.trial?.scenery });
   UI.initTrialHud?.(); UI.resetTrialHud?.({ role: T.role, cls: T.cls, need: T.need, relics: T.relics, gates: T.gates, cages: T.cages });
   T.relics.forEach((r) => { if (r.p) { FX.setRelicProgress?.(r.i, r.p); UI.setRelicProgress?.(r.i, r.p); } if (r.done) { FX.relicDone?.(r.i); } });
   if (T.gatesOpen) { FX.openGates?.(); UI.gatesOpen?.(); }
@@ -171,15 +173,29 @@ function channelFrame(can) {
   UI.setPrompt?.(LABEL[cur.what], p);
 }
 
-// ---------- vaulting: a scripted hop across a wall; collisions are skipped (we skip motion.step) and y follows a sine arc
-function findVault() {
+// ---------- vaulting: a scripted hop across a wall; collisions are skipped (we skip motion.step) and y follows a sine arc.
+// Before the hop: the landing spot must hold a standing body (radius 0.35, no collider between 0.05 and 1.7 m, inside the map, no other
+// player within 0.7 m) and the straight line across may only pass over low geometry (the sill, <= 1.25 m): no hop through a wall or past
+// the fence. A refused hop does nothing. Holding Space never repeats (menus.js drops key repeats; vaultCd 0.3 s).
+const bodyFits = (x, z, r) => x > bounds.x0 && x < bounds.x1 && z > bounds.z0 && z < bounds.z1
+  && !colliders.some((c) => c.y0 < 1.7 && c.y1 > 0.05 && x > c.x0 - r && x < c.x1 + r && z > c.z0 - r && z < c.z1 + r);
+function clearHop(s, e) {
+  const n = Math.ceil(Math.hypot(e.x - s.x, e.z - s.z) / 0.1);
+  for (let k = 1; k < n; k++) {
+    const x = s.x + ((e.x - s.x) * k) / n, z = s.z + ((e.z - s.z) * k) / n;
+    if (colliders.some((c) => c.y1 > 1.25 && c.y0 < 1.7 && x > c.x0 - 0.2 && x < c.x1 + 0.2 && z > c.z0 - 0.2 && z < c.z1 + 0.2)) return false;
+  }
+  return true;
+}
+export function findVault() {
   const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
   for (const v of T.vaults) {
     const alongX = v.ax === 'x' || v.ax === 0, a = alongX ? P.x - v.x : P.z - v.z, c = alongX ? P.z - v.z : P.x - v.x, fc = alongX ? fz : fx;
-    if (Math.abs(a) > VAULT_ALONG || Math.abs(c) > VAULT_R || Math.abs(fc) < 0.3) continue;
+    if (Math.abs(a) > (v.w ? v.w / 2 + 0.15 : VAULT_ALONG) || Math.abs(c) > VAULT_R || Math.abs(fc) < 0.3) continue; // (v.w: a window, not a long barrier)
     const dir = fc > 0 ? 1 : -1;
     if (c * dir > 0.2) continue; // already past the wall, facing away
-    const ec = (alongX ? v.z : v.x) + dir * VAULT_OUT;
+    const ec = (alongX ? v.z : v.x) + dir * VAULT_OUT, e = alongX ? { x: P.x, z: ec } : { x: ec, z: P.z };
+    if (!bodyFits(e.x, e.z, 0.35) || !clearHop(P, e) || [...R.remotes.values()].some((q) => !q.gone && q.root?.visible && Math.hypot(q.x - e.x, q.z - e.z) < 0.7)) return { blocked: true };
     return { alongX, ec, c: alongX ? P.z : P.x, dist: Math.abs(ec - (alongX ? P.z : P.x)) };
   }
   return null;
@@ -187,6 +203,7 @@ function findVault() {
 function startVault() {
   if (T.vault || T.vaultCd > 0 || held() || out() || T.phase === 'hide' && T.role === 'seeker' || P.air) return;
   const v = findVault(); if (!v) return;
+  if (v.blocked) { T.vaultCd = 0.3; return toast('No room to land', 'warn'); }
   stopChan(false);
   const seeker = T.role === 'seeker', dur = Math.max(seeker ? 1.0 : 0.5, v.dist / VAULT_MAX_SPEED), s = { x: P.x, z: P.z };
   const e = v.alongX ? { x: P.x, z: v.ec } : { x: v.ec, z: P.z };
@@ -214,7 +231,7 @@ function freeCam(dt) {
   const fx = -Math.sin(P.yaw) * cp, fy = Math.sin(P.pitch), fz = -Math.cos(P.yaw) * cp;
   const mv = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), st = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
   fc.x += fx * mv * sp + Math.cos(P.yaw) * st * sp; fc.y += fy * mv * sp + ((keys.Space ? 1 : 0) - (keys.KeyC ? 1 : 0)) * sp; fc.z += fz * mv * sp - Math.sin(P.yaw) * st * sp;
-  fc.x = Math.max(-45, Math.min(45, fc.x)); fc.y = Math.max(0.3, Math.min(25, fc.y)); fc.z = Math.max(-45, Math.min(45, fc.z));
+  fc.x = Math.max(bounds.x0 - 10, Math.min(bounds.x1 + 10, fc.x)); fc.y = Math.max(0.3, Math.min(25, fc.y)); fc.z = Math.max(bounds.z0 - 10, Math.min(bounds.z1 + 10, fc.z));
   camera.position.set(fc.x, fc.y, fc.z); camera.rotation.set(P.pitch, P.yaw, 0);
   UI.setPrompt?.(null, null);
 }
@@ -318,4 +335,4 @@ export function onEnd(m) { UI.showResults?.(m); end(); }
 // terse text for the HUD counter
 export const status = () => `FUSES ${T.n}/${T.need}${T.gatesOpen ? '  EXIT POWERED' : ''}`;
 
-if (DEBUG) window.__trialFns = { onProg, onCollected, onGates, onAlert, onExposed, onEnd, onHurt }; // lets tests.trial.spec.js feed the UI server messages
+if (DEBUG) window.__trialFns = { onProg, onCollected, onGates, onAlert, onExposed, onEnd, onHurt, findVault, remotes: () => [...R.remotes.entries()].map(([id, a]) => ({ id, x: a.x, z: a.z, c: a.c, gone: !!a.gone, vis: !!a.root?.visible })) }; // lets tests.trial.spec.js feed the UI server messages

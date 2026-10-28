@@ -72,7 +72,10 @@ export function aabbBackend(colliders) {
     name: 'aabb',
     canStand: (s) => standClear(colliders, s),
     move(s, dx, dy, dz) {
-      s.x += dx; s.z += dz;
+      // substeps of <= 0.2 m: a 12 m/s Brute rush at a 20 fps frame cap moves 0.6 m, twice a 0.3 m wall (push-out alone would tunnel)
+      const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.2));
+      for (let k = 1; k < n; k++) { s.x += dx / n; s.z += dz / n; resolve(s); }
+      s.x += dx / n; s.z += dz / n;
       let ground = 0;
       for (const co of colliders) {
         if (co.y1 > s.y + MAX_STEP || co.y1 > 1.2) continue;
