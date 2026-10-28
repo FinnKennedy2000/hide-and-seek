@@ -159,7 +159,7 @@ const handlers = {
     const seekers = new Set(m.seekers);
     for (const p of st.players) {
       p.role = seekers.has(p.id) ? 'seeker' : 'hider';
-      if (p.id !== st.id) R.addRemote(p.id, p.name, p.color, p.role === 'seeker', p.hat, p.outfit);
+      if (p.id !== st.id) R.addRemote(p.id, p.name, p.color, p.role === 'seeker', p.hat, p.outfit, tri && p.role === 'seeker' ? m.cls : null);
     }
     st.role = playerOf(st.id).role; st.phase = m.phase || 'hide'; st.deadline = now() + (m.resume ? m.tl : m.hide); st.hist.length = 0; st.seq = 0;
     if (m.resume) bus.emit(EV.NET, { kind: 'resumed', role: m.role, score: m.score }); st.hidersLeft = st.players.length - seekers.size; st.lastCount = -1; st.tagCd = 0;
@@ -215,6 +215,7 @@ const handlers = {
   prog(m) { TR.onProg(m); },
   collected(m) { TR.onCollected(m, feed); },
   alert(m) { TR.onAlert(m); },
+  exposed(m) { TR.onExposed(m); },
   gates() { TR.onGates(); },
   hurt(m) { TR.onHurt(m, feed); },
   terror(m) { TR.onTerror(m); },
@@ -234,11 +235,14 @@ const handlers = {
   pickup(m) { PH.onPickup(m); },
   picked(m) { PH.onPicked(m); },
   end(m) {
-    if (m.mode === 'trial') TR.onEnd(m);
     const mine = m.players.find((p) => p.id === st.id);
     const won = (m.winner === 'seekers') === (mine?.role === 'seeker');
     (won ? sfx.win : sfx.lose)();
     for (const p of m.players) if ((m.winner === 'seekers') === (p.role === 'seeker')) R.victoryPose(p.id);
+    if (m.mode === 'trial') { // the trial HUD writes the headline and table (ESCAPED / ELIMINATED / KILLER WINS) and resets all trial state
+      TR.onEnd(m); $('resAgain').classList.toggle('hidden', st.id !== st.hostId);
+      setView('results'); bus.emit(EV.END, m); return;
+    }
     $('resTitle').textContent = m.winner === 'seekers' ? 'SEEKERS WIN' : 'HIDERS WIN';
     $('resTitle').style.color = won ? 'var(--good)' : 'var(--bad)';
     $('resSub').textContent = m.mode === 'trial' ? `${m.escaped ?? 0} escaped, ${m.out ?? 0} eliminated.` : m.winner === 'seekers' ? 'Every hider was tagged.' : m.mode === 'prophunt' ? 'The seekers ran out of time, health or ammo.' : 'Time ran out with hiders still free.';
@@ -429,6 +433,7 @@ $('lobCopy').onclick = async () => {
   setTimeout(() => { b.textContent = 'Copy link'; }, 1800);
 };
 $('resLobby').onclick = () => { setView('lobby'); renderLobby(); };
+$('resAgain').onclick = () => { setView('lobby'); renderLobby(); if (st.id === st.hostId && st.players.length >= 2) { initAudio(); st.net?.send('start'); } }; // host only: the lobby state is already clean (TR.end ran), non-hosts wait there
 $('btnLeave').addEventListener('mousedown', (e) => e.stopPropagation());
 $('btnLeave').onclick = () => leave(true);
 $('connMenu').onclick = () => leave(false);

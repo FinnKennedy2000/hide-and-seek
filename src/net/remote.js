@@ -1,9 +1,9 @@
 // Avatars (character or disguised prop) for the local hider and for remote players, plus snapshot interpolation.
 import * as THREE from 'three';
-import { scene } from '../render/renderer.js';
+import { scene, camera as cam } from '../render/renderer.js';
 import { burst } from '../render/fx.js';
 import { makePropClone } from '../world/build.js';
-import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint, playChar } from '../characters/index.js';
+import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint, playChar, setConcealed } from '../characters/index.js';
 
 // Remote players are drawn in the past on the SERVER's clock: every snapshot carries the server time, `clock` maps it to local time
 // (tracking the fastest packets) and the delay grows with measured jitter, so a late packet is absorbed instead of rubber-banding.
@@ -37,14 +37,14 @@ function nameTag(name) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   // depthTest stays on, so walls hide tags (a hider must not be visible through a wall)
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
-  s.scale.set(1.6, 0.4, 1); s.position.y = 2.2;
+  s.scale.set(1, 0.25, 1); s.position.y = 2.0;
   return s;
 }
 
 // an avatar is a character that can be swapped for a clone of a world prop (disguise) and tinted (camouflage)
-export function makeAvatar(name, color, seeker, hat, pattern) {
+export function makeAvatar(name, color, seeker, hat, pattern, cls = null) {
   const root = new THREE.Group();
-  const body = makeChar(color, { hat, pattern, seeker }); root.add(body);
+  const body = makeChar(color, { hat, pattern, seeker, cls }); root.add(body);
   const light = new THREE.Group();
   const lamp = new THREE.Mesh(lampGeo, lampMat); lamp.rotation.x = Math.PI / 2; lamp.position.set(0.4, 1.0, 0.4);
   const cone = new THREE.Mesh(coneGeo, coneMat); cone.position.set(0.4, 1.0, 0.55); cone.frustumCulled = false;
@@ -52,12 +52,12 @@ export function makeAvatar(name, color, seeker, hat, pattern) {
   const tag = name ? nameTag(name) : null; if (tag) root.add(tag);
   scene.add(root);
   const a = { root, body, light, tag, seeker: false, prop: null, propId: null, tintHex: null, anim: { speed: 0, crouch: 0, air: false, vy: 0, lat: 0 }, wobT: rnd(20, 40), wob: 0, bounce: 0 };
-  a.setSeeker = (on) => setSeekerLook(a, on);
+  a.setSeeker = (on, c) => setSeekerLook(a, on, c);
   setSeekerLook(a, seeker);
   return a;
 }
-function setSeekerLook(a, on) {
-  a.seeker = on; charSeeker(a.body, on); a.light.visible = on && opts.cone;
+function setSeekerLook(a, on, cls) {
+  a.seeker = on; charSeeker(a.body, on, cls); a.light.visible = on && opts.cone;
 }
 export function disposeAvatar(a) {
   a.body.ch.dispose();
@@ -104,9 +104,9 @@ export function animAvatar(a, dt) {
   if (a.bounce > 0) { a.bounce -= dt; a.prop.position.y = Math.abs(Math.sin(Math.max(0, a.bounce) * 10)) * 0.25; }
 }
 
-export function addRemote(id, name, color, seeker, hat, pattern) {
+export function addRemote(id, name, color, seeker, hat, pattern, cls = null) {
   removeRemote(id);
-  const a = makeAvatar(name, color, seeker, hat, pattern);
+  const a = makeAvatar(name, color, seeker, hat, pattern, cls);
   Object.assign(a, { id, buf: [], x: 0, y: 0, z: 0, c: 0, px: null, py: 0, pz: 0, gone: true }); // hidden until the server first sends it (interest management)
   a.root.visible = false;
   remotes.set(id, a);
@@ -155,7 +155,7 @@ export function updateRemotes(now, localSeeker = false, dt = 0) {
       const k = Math.min(1, Math.max(0, (rt - b[0].t) / (b[1].t - b[0].t || 1)));
       s = { x: lerp(b[0].x, b[1].x, k), y: lerp(b[0].y, b[1].y, k), z: lerp(b[0].z, b[1].z, k), yaw: lerpAngle(b[0].yaw, b[1].yaw, k), c: lerp(b[0].c, b[1].c, k) };
     }
-    a.x = s.x; a.y = s.y; a.z = s.z; a.c = s.c;
+    a.x = s.x; a.y = s.y; a.z = s.z; a.c = s.c; a.dist = Math.hypot(s.x - cam.position.x, s.z - cam.position.z);
     a.root.position.set(s.x, s.y, s.z);
     a.root.rotation.y = s.yaw + Math.PI; // avatar faces +z, player forward is (-sin yaw, -cos yaw)
     if (dt > 0 && a.px !== null) { // derive the animation inputs from motion
@@ -170,14 +170,16 @@ export function updateRemotes(now, localSeeker = false, dt = 0) {
     if (a.limp && dt > 0 && (a.bloodT = (a.bloodT ?? 0.8) - dt) <= 0) { a.bloodT = 0.8; burst(s.x, 0.9, s.z, 0xb00000, 5, 0.5, 0.6, 0.07); }
     // prop hunt: hiders can't see other hiders, so nobody hides next to a teammate or gives them away
     a.root.visible = !a.hidden && !(opts.hideHiders && !localSeeker && !a.seeker);
-    if (a.tag) { a.tag.position.y = 2.2 - 0.6 * s.c; a.tag.visible = !a.prop && (a.seeker || !localSeeker); }
+    // name tags are a teammate aid only: hiders see other hiders' tags within 10 m, never while crouched or disguised; seekers see none
+    if (a.tag) { a.tag.position.y = 2.0 - 0.6 * s.c; a.tag.visible = !a.prop && !a.seeker && !localSeeker && s.c < 0.3 && (a.dist ?? 99) < 10; }
+    if (!a.prop) setConcealed(a.body, s.c > 0.5 && !!a.inGrass); // grass agent sets a.inGrass; no shadow shape out of the grass
   }
 }
 
-// trial mode: st = free | injured | trapped | caged | out | escaped. Injured / trapped limp, bleed and tint red; caged / out / escaped are not drawn (the cage prop shows the occupant).
+// trial mode: st = free | injured | trapped | caged | out | escaped. Injured / trapped limp (pose) and bleed; caged / out / escaped are not drawn (the cage prop shows the occupant).
 export function setRemoteState(id, st) {
   const a = remotes.get(id); if (!a) return;
   a.limp = st === 'injured' || st === 'trapped'; a.hidden = st === 'caged' || st === 'out' || st === 'escaped';
-  tintAvatar(a, a.limp ? 0xc03030 : null);
+  if (!a.prop) playChar(a.body, a.limp ? 'injured' : 'reset'); // hunched, one hand to the side (no red tint)
   if (a.hidden) a.root.visible = false;
 }

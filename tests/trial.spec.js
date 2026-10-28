@@ -26,5 +26,28 @@ test('trial round starts and the hider can interact state-wise', async ({ page }
     await page.keyboard.press('Space'); await page.waitForTimeout(1200);
     expect(await page.evaluate(() => __trial.vault)).toBeNull();
   }
+  // fuse / alert / escape UI, driven through the same handlers online.js calls
+  const F = (fn, m) => page.evaluate(([f, a]) => window.__trialFns[f](a), [fn, m]);
+  await F('onCollected', { i: 0, n: 1, need: 3, by: 999 });
+  await expect(page.locator('#trRelics b')).toHaveText('1/3');
+  await expect(page.locator('#trToast')).toContainText('FUSE 1/3 INSTALLED');
+  await F('onGates', {});
+  await expect(page.locator('#trBanner')).toContainText(/exit power restored/i);
+  // alerts: pinned at the message's coordinates, expire after ttl, never follow anyone
+  await F('onAlert', { kind: 'relic', x: 10, z: 12, ttl: 1 });
+  expect(await page.evaluate(() => __trial.alerts.map((a) => [a.x, a.z, Math.round(a.until - performance.now() / 1000)]))).toContainEqual([10, 12, 1]);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => __trial.alerts.some((a) => a.kind === 'relic'))).toBe(false);
+  await F('onAlert', { kind: 'relic', x: 1, z: 2 }); // default ttl 6 s
+  expect(await page.evaluate(() => Math.round(__trial.alerts.find((a) => a.kind === 'relic').until - performance.now() / 1000))).toBe(6);
+  // collector feedback, and the gate prompt while unpowered is covered by the hider branch above (gates are open here)
+  await F('onExposed', { ttl: 2 });
+  await expect(page.locator('#trExposed')).toBeVisible();
+  // results + reset: ESCAPED headline, all client trial state cleared
+  const me = await page.evaluate(() => __trial.id);
+  await F('onEnd', { winner: 'hiders', mode: 'trial', escaped: 1, out: 0, me, players: [{ id: me, name: 'Tester', role: 'hider', st: 'escaped', score: 5, total: 5, tags: 0 }] });
+  await expect(page.locator('#resTitle')).toHaveText(/ESCAPED|KILLER WINS|SURVIVORS ESCAPED|ELIMINATED/);
+  const r = await page.evaluate(() => ({ on: __trial.on, relics: __trial.relics.length, alerts: __trial.alerts.length, n: __trial.n, open: __trial.gatesOpen, chan: __trial.chan, vault: __trial.vault, states: Object.keys(__trial.states).length, cages: __trial.cages.length }));
+  expect(r).toEqual({ on: false, relics: 0, alerts: 0, n: 0, open: false, chan: null, vault: null, states: 0, cages: 0 });
   expect(errors).toEqual([]);
 });

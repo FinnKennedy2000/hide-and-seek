@@ -307,6 +307,12 @@ input[type=range]{padding:0;border:0;background:none;width:100%;accent-color:var
 :root[data-motion="reduced"] #trTerror.beat{animation:none}
 :root[data-motion="reduced"] #trToast.show{animation:none;opacity:1}
 :root[data-motion="reduced"] #trPlayers li[data-st="caged"] .ic{animation:none}
+#trPrompt .bar{width:58px;height:58px;border:0;border-radius:50%;overflow:visible;contain:none;background:conic-gradient(var(--lamp-hot) calc(var(--p,0)*360deg),rgba(0,0,0,.6) 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 8px),#000 calc(100% - 7px));mask:radial-gradient(farthest-side,transparent calc(100% - 8px),#000 calc(100% - 7px))}
+#trPrompt .bar i{display:none}
+#trExposed,#trBeat{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:5px 14px 5px 10px;border-radius:99px;background:rgba(15,11,34,.84);border:1px solid var(--bad);color:var(--bad);font-weight:700;font-size:13px;letter-spacing:.06em}
+#trExposed{bottom:150px}#trBeat{bottom:186px}
+#trExposed svg{width:20px;height:20px}
+#trExposed.hidden,#trBeat.hidden{display:none}
 /* results */
 #resTable td[data-st="escaped"]{color:var(--good)}#resTable td[data-st="out"]{color:var(--bad)}#resTable td[data-st="caged"]{color:var(--lamp)}
 #resTable tr.me td{background:rgba(255,180,77,.12)}

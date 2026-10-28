@@ -2,7 +2,7 @@
 // Bumped whenever the message set changes. The client sends `hello {protocol}` first on every connection; the server answers
 // a mismatch (or a client that never says hello, i.e. an older build) with `err 'Refresh to update'` and closes the socket.
 // 4: binary delta snapshots, hello, ping/pong, reconnect token, fill bots.
-// 5: trial mode (docs/TRIAL-PROTOCOL.md): cls / interact / swing / power / vault, prog / collected / alert / hurt / terror / marks / pulse ...
+// 5: trial mode (docs/TRIAL-PROTOCOL.md): cls / interact / swing / power / vault, prog / collected / alert {ttl} / exposed {ttl} / hurt / terror / marks / pulse ...
 export const PROTOCOL = 5;
 export const REFRESH_MSG = 'Refresh to update';
 export const SNAP_HZ = 15;           // snapshot rate

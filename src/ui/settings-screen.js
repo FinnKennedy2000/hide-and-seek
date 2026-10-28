@@ -36,6 +36,13 @@ function toggle(label, key, hint) {
   b.onclick = () => { settings.set(key, !settings[key]); paint(); };
   paint(); return row(label, hint, b);
 }
+// Reduce camera shake: a shortcut onto the shake level (Low when on, Medium when off); the segmented control below keeps the fine choice
+function shakeToggle() {
+  const b = el('button', { type: 'button', className: 'sw-switch', role: 'switch' });
+  const paint = () => { const on = ['off', 'low'].includes(settings.raw('shake')); b.setAttribute('aria-checked', String(on)); b.textContent = on ? 'On' : 'Off'; };
+  b.onclick = () => { settings.set('shake', ['off', 'low'].includes(settings.raw('shake')) ? 'med' : 'low'); build(); };
+  paint(); return row('Reduce camera shake', 'Cuts hit, swing and landing shake to a light touch. Camera shake Off removes it.', b);
+}
 const pct = (v) => `${Math.round(v * 100)}%`;
 
 // ----- tabs
@@ -68,8 +75,9 @@ const TABS = {
     const sw = (cls, t) => el('span', { className: `dot ${cls}`, style: `background:var(--${cls});${cls === 'seek' ? 'border-radius:2px;transform:rotate(45deg) scale(.8)' : ''}` , title: t });
     const demo = el('div', { className: 'row' }, el('div', { className: 'rl' }, el('span', { textContent: 'Role colours' }), el('small', { textContent: 'Seekers are a diamond, hiders a circle, in every mode' })), el('div', { className: 'ctl' }, sw('seek', 'Seeker'), sw('hide', 'Hider')));
     return [
-      toggle('Sound cues', 'cues', 'Shows where footsteps and other sounds come from, with a caption.'),
+      toggle('Visual sound cues', 'cues', 'Edge indicators and captions for footsteps, alerts and the heartbeat.'),
       toggle('Reduce motion', 'reducedMotion', 'Stops the menu camera and turns off camera shake and head bob.'),
+      shakeToggle(),
       segmented('Camera shake', 'shake', [['off', 'Off'], ['low', 'Low'], ['med', 'Medium'], ['high', 'High']]),
       slider('Head bob', 'headBob', { min: 0, max: 1, step: 0.1, show: pct }),
       toggle('Colour-blind role colours', 'colorBlind', 'Swaps to a blue and orange pair that stays distinct for every type of colour blindness.'),

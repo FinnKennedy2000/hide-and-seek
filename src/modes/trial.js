@@ -3,7 +3,7 @@
 import { P, DEBUG } from '../core/state.js';
 import { keys } from '../core/input.js';
 import { camera } from '../render/renderer.js';
-import { sfx } from '../audio/sfx.js';
+import { sfx, play } from '../audio/sfx.js';
 import { toast } from '../ui/hud.js';
 import { updatePlayer } from '../player/controller.js';
 import * as R from '../net/remote.js';
@@ -26,10 +26,10 @@ const DONE = new Set(['out', 'escaped']);
 
 const T = { on: false, id: 0, role: 'hider', send() {}, nameOf: () => '?', teleport() {}, self: null, av: null, phase: 'hide', cls: null,
   relics: [], gates: [], cages: [], grass: [], vaults: [], need: 3, n: 0, gatesOpen: false, cageOcc: {}, states: {}, prog: {}, alerts: [], traps: new Map(), marks: [],
-  st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0, heading: 0, rotY: 0, fc: { x: 0, y: 2, z: 0 }, concealed: false,
+  st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0, rs: 0, exposedUntil: 0, cageIdx: -1, heading: 0, rotY: 0, fc: { x: 0, y: 2, z: 0 }, concealed: false,
   swingCd: 0, swingAge: 9, power: { cls: null, cd: 0, on: false, n: 0, at: 0 }, rushT: 0, recT: 0, terror: 0 };
 export const trial = T;
-if (DEBUG) window.__trial = T; // smoke tests only
+if (DEBUG) window.__trial = T; // smoke tests only (window.__trialFns is set at the bottom of this file)
 
 const turnTo = (cur, tgt, rate) => cur + Math.max(-rate, Math.min(rate, ((tgt - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI));
 const body = () => Object.assign(P, { r: 0.3, fixedPh: 0, mul: 1, mute: false });
@@ -42,9 +42,9 @@ export function begin(ctx) {
   const m = ctx.m;
   Object.assign(T, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, nameOf: ctx.nameOf, teleport: ctx.teleport, self: ctx.self, phase: m.phase || 'hide', cls: m.cls || null,
     relics: (m.relics || []).map((r) => ({ ...r, p: r.p || 0, done: !!r.done })), gates: m.gates || [], cages: m.cages || [], grass: m.grass || [], vaults: m.vaults || [], need: m.need || 3,
-    gatesOpen: !!m.gatesOpen, cageOcc: {}, states: m.states || {}, prog: {}, alerts: [], marks: [], st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0,
+    gatesOpen: !!m.gatesOpen, cageOcc: {}, states: m.states || {}, prog: {}, alerts: [], marks: [], rs: 0, exposedUntil: 0, cageIdx: -1, n: 0, st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0,
     heading: P.yaw + Math.PI, rotY: P.yaw + Math.PI, concealed: false, swingCd: 0, swingAge: 9, power: { cls: m.cls || null, cd: 0, on: false, n: 0, at: now() }, rushT: 0, recT: 0, terror: 0 });
-  T.n = T.relics.filter((r) => r.done).length;
+  T.n = T.relics.filter((r) => r.done).length; T.traps.clear();
   for (const [id, s] of Object.entries(T.states)) if (+id === T.id) T.st = s === 'free' ? 'injured' : s;
   R.opts.cone = false; R.opts.hideHiders = false; camera.near = 0.05; camera.updateProjectionMatrix(); resetArm(); clearShake(); body();
   if (T.role === 'hider') T.av = R.makeAvatar(null, T.self.color, false, T.self.hat, T.self.pattern);
@@ -53,12 +53,14 @@ export function begin(ctx) {
   T.relics.forEach((r) => { if (r.p) { FX.setRelicProgress?.(r.i, r.p); UI.setRelicProgress?.(r.i, r.p); } if (r.done) { FX.relicDone?.(r.i); } });
   if (T.gatesOpen) { FX.openGates?.(); UI.gatesOpen?.(); }
   if (T.role === 'seeker') UI.setPower?.({ cls: T.cls, cd: 0, on: false, n: T.cls === 'trapper' ? 3 : 0 });
+  AU.startAmbient?.(); // the controls card is shown by ui/onboarding.js (H re-opens it)
 }
 export function end() {
   if (!T.on) return;
   if (T.av) { R.disposeAvatar(T.av); T.av = null; }
-  T.on = false; T.chan = null; T.vault = null; body(); P.r = 0.3; camera.near = 0.08; camera.updateProjectionMatrix();
-  AU.chanLoop?.(false); AU.heartbeat?.(0); UI.hideTrialHud?.(); UI.setPrompt?.(null, null); UI.concealed?.(false); UI.terror?.(0);
+  Object.assign(T, { on: false, chan: null, vault: null, relics: [], gates: [], cages: [], grass: [], vaults: [], n: 0, gatesOpen: false, cageOcc: {}, states: {}, prog: {}, alerts: [], marks: [], st: 'free', boostT: 0, trapT: 0, eLock: false, exposedUntil: 0, cageIdx: -1, concealed: false, terror: 0, rushT: 0, recT: 0, power: { cls: null, cd: 0, on: false, n: 0, at: 0 } });
+  T.traps.clear(); body(); P.r = 0.3; camera.near = 0.08; camera.updateProjectionMatrix();
+  AU.chanLoop?.(false); AU.heartbeat?.(0); AU.stopAmbient?.(); clearShake(); UI.hideTrialHud?.(); UI.setPrompt?.(null, null); UI.concealed?.(false); UI.terror?.(0);
   FX.clearRoundProps?.();
 }
 export const pose = () => (T.role === 'hider' ? { yaw: T.rotY - Math.PI, c: P.crouch } : { yaw: P.yaw, c: P.crouch });
@@ -71,6 +73,7 @@ export function frame(dt, frozen, phase) {
   if (T.trapT > 0) T.trapT -= dt; else if (T.boostT > 0) T.boostT -= dt;
   if (T.rushT > 0) { T.rushT -= dt; if (T.rushT <= 0) T.recT = 1; } else if (T.recT > 0) T.recT -= dt;
   const seeker = T.role === 'seeker';
+  remoteSteps(dt);
   // speed multiplier by state (server owns the real caps)
   P.mul = held() ? 0 : seeker ? (T.rushT > 0 ? 1.8 : T.recT > 0 ? 0.6 : T.power.cls === 'phantom' && T.power.on ? 1.15 : 1) : T.boostT > 0 ? 1.25 : 1;
   P.mute = !seeker && P.crouch > 0.5;
@@ -78,8 +81,30 @@ export function frame(dt, frozen, phase) {
   if (T.vault) return vaultFrame(dt, seeker);
   const can = !frozen && !held();
   updatePlayer(dt, can, seeker);
+  grassFx(dt);
   if (seeker) { UI.setPrompt?.(null, null); return alertsFrame(); }
   hiderFrame(dt, can);
+}
+
+const inGrass = (x, z) => T.grass.some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
+// own foliage rustle (loud when sprinting, faint when crouched) and everyone else's footsteps, positional: the seeker hears sprints, never crouch-walking
+function grassFx(dt) {
+  const spd = Math.hypot(P.vx, P.vz); if (spd < 1.2 || P.air || P.mute && P.crouch > 0.5 && spd < 2.2) return;
+  if ((T.rs -= dt) > 0 || !inGrass(P.x, P.z)) return;
+  T.rs = P.crouch > 0.5 ? 0.7 : spd > 5 ? 0.28 : 0.45;
+  play('rustle', null, P.crouch > 0.5 ? 0.05 : spd > 5 ? 0.22 : 0.12);
+}
+function remoteSteps(dt) {
+  for (const a of R.remotes.values()) {
+    const sp = a.anim?.speed || 0;
+    if (a.gone || !a.root.visible || sp < 0.8 || a.anim.air) { a.stT = 0; continue; }
+    a.stT = (a.stT || 0) + sp * dt;
+    const crouch = (a.c || 0) > 0.5, sprint = sp > 5;
+    if (a.stT < (crouch ? 1.1 : sprint ? 1.9 : 1.5)) continue;
+    a.stT = 0; const p = { x: a.x, z: a.z };
+    play(sprint ? 'sprint' : 'step', p, crouch ? 0.05 : sprint ? 0.3 : 0.16);
+    if (inGrass(a.x, a.z)) play('rustle', p, crouch ? 0.06 : 0.14);
+  }
 }
 
 function hiderFrame(dt, can) {
@@ -88,11 +113,14 @@ function hiderFrame(dt, can) {
   T.rotY = T.heading;
   av.root.position.set(P.x, P.y, P.z); av.root.rotation.y = T.rotY;
   Object.assign(av.anim, { speed: T.st === 'injured' ? spd * 0.75 : spd, crouch: P.crouch, air: P.air, vy: P.vy, lat: 0 });
+  const pose = T.chan ? 'interact' : T.st === 'injured' || T.st === 'trapped' ? 'injured' : T.st === 'caged' ? 'caged' : 'reset';
+  if (av.pose !== pose) { av.pose = pose; av.body.ch.play(pose); }
+  av.body.ch.setConcealed(T.concealed);
   R.animAvatar(av, dt);
   if (T.st === 'caged') cageCam(); else applyTps(P, dt, 1.35 - 0.4 * P.crouch, 3.2);
   channelFrame(can);
   // concealed: crouched + still inside a grass rect (the server decides what the seeker actually sees; this is the hider's own feedback)
-  const c = P.crouch > 0.6 && spd < 1 && T.grass.some((g) => P.x >= g.x0 && P.x <= g.x1 && P.z >= g.z0 && P.z <= g.z1);
+  const c = P.crouch > 0.6 && spd < 1 && inGrass(P.x, P.z);
   if (c !== T.concealed) { T.concealed = c; UI.concealed?.(c); }
   alertsFrame();
 }
@@ -105,7 +133,7 @@ function cageCam() {
 function alertsFrame() {
   const t = now();
   T.alerts = T.alerts.filter((a) => a.until > t);
-  for (const a of T.alerts) UI.edgeAlert?.(a.kind, a.x, a.z);
+  for (const a of T.alerts) UI.edgeAlert?.(a.kind, a.x, a.z, a.until - t);
 }
 
 // hold E near a relic / gate / cage
@@ -117,7 +145,7 @@ function nearTarget() {
   test('cage', T.cages, (o) => T.cageOcc[o.i] != null && T.cageOcc[o.i] !== T.id);
   return best;
 }
-const LABEL = { relic: 'COLLECT RELIC', gate: 'ESCAPE', cage: 'FREE TEAMMATE' };
+const LABEL = { relic: 'Hold E to install fuse', gate: 'Hold E to open the gate and escape', cage: 'Hold E to free teammate' };
 function stopChan(lock) {
   if (!T.chan) return;
   T.send('interact', { k: 'stop', what: T.chan.what, i: T.chan.i }); T.chan = null; AU.chanLoop?.(false);
@@ -133,9 +161,14 @@ function channelFrame(can) {
     T.chan = { what: tg.what, i: tg.i }; T.send('interact', { k: 'start', what: tg.what, i: tg.i }); AU.chanLoop?.(true);
   }
   const cur = T.chan || tg;
-  if (!cur) return UI.setPrompt?.(null, null);
+  if (!cur) {
+    const g = can && !T.gatesOpen && T.gates.find((q) => Math.hypot(q.x - P.x, q.z - P.z) < INTERACT_R + 0.5);
+    if (!g) return UI.setPrompt?.(null, null);
+    if (keys.KeyE && !T.eLock) { T.eLock = true; toast('Gate unpowered', 'warn'); }
+    return UI.setPrompt?.(`Gate unpowered - install fuses (${T.n}/${T.need})`, null);
+  }
   const key = cur.what + cur.i, p = T.chan ? (T.prog[key] ?? 0) : null;
-  UI.setPrompt?.(`${T.chan ? 'HOLD E' : 'HOLD E'} · ${LABEL[cur.what]}`, p);
+  UI.setPrompt?.(LABEL[cur.what], p);
 }
 
 // ---------- vaulting: a scripted hop across a wall; collisions are skipped (we skip motion.step) and y follows a sine arc
@@ -165,14 +198,14 @@ function startVault() {
 }
 function vaultFrame(dt, seeker) {
   const v = T.vault; v.t += dt;
-  const k = Math.min(1, v.t / v.dur);
-  P.x = v.s.x + (v.e.x - v.s.x) * k; P.z = v.s.z + (v.e.z - v.s.z) * k; P.y = Math.sin(Math.PI * k) * 0.55;
-  P.vx = (v.e.x - v.s.x) / v.dur; P.vz = (v.e.z - v.s.z) / v.dur; P.air = true;
-  if (k >= 1) { T.vault = null; P.y = 0; P.vx = 0; P.vz = 0; P.vy = 0; P.air = false; P.airborne = false; }
+  const t = Math.min(1, v.t / v.dur), k = t * t * (3 - 2 * t); // smoothstep: ease in and out of the hop
+  P.x = v.s.x + (v.e.x - v.s.x) * k; P.z = v.s.z + (v.e.z - v.s.z) * k; P.y = Math.sin(Math.PI * t) * 0.55;
+  P.vx = (v.e.x - v.s.x) / v.dur * 6 * t * (1 - t); P.vz = (v.e.z - v.s.z) / v.dur * 6 * t * (1 - t); P.air = true;
+  if (t >= 1) { T.vault = null; P.y = 0; P.vx = 0; P.vz = 0; P.vy = 0; P.air = false; P.airborne = false; }
   if (seeker) return applyFps(P, dt, { speed: Math.hypot(P.vx, P.vz), strafe: 0, sprint: false });
   const av = T.av; T.rotY = T.heading;
   av.root.position.set(P.x, P.y, P.z); av.root.rotation.y = T.rotY;
-  Object.assign(av.anim, { speed: Math.hypot(P.vx, P.vz), crouch: 0, air: true, vy: 1, lat: 0 }); R.animAvatar(av, dt);
+  Object.assign(av.anim, { speed: Math.hypot(P.vx, P.vz), crouch: 0, air: false, vy: 0, lat: 0 }); if (av.pose !== 'vault') { av.pose = 'vault'; av.body.ch.play('vault'); } R.animAvatar(av, dt);
   applyTps(P, dt, 1.35, 3.2); alertsFrame();
 }
 
@@ -185,7 +218,7 @@ function freeCam(dt) {
   camera.position.set(fc.x, fc.y, fc.z); camera.rotation.set(P.pitch, P.yaw, 0);
   UI.setPrompt?.(null, null);
 }
-export function tickFx(dt) { FX.updateTrialFx?.(dt); UI.tickTrialHud?.(dt, camera); }
+export function tickFx(dt) { UI.tickTrialHud?.(dt, camera); } // trialfx updates itself (its own loop system)
 
 // ---------- input
 export function onKey(code) {
@@ -211,7 +244,7 @@ export function hints() {
     const pw = T.power, left = Math.max(0, Math.ceil(pw.cd - (now() - pw.at))), nm = CLASSES[T.cls]?.name || 'Seeker';
     return `${nm}  -  CLICK swing  -  Q / RIGHT CLICK power${pw.cls === 'trapper' ? ` (${pw.n} traps)` : left ? ` (${left}s)` : ' ready'}  -  Space vault`;
   }
-  return T.st === 'caged' ? 'CAGED - wait for a teammate to free you' : 'Hold E: relics, gates, cages  -  Space vault  -  C crouch in grass  -  Shift sprint (loud)  -  Q swap shoulder';
+  return T.st === 'caged' ? 'CAGED - wait for a teammate to free you' : 'Hold E: fuses, gates, cages  -  Space vault  -  C crouch in grass  -  Shift sprint (loud)  -  Q swap shoulder';
 }
 
 // ---------- server messages
@@ -241,16 +274,29 @@ export function onProg(m) {
 }
 export function onCollected(m, feed) {
   const r = T.relics.find((q) => q.i === m.i); if (r) { r.done = true; r.p = 1; }
-  T.n = m.n; FX.relicDone?.(m.i); UI.relicDone?.(m.n, m.need, T.nameOf(m.by)); feed?.(`${T.nameOf(m.by)} collected a relic (${m.n}/${m.need})`, '#80ed99');
+  T.n = m.n; FX.relicDone?.(m.i); UI.relicDone?.(m.n, m.need, T.nameOf(m.by)); feed?.(`${T.nameOf(m.by)} installed a fuse (${m.n}/${m.need})`, '#80ed99');
   if (T.chan?.what === 'relic' && T.chan.i === m.i) { T.chan = null; AU.chanLoop?.(false); }
+  if (m.by === T.id) onExposed({ ttl: 6 }); // the server's own `exposed` (if it sends one) refreshes this
 }
 export function onGates() {
-  T.gatesOpen = true; FX.openGates?.(); UI.gatesOpen?.(); AU.gateSound?.(); toast('THE GATES ARE OPEN!', 'good');
+  if (T.gatesOpen) return; // already powered (a resume, or the server repeated itself)
+  T.gatesOpen = true; FX.openGates?.(); UI.gatesOpen?.(); AU.gateSound?.();
+  for (const g of T.gates) { FX.beacon?.(g.x, g.z, 12, 'gate'); addAlert('gate', g.x, g.z, 12); }
+}
+// alerts are pinned to the coordinates in the message (the spot at collection time) and expire on their own; they never track a player
+function addAlert(kind, x, z, secs) {
+  const until = now() + secs, d = T.alerts.find((a) => a.kind === kind && Math.hypot(a.x - x, a.z - z) < 1.5);
+  if (d) d.until = Math.max(d.until, until); else T.alerts.push({ kind, x, z, until });
 }
 export function onAlert(m) {
-  const secs = m.kind === 'scream' ? 3 : 5;
-  T.alerts.push({ kind: m.kind, x: m.x, z: m.z, until: now() + secs });
-  FX.beacon?.(m.x, m.z, secs, m.kind); AU.alertSound?.(m.kind, m.x, m.z); if (m.kind === 'scream') AU.scream?.(m.x, m.z);
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.z)) return;
+  const secs = m.ttl > 0 ? Math.min(30, m.ttl) : m.kind === 'scream' ? 3 : 6;
+  addAlert(m.kind, m.x, m.z, secs);
+  FX.beacon?.(m.x, m.z, secs, m.kind); AU.alertSound?.(m.kind, m.x, m.z);
+}
+export function onExposed(m) {
+  const ttl = m?.ttl > 0 ? m.ttl : 6; T.exposedUntil = now() + ttl;
+  toast('You alerted the killer', 'warn'); UI.exposed?.(ttl);
 }
 export function onTerror(m) { T.terror = m.k; UI.terror?.(m.k); AU.heartbeat?.(m.k); }
 export function onMarks(list) { for (const q of list) { T.marks.push(q); FX.mark?.(q.x, q.z, !!(q.b || q.blood)); } if (T.marks.length > 40) T.marks.splice(0, T.marks.length - 40); }
@@ -270,4 +316,6 @@ export function onSwing(m) {
 }
 export function onEnd(m) { UI.showResults?.(m); end(); }
 // terse text for the HUD counter
-export const status = () => `RELICS ${T.n}/${T.need}${T.gatesOpen ? '  GATES OPEN' : ''}`;
+export const status = () => `FUSES ${T.n}/${T.need}${T.gatesOpen ? '  EXIT POWERED' : ''}`;
+
+if (DEBUG) window.__trialFns = { onProg, onCollected, onGates, onAlert, onExposed, onEnd, onHurt }; // lets tests.trial.spec.js feed the UI server messages

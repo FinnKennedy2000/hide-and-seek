@@ -73,7 +73,7 @@ async function startRound(cs) {
   const world = WD.buildWorld({}, 'house'), nav = NAV.createNav(world.colliders);
   const sp = WD.MAPS.house.spawns, bd = WD.MAPS.house.meta.bounds;
   const stub = { relics: sp.slice(0, 8), gates: [sp[8], sp[9]], cages: sp.slice(10, 14), grass: [{ x0: bd.x0, x1: bd.x1, z0: bd.z0, z1: bd.z1 }], vaults: [], hiderSpawns: sp, seekerStart: { x: 0, z: 7.8, yaw: 0 } };
-  const srv = await spawnServer({ DEFAULT_MODE: 'trial', TRIAL_STUB: JSON.stringify(stub), HIDE_SECS: '1', SEEK_SECS: '60', MAX_ROOMS_PER_IP: '1000', MAX_ROOMS: '1000', MAX_CONNS_PER_IP: '1000', MAX_BOTS: '1000' });
+  const srv = await spawnServer({ DEFAULT_MODE: 'trial', TRIAL_STUB: JSON.stringify(stub), HIDE_SECS: '1', SEEK_SECS: '180', MAX_ROOMS_PER_IP: '1000', MAX_ROOMS: '1000', MAX_CONNS_PER_IP: '1000', MAX_BOTS: '1000' });
   const all = [];
   try {
     // a point `d` metres from (x,z) with a clear line of sight to it (the server's two-body-point visibility test)
@@ -187,6 +187,59 @@ async function startRound(cs) {
       await seeker.walk(p2[0], p2[1], 4);
       for (let i = 0; i < 6; i++) { H.pos(hp[0], hp[1], 1); seeker.pos(p2[0], p2[1]); await sleep(100); }
       ok(seenH(n0), 'crouched still hider is seen at 2 m');
+    }
+
+    // ===== 5. objective loop: gate gating, double collect, alert ttl / no tracking, exposed, reset between rounds
+    {
+      const { cs } = await lobby(srv.url, 3); all.push(...cs);
+      const { r, seeker, hiders } = await startRound(cs), [A, B] = hiders;
+      const count = (c, f) => c.log.filter(f).length;
+      const tryGate = async (label, atLeast) => {
+        await A.walk(r.gates[0].x, r.gates[0].z);
+        const n0 = count(A, (m) => m.t === 'hurt' && m.st === 'escaped');
+        A.send('interact', { k: 'start', what: 'gate', i: 0 }); await sleep(3800);
+        A.send('interact', { k: 'stop', what: 'gate', i: 0 });
+        ok(count(A, (m) => m.t === 'hurt' && m.st === 'escaped') === n0 && !A.log.some((m) => m.t === 'gates') && !A.log.some((m) => m.t === 'prog' && m.what === 'gate'), `${label}: gate cannot be channelled or escaped through (${atLeast} relics)`);
+      };
+      await tryGate('0 relics', 0);
+      // relic 0: both hiders channel it together -> counts once, alerts once
+      await Promise.all([A.walk(r.relics[0].x, r.relics[0].z), B.walk(r.relics[0].x, r.relics[0].z)]);
+      A.send('interact', { k: 'start', what: 'relic', i: 0 }); B.send('interact', { k: 'start', what: 'relic', i: 0 });
+      const c0 = await seeker.wait((m) => m.t === 'collected', 8000);
+      const al = await seeker.wait((m) => m.t === 'alert' && m.kind === 'relic', 2000);
+      ok(c0.n === 1 && al.ttl === 6 && al.x === r.relics[0].x && al.z === r.relics[0].z, `alert carries the relic location at collection time and ttl ${al.ttl}`);
+      const ex = await A.wait((m) => m.t === 'exposed', 2000).catch(() => null);
+      ok(ex && ex.ttl === 6 && !!(await B.wait((m) => m.t === 'exposed', 2000).catch(() => null)), 'each collector gets `exposed {ttl}`');
+      A.send('interact', { k: 'start', what: 'relic', i: 0 }); B.send('interact', { k: 'start', what: 'relic', i: 0 }); await sleep(1500);
+      ok(count(seeker, (m) => m.t === 'collected') === 0 && count(seeker, (m) => m.t === 'alert' && m.kind === 'relic') === 0, 're-channelling a collected relic does not count or alert again');
+      // the collector walks away: the seeker never gets an updated position
+      seeker.log.length = 0; await A.walk(r.relics[0].x + 6, r.relics[0].z + 6); await sleep(600);
+      ok(count(seeker, (m) => m.t === 'alert') === 0, 'no alert follows the collector afterwards');
+      await tryGate('1 relic', 1);
+      await Promise.all([A.walk(r.relics[1].x, r.relics[1].z), B.walk(r.relics[1].x, r.relics[1].z)]);
+      A.send('interact', { k: 'start', what: 'relic', i: 1 }); B.send('interact', { k: 'start', what: 'relic', i: 1 });
+      await seeker.wait((m) => m.t === 'collected' && m.n === 2, 9000);
+      await tryGate('2 relics', 2);
+      // reaching 3 opens the gates; escaping then needs the physical channel (no `escaped` from walking near a gate alone)
+      await Promise.all([A.walk(r.relics[2].x, r.relics[2].z), B.walk(r.relics[2].x, r.relics[2].z)]);
+      A.send('interact', { k: 'start', what: 'relic', i: 2 });
+      await A.wait((m) => m.t === 'gates' && m.open, 9000);
+      const g = r.gates[1]; await B.walk(g.x, g.z); await sleep(800);
+      ok(!B.log.some((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === B.id), 'standing at an open gate without channelling does not escape');
+      await A.walk(r.gates[0].x, r.gates[0].z);
+      A.send('interact', { k: 'start', what: 'gate', i: 0 }); B.send('interact', { k: 'start', what: 'gate', i: 1 });
+      await Promise.all([A, B].map((c) => c.wait((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === c.id, 6000)));
+      await seeker.wait((m) => m.t === 'end', 6000); await sleep(300);
+      // ---- new round: everything is reset
+      cs.forEach((c) => { c.log.length = 0; c.snaps.length = 0; });
+      const r2 = await startRound(cs), [A2, B2] = r2.hiders;
+      ok(r2.r.relics.length === 6 && !r2.r.gatesOpen && !A2.log.some((m) => m.t === 'gates' || m.t === 'collected' || m.t === 'alert'), 'new round: no gates open, no collected / alert state carried over');
+      const g0 = r2.r.gates[0]; await A2.walk(g0.x, g0.z);
+      A2.send('interact', { k: 'start', what: 'gate', i: 0 }); await sleep(3800);
+      ok(!A2.log.some((m) => m.t === 'hurt' && m.st === 'escaped'), 'new round: gates are closed again (0 relics)');
+      const q0 = r2.r.relics[0]; await A2.walk(q0.x, q0.z); A2.send('interact', { k: 'start', what: 'relic', i: 0 });
+      const c1 = await r2.seeker.wait((m) => m.t === 'collected', 9000);
+      ok(c1.n === 1, 'new round: relic count restarts at 1');
     }
   } catch (e) { ok(false, 'trial test crashed: ' + e.message); }
   finally { all.forEach((c) => c.ws.terminate()); srv.kill(); }

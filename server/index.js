@@ -454,6 +454,11 @@ function validTrial(t) { // a map's `trial` block: anything malformed makes the 
 const maxSpeed = (p, t = now()) => (p.rush || t < p.rushEnd + 0.3 ? RUSH_MAX_SPEED : MAX_SPEED);
 const inGrass = (tr, x, z) => tr.grass.some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
 const toSeekers = (room, msg) => { for (const s of seekersOf(room)) send(s, msg); };
+const ALERT_TTL = 6; // s a beacon lives; position is fixed at the moment of the event and never updated
+function alertSeekers(room, kind, x, z, ttl = ALERT_TTL) { // `alert` to the seeker; a bot seeker has no socket, so it also gets the same fixed fact in b.lastAlert
+  const m = { t: 'alert', kind, x, z, ttl };
+  for (const s of seekersOf(room)) { send(s, m); if (s.bot) s.lastAlert = { kind, x, z, t: now(), ttl }; }
+}
 const hidersLeft = (room) => (room.mode === 'trial' ? hidersOf(room).filter(isActive).length : hidersOf(room).length);
 
 // is hider `o` concealed from seeker `r` (grass)? Spec: crouched still 2.5 m, crouch-walking 4 m, standing 9 m, never when sprinting / injured-boosted
@@ -484,7 +489,7 @@ function startTrial(room) {
   ps.forEach((p, i) => {
     p.role = i === 0 ? 'seeker' : 'hider';
     Object.assign(p, { score: 0, tags: 0, lastTag: 0, hp: 0, mag: 0, res: 0, out: false, shots: 0, hits: 0, disguise: null, tint: null, tagT: 0, first: i === 0, y: 0, pitch: 0, c: 0,
-      st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, lastPos: 0, trapEnd: 0, cloakEnd: 0 });
+      st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, lastPos: 0, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
     if (i === 0) { p.cls = rnd(p.cls); room.trial.cls = p.cls; p.traps = p.cls === 'trapper' ? 3 : 0; Object.assign(p, { x: T.seekerStart.x, z: T.seekerStart.z, yaw: T.seekerStart.yaw || 0 }); }
     else { const [sx, sz] = spots[(i - 1) % spots.length], k = Math.floor((i - 1) / spots.length) * 1.2; p.x = sx + k; p.z = sz; p.yaw = Math.random() * Math.PI * 2; }
     p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map(); p.told = new Map();
@@ -525,7 +530,7 @@ function springTrap(room, s, h, trap) {
   const tr = room.trial; tr.traps.splice(tr.traps.indexOf(trap), 1); dropChan(room, h);
   h.trapped = Date.now() + T_.TRAP_HOLD_MS; h.speed = 0;
   if (h.st === 'free') { h.boostEnd = now() + T_.BOOST_S; setSt(room, h, 'injured'); }
-  s.traps++; send(s, { t: 'trap', i: trap.i, x: trap.x, z: trap.z, gone: 1 }); send(s, { t: 'alert', kind: 'trap', x: trap.x, z: trap.z }); send(s, powerMsg(s));
+  s.traps++; send(s, { t: 'trap', i: trap.i, x: trap.x, z: trap.z, gone: 1 }); alertSeekers(room, 'trap', trap.x, trap.z); send(s, powerMsg(s));
   broadcast(room, { t: 'trapped', id: h.id, i: trap.i });
 }
 
@@ -536,7 +541,7 @@ function chanOk(room, h, what, i, slack) {
   if (!ob || !canAct(h) || (room.phase !== 'hide' && room.phase !== 'seek')) return false;
   if (Math.hypot(ob.x - h.x, ob.z - h.z) > T_.INTERACT + slack) return false;
   if (what === 'relic') return !ob.done;
-  if (what === 'gate') return tr.gatesOpen;
+  if (what === 'gate') return tr.gatesOpen && tr.n >= T_.NEED;
   const o = ob.occ && room.players.get(ob.occ);
   return !!o && o !== h && o.st === 'caged';
 }
@@ -547,16 +552,18 @@ function startChannel(room, h, what, i) {
 }
 function stopChannel(room, h) { if (h.chan) dropChan(room, h); }
 
-function completeRelic(room, q, by) {
+function completeRelic(room, q, by, all = [by]) {
   const tr = room.trial;
+  if (q.done) return; // each relic counts exactly once and alerts exactly once
   q.done = true; q.p = 1; tr.n++;
   broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 1 });
   broadcast(room, { t: 'collected', i: q.i, n: tr.n, need: T_.NEED, by: by.id });
   by.score += 3;
-  toSeekers(room, { t: 'alert', kind: 'relic', x: q.x, z: q.z });
+  alertSeekers(room, 'relic', q.x, q.z);
+  for (const h of all) send(h, { t: 'exposed', ttl: ALERT_TTL }); // the collector(s) learn the seeker was told where they are
   if (tr.n >= T_.NEED && !tr.gatesOpen) {
     tr.gatesOpen = true; broadcast(room, { t: 'gates', open: true });
-    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z });
+    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z, ttl: ALERT_TTL });
   }
 }
 function trialChannels(room, t, dt) {
@@ -575,8 +582,8 @@ function trialChannels(room, t, dt) {
     if (q.done) continue;
     if (!q.cn.length) { if (q.on) { q.on = false; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 0 }); } q.p = Math.max(0, q.p - 0.1 * dt); continue; }
     q.on = true; q.p += (dt / T_.RELIC_S) * q.cn.length;
-    for (const h of q.cn) if (t >= h.screamT) { h.screamT = t + 2; if (Math.random() < T_.SCREAM_P) toSeekers(room, { t: 'alert', kind: 'scream', x: r2(h.x), z: r2(h.z) }); }
-    if (q.p >= 1) { for (const h of q.cn) h.chan = null; completeRelic(room, q, q.cn[0]); q.on = false; }
+    for (const h of q.cn) if (t >= h.screamT) { h.screamT = t + 2; if (Math.random() < T_.SCREAM_P) alertSeekers(room, 'scream', r2(h.x), r2(h.z), 3); }
+    if (q.p >= 1) { for (const h of q.cn) h.chan = null; completeRelic(room, q, q.cn[0], q.cn.slice()); q.on = false; }
     else if (t - q.pT >= 0.2) { q.pT = t; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: r2(q.p) }); }
   }
   for (const c of tr.cages) {
@@ -682,7 +689,7 @@ function finishTrial(room) { // hiders win when at least half (rounded up) escap
 // what bots (server/trialbots.js) may call: the same code paths as the message handlers
 const trialApiBase = {
   goTo: (room, b, x, z, st, speed) => { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.mv = st; b.speed = speed; }, // b.st is the health state in trial mode, so the bot's own movement label lives in b.mv
-  startChannel, stopChannel, swing: doSwing, usePower, hidersOf, seekersOf, now,
+  startChannel, stopChannel, swing: doSwing, usePower, hidersOf, seekersOf, now, concealed,
 };
 let TRIALBOTS = null;
 try { TRIALBOTS = require('./trialbots'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') console.error('trialbots failed to load', e); }
@@ -1009,7 +1016,7 @@ const handlers = {
     for (const q of room.players.values()) {
       if (q === p || Math.hypot(q.x - p.x, q.z - p.z) > NOISE_RANGE || hideGate(room, q, p)) continue;
       q.reveal.set(p.id, s + REVEAL_S);
-      if (q.bot) botHear(room, q, p.x, p.z); else send(q, msg);
+      if (q.bot) { if (room.mode === 'trial') q.heard = { x: p.x, z: p.z, t: s, k: m.k }; else botHear(room, q, p.x, p.z); } else send(q, msg); // trial bots decide for themselves (trialbots.js)
     }
   },
 };

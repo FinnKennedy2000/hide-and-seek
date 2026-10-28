@@ -79,7 +79,10 @@ export function initEngine() {
   try {
     const listener = new THREE.AudioListener(); camera.add(listener);
     const ctx = listener.context;
-    eng.ctx = ctx; eng.master = ctx.createGain(); eng.master.connect(ctx.destination);
+    eng.ctx = ctx; eng.master = ctx.createGain();
+    // brick-wall-ish limiter after the master: ceiling about -6 dBFS so stacked heartbeat / terror / alerts never clip
+    const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -9; lim.knee.value = 3; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.2;
+    const trim = ctx.createGain(); trim.gain.value = 0.7; eng.master.connect(lim); lim.connect(trim); trim.connect(ctx.destination);
     for (const k of ['sfx', 'music', 'ui']) { eng.buses[k] = ctx.createGain(); eng.buses[k].connect(eng.master); }
     wetOut = ctx.createGain(); wetOut.connect(eng.buses.sfx);
     eng.noise = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);

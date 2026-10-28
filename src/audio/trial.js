@@ -52,6 +52,8 @@ const SND = {
   thud: (o) => { osc(o, { f: 140, to: 50, dur: 0.3, vol: 0.55 }); noise(o, { freq: 500, type: 'lowpass', dur: 0.18, vol: 0.4 }); },
   swing: (o) => { noise(o, { freq: 500, to: 2600, q: 1.1, dur: 0.28, vol: 0.4 }); },
   snap: (o) => { noise(o, { freq: 2400, q: 1.5, dur: 0.07, vol: 0.5 }); osc(o, { f: 1500, to: 400, type: 'square', dur: 0.12, vol: 0.25, filt: ['bandpass', 1500, 4] }); SND.clank(o); },
+  stinger: (o) => { osc(o, { f: 110, to: 55, type: 'sawtooth', dur: 0.9, vol: 0.4, filt: ['lowpass', 500], att: 0.02 }); osc(o, { f: 233, to: 220, type: 'square', dur: 0.7, vol: 0.12, filt: ['lowpass', 900] }); noise(o, { freq: 300, type: 'lowpass', dur: 0.3, vol: 0.25 }); },
+  creak: (o) => { osc(o, { f: rnd(90, 140), to: rnd(180, 260), type: 'sawtooth', dur: rnd(0.8, 1.4), vol: 0.5, vib: 12, vibHz: 17, filt: ['bandpass', 380, 5], att: 0.2 }); },
   gate: (o) => { osc(o, { f: 60, to: 45, type: 'sawtooth', dur: 2.2, vol: 0.4, filt: ['lowpass', 220], att: 0.3 }); noise(o, { freq: 400, q: 2, dur: 2, vol: 0.2, to: 1100 }); for (let i = 0; i < 6; i++) osc(o, { f: 900 + i * 40, to: 700, type: 'square', t: 0.2 + i * 0.3, dur: 0.1, vol: 0.14, filt: ['bandpass', 900, 5] }); },
 };
 function shot(name, p, vol, secs, prio = 2, bus = 'sfx', arg) {
@@ -63,7 +65,7 @@ const CUEK = { relic: 'taunt', scream: 'shot', gate: 'puff', trap: 'scrape', cag
 export const alertSound = guard((kind, x, z) => {
   const p = pos(x, z);
   if (p) cueAt(CUEK[kind] || 'shot', p, 0.4);
-  if (kind === 'relic') shot('bell', p, 0.5, 1.6, 3, 'ui');
+  if (kind === 'relic') { shot('bell', p, 0.5, 1.6, 3, 'ui'); shot('stinger', null, 0.55, 1.2, 3, 'ui'); } // spatial bell at the fuse + a non-positional sting so it is heard from anywhere
   else if (kind === 'scream') shot('scream', p, 0.6, 1.2, 3, 'ui', false);
   else if (kind === 'gate') shot('siren', p, 0.45, 1.7, 3, 'ui');
   else if (kind === 'trap') shot('clank', p, 0.7, 0.5, 3, 'ui');
@@ -81,8 +83,8 @@ let hbK = 0, hbT = 0;
 function beat() {
   hbT = 0; if (hbK <= 0) return;
   if (ready()) {
-    const o = out(null, 0.25 + 0.65 * hbK, 3);
-    if (o) { osc(o, { f: 62, to: 40, dur: 0.16, vol: 0.9 }); osc(o, { f: 58, to: 38, t: 0.17 + 0.05 * (1 - hbK), dur: 0.15, vol: 0.65 }); noise(o, { freq: 140, type: 'lowpass', dur: 0.1, vol: 0.3 }); o.end(0.5); }
+    const o = out(null, 0.25 + 0.5 * hbK, 3);
+    if (o) { osc(o, { f: 62, to: 40, dur: 0.16, vol: 0.6 }); osc(o, { f: 58, to: 38, t: 0.17 + 0.05 * (1 - hbK), dur: 0.15, vol: 0.42 }); noise(o, { freq: 140, type: 'lowpass', dur: 0.1, vol: 0.2 }); o.end(0.5); }
   }
   hbT = setTimeout(beat, (1.15 - 0.62 * hbK) * 1000);
 }
@@ -125,7 +127,8 @@ function ambStart() {
     if (!ready()) return;
     const ang = Math.random() * 6.28, p = { x: P.x + Math.cos(ang) * 30, z: P.z + Math.sin(ang) * 30, y: 9 };
     if (Math.random() < 0.16) { const o = out(p, 0.35, 0, 'sfx'); if (o) { const n = 2 + ((Math.random() * 3) | 0); for (let i = 0; i < n; i++) osc(o, { f: rnd(520, 640), to: rnd(330, 400), type: 'sawtooth', t: i * 0.34, dur: 0.26, vol: 0.5, vib: 40, vibHz: 24, filt: ['bandpass', 900, 1.5], att: 0.03 }); o.end(n * 0.34 + 0.4); } }
-    else if (Math.random() < 0.5) { const o = out({ ...p, y: 0.5 }, 0.12, 0, 'sfx'); if (o) { for (let i = 0; i < 6; i++) osc(o, { f: 4300 + rnd(-80, 80), type: 'sine', t: i * 0.07, dur: 0.04, vol: 0.5 }); o.end(0.6); } }
+    else if (Math.random() < 0.3) { const o = out({ ...p, y: 2 }, 0.3, 0, 'sfx'); if (o) { SND.creak(o); o.end(1.6); } } // distant creak
+    else if (Math.random() < 0.6) { const o = out({ ...p, y: 0.5 }, 0.12, 0, 'sfx'); if (o) { for (let i = 0; i < 6; i++) osc(o, { f: 4300 + rnd(-80, 80), type: 'sine', t: i * 0.07, dur: 0.04, vol: 0.5 }); o.end(0.6); } }
   }, 3500);
   amb = { master, nodes, timer };
 }

@@ -2,13 +2,21 @@
 
 Every third-party asset: source URL and licence. CC0 or MIT only, no brands or logos. One section per workstream; append, never reorder.
 
-## Characters (Task 3)
+## Characters
+FIELD character asset pack (`public/models/characters/*.glb`): original models, textures and starter animations generated for this project in Blender
+(pack provenance: START_HERE.txt, no downloaded or ripped assets, no third-party attribution). Loaded by `src/characters/glb.js`; the procedural workwear
+humans (`src/characters/character.js`) are the fallback when a model fails to load. Lossless size pass with `@gltf-transform/cli` 4.5.1:
+`dedup`, `prune`, `webp --lossless true --effort 100` (base-colour sRGB and normal maps stay pixel-identical; geometry and animation untouched).
 
-| File | Source | Licence | Notes |
+| File | Role | Original | Shipped |
 | --- | --- | --- | --- |
-| `public/models/characters/robot.glb` | RobotExpressive.glb, three.js repo `examples/models/gltf/RobotExpressive/` (tag r170): https://github.com/mrdoob/three.js/tree/r170/examples/models/gltf/RobotExpressive | CC0 1.0. Model by Tomas Laulhe (Quaternius, https://quaternius.com), modified by Don McCurdy (face morph targets, FBX2GLTF conversion, material cleanup). The upstream README states "CC0 1.0". | Rebuilt with `src/characters/tools/build-model.mjs`: 12 rigid parts and 2 skinned hands merged into one skinned mesh (1 draw call), single vertex-coloured material with a per-vertex tint mask, simplified to about 3.2k triangles, 7 of 14 clips kept (Idle, Walking, Running, Jump, Death, Dance, Wave), face morphs dropped, meshopt-compressed (EXT_meshopt_compression). The model has no textures, so there is nothing to resize. 463 KB source, about 240 KB shipped. |
+| `moss_hider.glb` | hider | 2.12 MB | 1.45 MB |
+| `tracker_seeker.glb` | tracker | 3.74 MB | 2.38 MB |
+| `phantom_seeker.glb` | phantom | 1.74 MB | 0.93 MB |
+| `trapper_seeker.glb` | trapper | 3.40 MB | 2.14 MB |
+| `brute_seeker.glb` | charger (the Brute) | 3.92 MB | 2.37 MB |
 
-Hats and the seeker headband/goggles are generated in code (`src/characters/gear.js`), not downloaded.
+Total 19.24 MB -> 11.57 MB (-40%).
 
 ## Audio (public/audio/*.ogg), all CC0 (Creative Commons Zero), by Kenney (https://kenney.nl), copied unmodified
 - Impact Sounds 1.0, https://kenney.nl/assets/impact-sounds: footstep_wood / footstep_grass / footstep_concrete (step_*), impactPlate_light (step_tile), impactPunch_medium (hit), impactSoft_heavy (land), impactWood_light (prop_wood), impactMetal_light (prop_metal)
@@ -58,3 +66,9 @@ decimated (meshoptimizer simplify), textures resized and re-encoded as WebP, wri
 
 Ground textures (`public/textures/<set>/{c,n,r}_{1024,512}.webp`, Poly Haven 1k, CC0): `mud` = brown_mud_leaves_01, `dirt` = stony_dirt_path, `dryGrass` = withered_grass.
 (Kenney's Nature Kit was the first choice but its download endpoint is gated, so it is not used.)
+
+## Trial audio polish
+No new files. Fuse stinger, grass rustle, distant creaks, wind / cricket ambience, heartbeat and channel hum are all synthesised at runtime (src/audio/trial.js, src/audio/sfx.js). Footsteps reuse the Kenney CC0 set listed above. The master bus now ends in a limiter (threshold -9 dB, ratio 20, x0.7 trim) so peaks stay under about -6 dBFS.
+
+Coldwood Yard (polish pass): the layout reuses the models above. Sawmill, crane/gantry, water tower, log stacks, truck, rock banks, plank barriers and lamp posts are built from
+`b.box` geometry in `src/shared/maps/coldwood.js` (own work, no files). No new downloads, so the prop payload is unchanged (1.0 MB of prop GLBs; all textures 6.2 MB, of which Coldwood loads only mud, dirt, dryGrass, wood, wall).
