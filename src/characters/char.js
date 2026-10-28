@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { createCharacter as createProcedural, HATS, OUTFITS, SEEKER_CLASSES, STAND_TOP, CROUCH_TOP } from './character.js';
 import { createGlbCharacter, glbReady, glbStatus, onGlbReady, preloadGlb, MODEL_OF } from './glb.js';
+import { bus, EV } from '../core/bus.js';
+import { DEBUG } from '../core/state.js';
 export { HATS, OUTFITS, SEEKER_CLASSES, STAND_TOP, CROUCH_TOP };
 // 'loading' (not started or in flight) | 'ready' (all GLBs in use) | 'failed' (>= 1 model failed: those roles use the procedural humans; logged + assetFail toast)
 export const rigStatus = () => { const s = glbStatus(); return s === 'idle' ? 'loading' : s; };
@@ -33,7 +35,9 @@ export function splatMat(color) {
 
 
 const live = new Set(); // hybrids waiting for / using a model
-onGlbReady(() => { for (const h of live) h.refresh(); });
+onGlbReady(() => { for (const h of live) { try { h.refresh(); } catch (e) { console.error('[characters] upgrading a character to its GLB model failed:', e); } } });
+if (DEBUG) window.__rig = () => ({ status: rigStatus(), kinds: [...live].map((h) => h.kind) }); // debug signal: which characters are on the procedural fallback
+let warnedFallback = false;
 
 function hybrid({ color, hat, outfit, seeker, cls }, holder) {
   const outer = new THREE.Group(), st = { seeker: !!seeker, cls: SEEKER_CLASSES.includes(cls) ? cls : 'tracker', tint: null, amt: 0, crouchH: null, concealed: false, mode: null, held: true };
@@ -46,8 +50,8 @@ function hybrid({ color, hat, outfit, seeker, cls }, holder) {
     let n;
     if (kind === 'glb') {
       try { n = createGlbCharacter({ cls: st.cls, seeker: st.seeker, tint: swatch(color), hat }); }
-      catch (e) { console.error(`[characters] GLB character ${modelId()} could not be built, using the procedural human:`, e); }
-    }
+      catch (e) { console.error(`[characters] GLB character ${modelId()} could not be built, using the procedural human:`, e); bus.emit(EV.ASSET_FAIL, { group: 'characters', key: modelId(), url: '', error: String(e?.message || e) }); }
+    } else if (glbStatus() === 'failed' && !warnedFallback) { warnedFallback = true; console.warn(`[characters] ${modelId()} is on the procedural fallback (its GLB failed to load)`); }
     n ??= createProcedural({ color, hat, outfit, seeker: st.seeker, cls: st.cls });
     if (impl) { outer.remove(impl.root); impl.dispose(); }
     impl = n; outer.add(n.root); holder.userData.ownLod = n.kind === 'glb'; // perf/runtime.js swaps many-mesh characters for a capsule at range: the merged GLB models (2-5 meshes) are cheap, the procedural fallback is not

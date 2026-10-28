@@ -4,8 +4,9 @@ import { eng, voice } from './engine.js';
 import { P } from '../core/state.js';
 import { cueAt } from '../ui/hud.js';
 import { CULL } from './kinds.js';
+import { guarded } from '../shared/trial.js';
 
-const guard = (fn) => (...a) => { try { return fn(...a); } catch (e) { console.warn('trial audio', e); } };
+const guard = guarded('trial audio');
 const ready = () => eng.ctx && eng.ctx.state === 'running' && eng.buses.sfx;
 const rnd = (a, b) => a + Math.random() * (b - a);
 

@@ -1,4 +1,6 @@
 # Trial mode wire contract (PROTOCOL 5). Server and client MUST match this exactly.
+Shared numbers (alert ttl, boost / trap-hold seconds, rush / recovery, swing cooldowns, concealment radii and speed thresholds) live in `src/shared/trial.js`, imported by both sides.
+`st` (a hider's health) has one meaning everywhere: `free | injured | caged | out | escaped`. A bear-trap hold is a separate server clock (`trapped`, a `now()` seconds timestamp) and the `trapped` message; it is never a `st`.
 
 Mode id `trial` (add to MODES on the server and MODE_NAMES `TRIAL` on the client; it is the default mode for new rooms). Max 8 players, 1 seeker, rest hiders. Binary snapshots and `pos` are unchanged.
 
@@ -13,23 +15,25 @@ Speeds the client uses (P.mul multiplier on motion.js base walk 3.9 / sprint 6.8
 - `swing` seeker attack (server uses its own last known pos/yaw/pitch). Replies `swing {by, hit}` broadcast.
 - `power` seeker power: tracker burst / phantom cloak toggle (cloak again to end early) / trapper place trap at feet / charger rush. Server checks cooldown, replies with `power` state.
 - `vault {x,z}` optional no-op hint the client sends at vault start (server may ignore).
+- The `crouch` value in `pos` (`c`) is client-claimed: the server only treats a hider as crouched for concealment while its derived speed is <= CROUCH_MAX_SPEED (3 m/s; crouch-walk is 2).
 
 ## Server -> client
 - `round` (existing fields) plus, when mode==='trial': `cls` (the seeker's class id), `relics: [{i,x,z,id}]` (the 6 chosen, i is 0..5, id = the map's candidate name, e.g. `R3`), `gates: [{i,x,z}]`, `cages: [{i,x,z}]`, `grass: [{x0,x1,z0,z1}]` (the concealment cores), `vaults: [{x,z,ax,w?,h?,sill?}]` (w = window width, sill = visible sill height), `need: 3`, `trialSecs`. Hiders spawn at map.trial.hiderSpawns picked by `pickSpawns` (walking distance >= 40 m from the seeker start, out of its sight, spread >= 12 m apart, falling back to the farthest when too few qualify), seeker at map.trial.seekerStart. Seeker is frozen for HIDE_SECS.
 - `prog {what,i,p}` p 0..1, broadcast to all at <=5 Hz while a channel is active and once more with p=0 on cancel (relic keeps its progress when cancelled; regress at 0.1/s only when nobody is on it - server detail), p=1 when done.
 - `collected {i, n, need, by}` broadcast when a relic completes, exactly once per relic (n = relics done so far; the UI calls them fuses, wire names unchanged). Server also sends the seeker `alert {kind:'relic', x, z, ttl}` and the collector `exposed {ttl}`. Gates open only when n >= need; a gate channel is only accepted while open, and `escaped` is only ever granted by completing the 3 s gate channel in range. Everything (relics, alerts, states, cages, traps, cooldowns, bot memory) is reset by the next `round`.
-- `alert {kind:'relic'|'scream'|'gate'|'trap'|'cage'|'hit', x, z, ttl}`: seeker only (kind 'gate' goes to everyone when gates open or when a gate starts opening: x,z = gate). `ttl` = seconds the beacon lives (default 6; scream 3). x,z are fixed at the moment of the event; the server never sends an update for an alert and never tracks the collector afterwards. Client draws the beacon at x,z for `ttl` s + an HUD edge arrow. Bot seekers get the same fact in `b.lastAlert`.
+- `alert {kind:'relic'|'scream'|'gate'|'trap', x, z, ttl}` (the client's beacon styles also know 'cage' and 'hit' but the server never sends them: cages and hits already reach the seeker's own screen): seeker only (kind 'gate' goes to everyone when gates open or when a gate starts opening: x,z = gate). `ttl` = seconds the beacon lives (ALERT_TTL 6 for relic / gate / trap; scream 3). The gate beacon also uses 6 s on the client (it used to use 12). x,z are fixed at the moment of the event; the server never sends an update for an alert and never tracks the collector afterwards. Client draws the beacon at x,z for `ttl` s + an HUD edge arrow. Bot seekers get the same fact in `b.lastAlert`.
 - `exposed {ttl}` to the hider(s) who just completed a relic (the UI says "fuse"): the seeker was alerted to that spot for `ttl` s (6). Sent once per relic, never for a duplicate completion.
 - `gates {open:true}` broadcast when n===need (also in resume `round` as `gatesOpen`).
-- `hurt {id, st, cage?}` broadcast: st in `injured` (hit once or trap), `caged` (cage = cage index; player teleported by the next snapshot, client plays caged pose), `free` (rescued -> injured), `out` (eliminated), `escaped`. Also `swing {by, hit: id|0}`.
+- `hurt {id, st, cage?}` broadcast: st in `injured` (hit once or trap), `caged` (cage = cage index; player teleported by the next snapshot, client plays caged pose), `out` (eliminated), `escaped`. A rescue is `hurt {st:'injured', rescued:1}` (the hider is back as injured; there is no `free` hurt any more: `free` is only the starting state). Also `swing {by, hit: id|0}`.
 - `terror {k}` to hiders only, k 0..1 (1 = on top of you), sent when the 0.1-rounded value changes (max 5 Hz); 0 once when leaving the radius. Phantom cloaked: always 0.
-- `marks [{x,z}]` to the tracker only, appended (max 40 kept client-side): scratch marks hiders leave while sprinting (every 0.5 s) or injured (every 0.8 s, blood).
-- `pulse [{id,x,z}]` to the seeker for scent burst (3 s beacons). Also sent for trap springs? No: that is `alert trap`.
+- `marks {marks:[{x,z}]}` to the tracker only (the client also accepts a bare array), appended (max 40 kept client-side): scratch marks hiders leave while sprinting (every 0.5 s) or injured (every 0.8 s, blood).
+- `pulse {pulse:[{id,x,z}]}` to the seeker for scent burst (3 s beacons; bare array also accepted). Also sent for trap springs? No: that is `alert trap`.
 - `power {cls, cd, on, n}` to the seeker whenever its power state changes: cd seconds left, on = power currently active (cloak/rush), n = traps carried (trapper) else 0. Broadcast `cloak {id,on}` to everyone (fx only; hiders still receive no position for a cloaked seeker beyond 3 m... actually none, except within 3 m).
-- `trap {i,x,z,gone?}` to the seeker only: placed / sprung (gone:1). `trapped {id, i}` broadcast when sprung (hider id, held 2.5 s).
-- `end {winner:'hiders'|'seekers', mode:'trial', players:[{id,name,color,role,score,total,tags, st:'escaped'|'out'|'free'|'caged'|null}], escaped, out}`.
+- `trap {i,x,z,gone?}` to the seeker only: placed / sprung (gone:1). `trapped {id, i}` broadcast when sprung (hider id, held TRAP_HOLD_S = 2.5 s; the hider's `st` is `injured` for the whole hold and the client returns to normal injured movement when the hold ends).
+- `chanx {what, i}` to a hider whose `interact start` was refused (out of range, target done, gates not open ...): the client drops its assumed channelling state. A `stop` or a server-side cancel needs no reply (`prog p:0` for gates / cages / relics, or the `hurt`).
+- `end {winner:'hiders'|'seekers', mode:'trial', players:[{id,name,color,role,score,total,tags, st:'escaped'|'out'|'injured'|'free'|'caged'|null}], escaped, out}`.
 - Scores: relic done +3 (channeller), gate escape +5, rescue +4, hit +2 (seeker), cage +3 (seeker), escape of last... keep simple; hiders `score` also +1 per 10 s alive as today.
-- resume (`round {resume:1,...}`) must carry relics progress/done flags: `relics: [{i,x,z,p,done}]`, `gatesOpen`, and `states: {id: st}`.
+- resume (`round {resume:1,...}`) carries everything needed to rebuild the round: `relics: [{i,x,z,p,done}]`, `gatesOpen`, `states: {id: st}`, `n` (fuses done), `caged: [{i, occ}]` (occ = id of the hider in cage i, 0 = empty), `power` (seeker only: the `power` message shape) and `trapT` (hider: seconds of trap hold left). The client rebuilds cage occupancy, power / traps, relic progress, and its own state from them.
 - Reuse `phase`, `snap`, `room`, `noise`, `conn`, `err`.
 
 ## Concealment (server, `visible()`)

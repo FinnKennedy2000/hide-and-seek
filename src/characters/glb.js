@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadGroup } from '../core/assets.js';
+import { bus, EV } from '../core/bus.js';
 
 export const MODEL_URL = (id) => `/models/characters/${id}.glb`;
 export const MODEL_OF = { hider: 'moss_hider', tracker: 'tracker_seeker', phantom: 'phantom_seeker', trapper: 'trapper_seeker', charger: 'brute_seeker' };
@@ -90,11 +91,11 @@ export function preloadGlb() {
     const failed = [];
     for (const id of ids) {
       try { const g = got.get(id); if (!g) throw new Error('download/parse failed (see asset warning above)'); templates.set(id, buildTemplate(id, g)); }
-      catch (e) { failed.push(id); console.error(`[characters] GLB ${id} unusable, procedural fallback for it:`, e); }
+      catch (e) { failed.push(id); console.error(`[characters] GLB ${id} unusable, procedural fallback for it:`, e); bus.emit(EV.ASSET_FAIL, { group: 'characters', key: id, url: MODEL_URL(id), error: String(e?.message || e) }); } // (hud.js shows the 'using fallbacks' toast)
     }
     status = failed.length ? 'failed' : 'ready'; // 'failed' = at least one role falls back; glbReady(id) says which
     if (failed.length) console.error(`[characters] GLB models failed: ${failed.join(', ')}`);
-    for (const fn of [...waiting]) fn();
+    for (const fn of [...waiting]) { try { fn(); } catch (e) { console.error('[characters] onGlbReady callback threw:', e); } }
   });
 }
 

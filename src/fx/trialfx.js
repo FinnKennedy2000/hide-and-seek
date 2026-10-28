@@ -4,9 +4,10 @@ import * as THREE from 'three';
 import { scene } from '../render/renderer.js';
 import { burst } from '../render/fx.js';
 import { addSystem } from '../core/loop.js';
+import { guarded } from '../shared/trial.js';
 
 const C = { relic: 0xffb44d, scream: 0xff3a48, gate: 0x5ec8ff, trap: 0xff6a3d, cage: 0xff3a48, hit: 0xffffff, red: 0xff2a2a, green: 0x39ff7a };
-const guard = (fn) => (...a) => { try { return fn(...a); } catch (e) { console.warn('trialfx', e); } };
+const guard = guarded('trialfx');
 
 // ----- shared resources (built lazily, disposed in clearRoundProps)
 let R = null;

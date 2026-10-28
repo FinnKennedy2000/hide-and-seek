@@ -22,7 +22,7 @@ export function syncClock(stMs, local) {
 }
 export const remotes = new Map(); // id -> avatar
 if (typeof window !== "undefined" && new URLSearchParams(location.search).has("debug")) window.__remotes = remotes; // debug hook (playtests)
-export const opts = { cone: true, hideHiders: false }; // set per round by online.js
+export const opts = { cone: true, hideHiders: false, grass: [] }; // set per round by online.js (grass: trial concealment rects, set by modes/trial.js)
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 const coneH = 5;
@@ -173,7 +173,7 @@ export function updateRemotes(now, localSeeker = false, dt = 0) {
     a.root.visible = !a.hidden && !(opts.hideHiders && !localSeeker && !a.seeker);
     // name tags are a teammate aid only: hiders see other hiders' tags within 10 m, never while crouched or disguised; seekers see none
     if (a.tag) { a.tag.position.y = 2.0 - 0.6 * s.c; a.tag.visible = !a.prop && !a.seeker && !localSeeker && s.c < 0.3 && (a.dist ?? 99) < 10; }
-    if (!a.prop) setConcealed(a.body, s.c > 0.5 && !!a.inGrass); // grass agent sets a.inGrass; no shadow shape out of the grass
+    if (!a.prop) setConcealed(a.body, s.c > 0.5 && opts.grass.some((g) => s.x >= g.x0 && s.x <= g.x1 && s.z >= g.z0 && s.z <= g.z1)); // trial grass rects; no shadow shape out of the grass
   }
 }
 

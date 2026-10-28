@@ -11,10 +11,23 @@ import { applyTps, applyFps, swapShoulder, resetArm } from '../camera/index.js';
 import { addShake, clearShake } from '../fx/shake.js';
 import { colliders, bounds } from '../world/build.js';
 import { MAPS } from '../shared/maps/index.js';
+import { ALERT_TTL, BOOST_S, TRAP_HOLD_S, RUSH_S, RECOVER_S, SWING_HIT_CD, SWING_MISS_CD } from '../shared/trial.js';
+import { setHeld } from '../characters/index.js';
 
-// The UI / FX / audio modules are written by another engineer: load them if present and call through `?.` so a missing module or function is a no-op.
+// The UI / FX / audio modules are loaded by glob and called through `?.`, so a missing one never crashes a round. That must not be silent:
+// every export this file calls is listed here and anything absent is console.error'd once at load.
 const mods = import.meta.glob(['../ui/trialhud.js', '../fx/trialfx.js', '../audio/trial.js'], { eager: true });
-const UI = mods['../ui/trialhud.js'] || {}, FX = mods['../fx/trialfx.js'] || {}, AU = mods['../audio/trial.js'] || {};
+const REQUIRED = {
+  '../ui/trialhud.js': ['concealed', 'edgeAlert', 'exposed', 'gatesOpen', 'hideTrialHud', 'initTrialHud', 'relicDone', 'resetTrialHud', 'setPlayerState', 'setPower', 'setPrompt', 'setRelicProgress', 'showResults', 'terror', 'tickTrialHud'],
+  '../fx/trialfx.js': ['beacon', 'buildRoundProps', 'cageOccupied', 'clearRoundProps', 'cloakFx', 'mark', 'openGates', 'placeTrap', 'relicDone', 'removeTrap', 'setRelicProgress'],
+  '../audio/trial.js': ['alertSound', 'chanLoop', 'gateSound', 'heartbeat', 'hitSound', 'startAmbient', 'stopAmbient', 'swingSound', 'trapSound'],
+};
+const loadMod = (path) => {
+  const m = mods[path], missing = m ? REQUIRED[path].filter((k) => typeof m[k] !== 'function') : ['(whole module)'];
+  if (missing.length) console.error(`[trial] ${path} ${m ? 'is missing exports' : 'did not load'}: ${missing.join(', ')}; those hooks are no-ops`);
+  return m || {};
+};
+const UI = loadMod('../ui/trialhud.js'), FX = loadMod('../fx/trialfx.js'), AU = loadMod('../audio/trial.js');
 
 export const CLASSES = {
   tracker: { name: 'The Tracker', desc: 'Sees scratch marks hiders leave while sprinting. Power: Scent Burst reveals hiders within 28 m for 3 s (30 s cooldown).' },
@@ -26,6 +39,9 @@ const INTERACT_R = 2.0, VAULT_R = 1.1, VAULT_ALONG = 1.8, VAULT_OUT = 1.6, VAULT
 const now = () => performance.now() / 1000;
 const DONE = new Set(['out', 'escaped']);
 
+// T is the round state. Wire fields come from the `round` message (see docs/TRIAL-PROTOCOL.md): relics / gates / cages / grass / vaults / need / cls / gatesOpen / states.
+// cageOcc {cageIdx: hiderId} who sits in which cage; states {id: st} health of every hider (free | injured | caged | out | escaped); st = my own health, trapT = seconds left held by a trap
+// (st stays 'trapped' only while trapT > 0, then it becomes 'injured'); boostT = injured speed boost left; power {cls,cd,on,n,at}: cd seconds at time `at`, n = traps carried.
 const T = { on: false, id: 0, role: 'hider', send() {}, nameOf: () => '?', teleport() {}, self: null, av: null, phase: 'hide', cls: null,
   relics: [], gates: [], cages: [], grass: [], vaults: [], need: 3, n: 0, gatesOpen: false, cageOcc: {}, states: {}, prog: {}, alerts: [], traps: new Map(), marks: [],
   st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0, rs: 0, exposedUntil: 0, cageIdx: -1, heading: 0, rotY: 0, fc: { x: 0, y: 2, z: 0 }, concealed: false,
@@ -44,24 +60,30 @@ export function begin(ctx) {
   const m = ctx.m;
   Object.assign(T, { on: true, id: ctx.id, role: ctx.role, send: ctx.send, nameOf: ctx.nameOf, teleport: ctx.teleport, self: ctx.self, phase: m.phase || 'hide', cls: m.cls || null,
     relics: (m.relics || []).map((r) => ({ ...r, p: r.p || 0, done: !!r.done })), gates: m.gates || [], cages: m.cages || [], grass: m.grass || [], vaults: m.vaults || [], need: m.need || 3,
-    gatesOpen: !!m.gatesOpen, cageOcc: {}, states: m.states || {}, prog: {}, alerts: [], marks: [], rs: 0, exposedUntil: 0, cageIdx: -1, n: 0, st: 'free', boostT: 0, trapT: 0, chan: null, eLock: false, vault: null, vaultCd: 0,
+    gatesOpen: !!m.gatesOpen, cageOcc: {}, states: m.states || {}, prog: {}, alerts: [], marks: [], rs: 0, exposedUntil: 0, cageIdx: -1, n: 0, st: 'free', boostT: 0, trapT: Math.max(0, +m.trapT || 0), chan: null, eLock: false, vault: null, vaultCd: 0,
     heading: P.yaw + Math.PI, rotY: P.yaw + Math.PI, concealed: false, swingCd: 0, swingAge: 9, power: { cls: m.cls || null, cd: 0, on: false, n: 0, at: now() }, rushT: 0, recT: 0, terror: 0 });
-  T.n = T.relics.filter((r) => r.done).length; T.traps.clear();
-  for (const [id, s] of Object.entries(T.states)) if (+id === T.id) T.st = s === 'free' ? 'injured' : s;
-  R.opts.cone = false; R.opts.hideHiders = false; camera.near = 0.05; camera.updateProjectionMatrix(); resetArm(); clearShake(); body();
+  T.n = Number.isFinite(m.n) ? m.n : T.relics.filter((r) => r.done).length; T.traps.clear();
+  if (m.power) T.power = { cls: m.power.cls, cd: m.power.cd, on: !!m.power.on, n: m.power.n, at: now() }; // resume: the seeker's cooldown / traps left
+  for (const c of m.caged || []) if (c.occ) T.cageOcc[c.i] = c.occ; // resume: who is in which cage
+  if (T.states[T.id]) T.st = T.states[T.id];
+  if (T.st === 'caged') T.cageIdx = Number(Object.keys(T.cageOcc).find((k) => T.cageOcc[k] === T.id) ?? -1);
+  if (T.trapT > 0 && T.st === 'injured') T.st = 'trapped'; // (the server sends injured while a trap holds: the hold is its own clock)
+  R.opts.cone = false; R.opts.hideHiders = false; R.opts.grass = T.grass;
+  for (const a of R.remotes.values()) if (a.seeker && T.cls === 'trapper') setHeld(a.body, false); // the server never tells hiders how many traps are left, so the carried trap is not shown camera.near = 0.05; camera.updateProjectionMatrix(); resetArm(); clearShake(); body();
   if (T.role === 'hider') T.av = R.makeAvatar(null, T.self.color, false, T.self.hat, T.self.pattern);
   FX.clearRoundProps?.(); FX.buildRoundProps?.({ relics: T.relics, gates: T.gates, cages: T.cages, vaults: T.vaults, scenery: !!MAPS[m.map]?.trial?.scenery });
   UI.initTrialHud?.(); UI.resetTrialHud?.({ role: T.role, cls: T.cls, need: T.need, relics: T.relics, gates: T.gates, cages: T.cages });
   T.relics.forEach((r) => { if (r.p) { FX.setRelicProgress?.(r.i, r.p); UI.setRelicProgress?.(r.i, r.p); } if (r.done) { FX.relicDone?.(r.i); } });
   if (T.gatesOpen) { FX.openGates?.(); UI.gatesOpen?.(); }
-  if (T.role === 'seeker') UI.setPower?.({ cls: T.cls, cd: 0, on: false, n: T.cls === 'trapper' ? 3 : 0 });
+  for (const k of Object.keys(T.cageOcc)) FX.cageOccupied?.(+k, true);
+  if (T.role === 'seeker') UI.setPower?.({ cls: T.cls, cd: m.power ? m.power.cd : 0, on: T.power.on, n: m.power ? m.power.n : T.cls === 'trapper' ? 3 : 0 });
   AU.startAmbient?.(); // the controls card is shown by ui/onboarding.js (H re-opens it)
 }
 export function end() {
   if (!T.on) return;
   if (T.av) { R.disposeAvatar(T.av); T.av = null; }
   Object.assign(T, { on: false, chan: null, vault: null, relics: [], gates: [], cages: [], grass: [], vaults: [], n: 0, gatesOpen: false, cageOcc: {}, states: {}, prog: {}, alerts: [], marks: [], st: 'free', boostT: 0, trapT: 0, eLock: false, exposedUntil: 0, cageIdx: -1, concealed: false, terror: 0, rushT: 0, recT: 0, power: { cls: null, cd: 0, on: false, n: 0, at: 0 } });
-  T.traps.clear(); body(); P.r = 0.3; camera.near = 0.08; camera.updateProjectionMatrix();
+  T.traps.clear(); R.opts.grass = []; body(); P.r = 0.3; camera.near = 0.08; camera.updateProjectionMatrix();
   AU.chanLoop?.(false); AU.heartbeat?.(0); AU.stopAmbient?.(); clearShake(); UI.hideTrialHud?.(); UI.setPrompt?.(null, null); UI.concealed?.(false); UI.terror?.(0);
   FX.clearRoundProps?.();
 }
@@ -72,8 +94,8 @@ export const vaulting = () => !!T.vault;
 // ---------- per-frame
 export function frame(dt, frozen, phase) {
   T.phase = phase; T.vaultCd -= dt; T.swingCd -= dt; T.swingAge += dt;
-  if (T.trapT > 0) T.trapT -= dt; else if (T.boostT > 0) T.boostT -= dt;
-  if (T.rushT > 0) { T.rushT -= dt; if (T.rushT <= 0) T.recT = 1; } else if (T.recT > 0) T.recT -= dt;
+  if (T.trapT > 0) { T.trapT -= dt; if (T.trapT <= 0 && T.st === 'trapped') T.st = 'injured'; } else if (T.boostT > 0) T.boostT -= dt;
+  if (T.rushT > 0) { T.rushT -= dt; if (T.rushT <= 0) T.recT = RECOVER_S; } else if (T.recT > 0) T.recT -= dt;
   const seeker = T.role === 'seeker';
   remoteSteps(dt);
   // speed multiplier by state (server owns the real caps)
@@ -245,7 +267,7 @@ export function onKey(code) {
 }
 export function fire() {
   if (!T.on || T.role !== 'seeker' || T.phase !== 'seek' || T.swingCd > 0 || T.vault) return;
-  T.swingCd = 1.6; T.swingAge = 0; T.send('swing'); AU.swingSound?.(); addShake(0.25);
+  T.swingCd = SWING_MISS_CD; T.swingAge = 0; T.send('swing'); AU.swingSound?.(); addShake(0.25);
 }
 function power() {
   if (T.role !== 'seeker' || T.phase !== 'seek') return;
@@ -274,17 +296,17 @@ export function onHurt(m, feed) {
   if (me) {
     stopChan(false); T.vault = null; P.y = 0;
     if (m.st === 'caged') { T.st = 'caged'; T.cageIdx = m.cage; const c = T.cages[m.cage]; if (c) T.teleport(c.x, c.z); toast('CAGED - WAIT FOR A RESCUE', 'bad'); }
-    else if (m.st === 'injured' || m.st === 'free') { T.st = 'injured'; T.boostT = 2; if (m.st === 'injured') { toast('INJURED - RUN!', 'bad'); AU.hitSound?.(); addShake(0.5); } else toast('YOU WERE FREED', 'good'); }
+    else if (m.st === 'injured') { T.st = 'injured'; T.boostT = BOOST_S; if (m.rescued) toast('YOU WERE FREED', 'good'); else { toast('INJURED - RUN!', 'bad'); AU.hitSound?.(); addShake(0.5); } }
     else if (m.st === 'out') { T.st = 'out'; T.fc.x = camera.position.x; T.fc.y = camera.position.y; T.fc.z = camera.position.z; toast("YOU'RE OUT - SPECTATING", 'bad'); }
     else if (m.st === 'escaped') { T.st = 'escaped'; T.fc.x = camera.position.x; T.fc.y = camera.position.y + 2; T.fc.z = camera.position.z; toast('YOU ESCAPED!', 'good'); }
     if (T.av && out()) T.av.root.visible = false;
     return;
   }
-  R.setRemoteState(m.id, m.st === 'free' ? 'injured' : m.st);
-  feed?.(m.st === 'caged' ? `${who} was caged` : m.st === 'out' ? `${who} is out` : m.st === 'escaped' ? `${who} escaped` : m.st === 'free' ? `${who} was freed` : `${who} was hit`);
-  if (m.st === 'injured' || m.st === 'caged') { const a = R.remotes.get(m.id); if (a) R.flinchAvatar(a); }
+  R.setRemoteState(m.id, m.st);
+  feed?.(m.st === 'caged' ? `${who} was caged` : m.st === 'out' ? `${who} is out` : m.st === 'escaped' ? `${who} escaped` : m.rescued ? `${who} was freed` : `${who} was hit`);
+  if ((m.st === 'injured' && !m.rescued) || m.st === 'caged') { const a = R.remotes.get(m.id); if (a) R.flinchAvatar(a); }
 }
-export function onTrapped(m) { if (m.id === T.id) { T.trapT = 2.5; T.st = 'trapped'; toast('TRAPPED!', 'bad'); AU.trapSound?.(P.x, P.z); stopChan(false); } else R.setRemoteState(m.id, 'trapped'); }
+export function onTrapped(m) { if (m.id === T.id) { T.trapT = TRAP_HOLD_S; T.st = 'trapped'; toast('TRAPPED!', 'bad'); AU.trapSound?.(P.x, P.z); stopChan(false); } else R.setRemoteState(m.id, 'trapped'); }
 export function onProg(m) {
   T.prog[m.what + m.i] = m.p;
   if (m.what === 'relic') { const r = T.relics.find((q) => q.i === m.i); if (r) r.p = m.p; FX.setRelicProgress?.(m.i, m.p); UI.setRelicProgress?.(m.i, m.p); }
@@ -293,12 +315,15 @@ export function onCollected(m, feed) {
   const r = T.relics.find((q) => q.i === m.i); if (r) { r.done = true; r.p = 1; }
   T.n = m.n; FX.relicDone?.(m.i); UI.relicDone?.(m.n, m.need, T.nameOf(m.by)); feed?.(`${T.nameOf(m.by)} installed a fuse (${m.n}/${m.need})`, '#80ed99');
   if (T.chan?.what === 'relic' && T.chan.i === m.i) { T.chan = null; AU.chanLoop?.(false); }
-  if (m.by === T.id) onExposed({ ttl: 6 }); // the server's own `exposed` (if it sends one) refreshes this
+}
+// the server refused an `interact start` (out of range, target done, not yet open ...): drop the channelling state we assumed
+export function onChanx(m) {
+  if (T.chan && T.chan.what === m.what && T.chan.i === m.i) { T.chan = null; AU.chanLoop?.(false); T.eLock = !!keys.KeyE; }
 }
 export function onGates() {
   if (T.gatesOpen) return; // already powered (a resume, or the server repeated itself)
   T.gatesOpen = true; FX.openGates?.(); UI.gatesOpen?.(); AU.gateSound?.();
-  for (const g of T.gates) { FX.beacon?.(g.x, g.z, 12, 'gate'); addAlert('gate', g.x, g.z, 12); }
+  for (const g of T.gates) { FX.beacon?.(g.x, g.z, ALERT_TTL, 'gate'); addAlert('gate', g.x, g.z, ALERT_TTL); }
 }
 // alerts are pinned to the coordinates in the message (the spot at collection time) and expire on their own; they never track a player
 function addAlert(kind, x, z, secs) {
@@ -307,12 +332,12 @@ function addAlert(kind, x, z, secs) {
 }
 export function onAlert(m) {
   if (!Number.isFinite(m.x) || !Number.isFinite(m.z)) return;
-  const secs = m.ttl > 0 ? Math.min(30, m.ttl) : m.kind === 'scream' ? 3 : 6;
+  const secs = m.ttl > 0 ? Math.min(30, m.ttl) : m.kind === 'scream' ? 3 : ALERT_TTL;
   addAlert(m.kind, m.x, m.z, secs);
   FX.beacon?.(m.x, m.z, secs, m.kind); AU.alertSound?.(m.kind, m.x, m.z);
 }
 export function onExposed(m) {
-  const ttl = m?.ttl > 0 ? m.ttl : 6; T.exposedUntil = now() + ttl;
+  const ttl = m?.ttl > 0 ? m.ttl : ALERT_TTL; T.exposedUntil = now() + ttl;
   toast('You alerted the killer', 'warn'); UI.exposed?.(ttl);
 }
 export function onTerror(m) { T.terror = m.k; UI.terror?.(m.k); AU.heartbeat?.(m.k); }
@@ -320,14 +345,15 @@ export function onMarks(list) { for (const q of list) { T.marks.push(q); FX.mark
 export function onPulse(list) { for (const q of list) FX.beacon?.(q.x, q.z, 3, 'pulse'); }
 export function onPower(m) {
   const was = T.power; T.power = { cls: m.cls, cd: m.cd, on: !!m.on, n: m.n, at: now() };
-  if (m.cls === 'charger' && m.on && !was.on) { T.rushT = 1.6; T.recT = 0; }
+  if (m.cls === 'charger' && m.on && !was.on) { T.rushT = RUSH_S; T.recT = 0; }
   UI.setPower?.({ cls: m.cls, cd: m.cd, on: m.on, n: m.n });
+  if (T.av) setHeld(T.av.body, m.cls !== 'trapper' || m.n > 0); // the Trapper's carried trap is only shown while he has one (the local seeker has no avatar: FPS)
   if (m.cls === 'phantom' && m.on !== was.on) toast(m.on ? 'CLOAKED' : 'CLOAK ENDED', 'warn');
 }
 export function onCloak(m) { if (m.id === T.id) return; const a = R.remotes.get(m.id); if (a) FX.cloakFx?.(a.root, !!m.on); }
 export function onTrap(m) { if (m.gone) { T.traps.delete(m.i); FX.removeTrap?.(m.i); } else { T.traps.set(m.i, m); FX.placeTrap?.(m.i, m.x, m.z); } }
 export function onSwing(m) {
-  if (m.by === T.id) { if (m.hit) T.swingCd = Math.min(T.swingCd, Math.max(0, 1.0 - T.swingAge)); return; }
+  if (m.by === T.id) { if (m.hit) T.swingCd = Math.min(T.swingCd, Math.max(0, SWING_HIT_CD - T.swingAge)); return; }
   const a = R.remotes.get(m.by); if (a) R.flinchAvatar(a);
   if (m.hit) AU.hitSound?.();
 }

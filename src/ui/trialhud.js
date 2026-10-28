@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { $ } from '../core/util.js';
 import { settings } from '../core/settings.js';
+import { guarded } from '../shared/trial.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (inner, vb = '0 0 24 24') => `<svg viewBox="${vb}" aria-hidden="true" focusable="false">${inner}</svg>`;
@@ -35,7 +36,7 @@ const el = {};
 let toastT = 0, bannerT = 0, expT = 0;
 
 function mk(tag, cls, html, parent) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; parent?.append(e); return e; }
-function safe(fn) { return (...a) => { try { return fn(...a); } catch (e) { console.warn('trialhud', e); } }; }
+const safe = guarded('trialhud');
 
 function build() {
   if (T.built) return true;

@@ -128,12 +128,16 @@ const r2 = (v) => Math.round(v * 100) / 100;
 const cleanName = (n) => (typeof n === 'string' ? n.replace(/[^\x20-\x7e]/g, '').trim().slice(0, 16) : '') || 'Player';
 const BOT_WS = { readyState: 0, send() {} }; // bots have no socket: every send() to them is a no-op
 
+// per-player trial state, the one place its fields are defined (new players and every trial round start from this).
+// st = health only: free | injured | caged | out | escaped (a trap hold is a clock, `trapped`, never a st).
+// Clocks are all `now()` seconds: trapped / boostEnd / rushEnd / cdEnd / cloakEnd / trapEnd / swingEnd / screamT / markT / terrT / gpT; cageT counts down.
+const trialState = () => ({ st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
 function newPlayer(ws, bot = false) {
   return {
     id: allocId(), ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, c: 0, lastPos: 0, lastTag: 0, lastNoise: 0, tokens: 120, tokT: Date.now(),
     ack: 0, budget: BUDGET_CAP, budgetT: Date.now(), rtt: 0, rtts: [], pings: new Set(), lastPingS: 0, told: new Map(), ip: '', disc: 0,
-    cls: 'random', st: 'free', chan: null, speed: 0, cloak: false, rush: false, rushEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, cdEnd: 0, traps: 0,
+    cls: 'random', ...trialState(),
     hist: [], sent: new Map(), seen: new Map(), reveal: new Map(), // lag-comp history; per-receiver snapshot state (what we sent / when each player was last in LOS / sound reveals)
   };
 }
@@ -225,7 +229,7 @@ function startRound(room) {
     else { const [x, z] = spots[(i - nSeek) % spots.length]; p.x = x; p.z = z; p.yaw = Math.random() * Math.PI * 2; }
     p.y = 0; p.pitch = 0; p.c = 0;
     p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map(); p.told = new Map();
-    Object.assign(p, { st: 'init', path: null, pi: 0, heading: p.yaw - Math.PI, spot: null, visited: new Set(), detect: 0 }); // bot brain
+    Object.assign(p, { bst: 'init', path: null, pi: 0, heading: p.yaw - Math.PI, spot: null, visited: new Set(), detect: 0 }); // bot brain
     spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
   });
   room.phase = 'hide'; room.lt = 0;
@@ -441,7 +445,8 @@ function doTag(room, p, target) { // classic tag, range already checked
 // ======================================================================
 // trial mode (docs/TRIAL-PROTOCOL.md): relics -> gates -> escape, one seeker with a class, hits / injured / cage / rescue
 // ======================================================================
-const T_ = { RELICS: 6, NEED: 3, RELIC_S: 6, GATE_S: 3, FREE_S: 4, CAGE_S: 40, BOOST_S: 2, SWING: 2.4, LUNGE: 3.4, CONE: Math.cos(30 * Math.PI / 180), HIT_CD: 1.0, MISS_CD: 1.6, TERROR_R: 24, INTERACT: 2.2, SCREAM_P: 0.25, SCAN: 28, TRAP_R: 0.9, TRAP_HOLD_MS: 2500 };
+const T_ = { RELICS: 6, NEED: 3, RELIC_S: 6, GATE_S: 3, FREE_S: 4, CAGE_S: 40, SWING: 2.4, LUNGE: 3.4, CONE: Math.cos(30 * Math.PI / 180), TERROR_R: 24, INTERACT: 2.2, SCREAM_P: 0.25, SCAN: 28, TRAP_R: 0.9 };
+let TC = null;     // src/shared/trial.js: the numbers the client shares (ALERT_TTL, BOOST_S, TRAP_HOLD_S, SWING_*_CD, SPRINT_SPEED, CONCEAL_R ...)
 const TRIAL_SECS = Number(process.env.SEEK_SECS) || 360;
 const CLASSES = ['tracker', 'phantom', 'trapper', 'charger'];
 const RUSH_MAX_SPEED = 13;
@@ -449,12 +454,16 @@ let TRIALS = null; // mapId -> validated map.trial (only trial-capable maps) + r
 let PICK = null;   // src/shared/trialpick.js
 const trialMapIds = () => Object.keys(TRIALS || {});
 const isActive = (h) => h.st === 'free' || h.st === 'injured' || h.st === 'caged'; // still in the round
-const canAct = (h) => h.role === 'hider' && (h.st === 'free' || h.st === 'injured') && Date.now() >= h.trapped;
+const canAct = (h) => h.role === 'hider' && (h.st === 'free' || h.st === 'injured') && now() >= h.trapped;
 const pairs = (a) => Array.isArray(a) && a.every((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]));
 function validTrial(t) { // a map's `trial` block: anything malformed makes the map not trial-capable
   if (!t || !pairs(t.relics) || t.relics.length < T_.NEED || !pairs(t.gates) || !t.gates.length || !pairs(t.cages) || !t.cages.length || !pairs(t.hiderSpawns) || !t.hiderSpawns.length) return null;
   const ss = t.seekerStart; if (!ss || !Number.isFinite(ss.x) || !Number.isFinite(ss.z)) return null;
-  return { ...t, grass: Array.isArray(t.grass) ? t.grass : [], vaults: Array.isArray(t.vaults) ? t.vaults : [] };
+  // malformed grass rects / vaults are dropped and logged (one bad rect must not silently disable concealment for the whole map)
+  const grass = TC.keepValid(t.grass, TC.validRect, (g, i) => console.error(`trial map: dropped malformed grass rect #${i}`, JSON.stringify(g)));
+  const vaults = TC.keepValid(t.vaults, TC.validVault, (v, i) => console.error(`trial map: dropped malformed vault #${i}`, JSON.stringify(v)));
+  if (Array.isArray(t.grass) && !grass.length && t.grass.length) console.error('trial map: every grass rect was malformed, concealment is off');
+  return { ...t, grass, vaults };
 }
 // per map, once at load: walking distances between relic candidates, and for each hider start its walking distance from the seeker start
 // and whether the seeker start can see it (eye 1.6 m to chest 1.0 m, within 60 m)
@@ -468,8 +477,8 @@ function trialPrep(tr, nv) {
 const maxSpeed = (p, t = now()) => (p.rush || t < p.rushEnd + 0.3 ? RUSH_MAX_SPEED : MAX_SPEED);
 const inGrass = (tr, x, z) => tr.grass.some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
 const toSeekers = (room, msg) => { for (const s of seekersOf(room)) send(s, msg); };
-const ALERT_TTL = 6; // s a beacon lives; position is fixed at the moment of the event and never updated
-function alertSeekers(room, kind, x, z, ttl = ALERT_TTL) { // `alert` to the seeker; a bot seeker has no socket, so it also gets the same fixed fact in b.lastAlert
+// alerts live TC.ALERT_TTL s; position is fixed at the moment of the event and never updated
+function alertSeekers(room, kind, x, z, ttl = TC.ALERT_TTL) { // `alert` to the seeker; a bot seeker has no socket, so it also gets the same fixed fact in b.lastAlert
   const m = { t: 'alert', kind, x, z, ttl };
   for (const s of seekersOf(room)) { send(s, m); if (s.bot) s.lastAlert = { kind, x, z, t: now(), ttl }; }
 }
@@ -478,8 +487,10 @@ const hidersLeft = (room) => (room.mode === 'trial' ? hidersOf(room).filter(isAc
 // is hider `o` concealed from seeker `r` (grass)? Spec: crouched still 2.5 m, crouch-walking 4 m, standing 9 m, never when sprinting / injured-boosted
 function concealed(room, r, o, t) {
   if (!room.trial || !inGrass(room.trial, o.x, o.z)) return false;
-  if (o.speed > 5.5 || o.boostEnd > t) return false;
-  const R = o.c > 0.6 ? (o.speed < 1 ? 2.5 : 4) : 9;
+  const sp = o.bot || Date.now() - o.lastPos <= 300 ? o.speed : 0; // no recent move: standing still (a stale speed must not read as walking)
+  if (sp > TC.SPRINT_SPEED || o.boostEnd > t) return false;
+  const crouched = o.c > TC.CROUCHED && sp <= TC.CROUCH_MAX_SPEED; // the client's crouch flag is not believed while moving faster than a crouch-walk
+  const R = crouched ? (sp < TC.STILL_SPEED ? TC.CONCEAL_R.still : TC.CONCEAL_R.crouchWalk) : TC.CONCEAL_R.standing;
   return Math.hypot(o.x - r.x, o.z - r.z) > R;
 }
 
@@ -509,7 +520,7 @@ function startTrial(room) {
   ps.forEach((p, i) => {
     p.role = i === 0 ? 'seeker' : 'hider';
     Object.assign(p, { score: 0, tags: 0, lastTag: 0, hp: 0, mag: 0, res: 0, out: false, shots: 0, hits: 0, disguise: null, tint: null, tagT: 0, first: i === 0, y: 0, pitch: 0, c: 0,
-      st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, lastPos: 0, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
+      ...trialState(), lastPos: 0 });
     if (i === 0) { p.cls = rnd(p.cls); room.trial.cls = p.cls; p.traps = p.cls === 'trapper' ? 3 : 0; Object.assign(p, { x: T.seekerStart.x, z: T.seekerStart.z, yaw: T.seekerStart.yaw || 0 }); }
     else { const [sx, sz] = spots[i - 1], k = spots.slice(0, i - 1).filter((q) => q === spots[i - 1]).length * 1.2; p.x = sx + k; p.z = sz; p.yaw = Math.random() * Math.PI * 2; } // (a shared candidate: 1.2 m apart)
     p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map(); p.told = new Map();
@@ -527,7 +538,7 @@ function startTrial(room) {
 }
 function trialResume(room, old) { // extra fields of the resume `round` message
   const tr = room.trial;
-  return { ...trialInfo(room), relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, p: r2(q.p), done: q.done })), gatesOpen: tr.gatesOpen, states: Object.fromEntries(hidersOf(room).map((h) => [h.id, h.st])), n: tr.n, caged: tr.cages.map((c) => ({ i: c.i, occ: c.occ })), power: old.role === 'seeker' ? powerMsg(old) : undefined };
+  return { ...trialInfo(room), relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, p: r2(q.p), done: q.done })), gatesOpen: tr.gatesOpen, states: Object.fromEntries(hidersOf(room).map((h) => [h.id, h.st])), n: tr.n, caged: tr.cages.map((c) => ({ i: c.i, occ: c.occ })), power: old.role === 'seeker' ? powerMsg(old) : undefined, trapT: old.role === 'hider' ? Math.max(0, r2(old.trapped - now())) : 0 };
 }
 
 // ----- health states
@@ -540,7 +551,7 @@ function hurtHider(room, s, h) { // the seeker hit `h` (swing)
   const tr = room.trial, t = now();
   dropChan(room, h);
   s.tags++; s.score += 2;
-  if (h.st === 'free') { h.boostEnd = t + T_.BOOST_S; setSt(room, h, 'injured'); return; }
+  if (h.st === 'free') { h.boostEnd = t + TC.BOOST_S; setSt(room, h, 'injured'); return; }
   const free = tr.cages.filter((c) => !c.occ || room.players.get(c.occ)?.st !== 'caged'), cage = free.length ? free[(Math.random() * free.length) | 0] : null;
   if (!cage) { setSt(room, h, 'out'); return; }
   cage.occ = h.id; cage.p = 0; h.cageT = T_.CAGE_S; h.x = cage.x; h.z = cage.z; h.y = 0; h.c = 0; h.speed = 0; s.score += 3;
@@ -548,8 +559,8 @@ function hurtHider(room, s, h) { // the seeker hit `h` (swing)
 }
 function springTrap(room, s, h, trap) {
   const tr = room.trial; tr.traps.splice(tr.traps.indexOf(trap), 1); dropChan(room, h);
-  h.trapped = Date.now() + T_.TRAP_HOLD_MS; h.speed = 0;
-  if (h.st === 'free') { h.boostEnd = now() + T_.BOOST_S; setSt(room, h, 'injured'); }
+  h.trapped = now() + TC.TRAP_HOLD_S; h.speed = 0;
+  if (h.st === 'free') { h.boostEnd = now() + TC.BOOST_S; setSt(room, h, 'injured'); }
   s.traps++; send(s, { t: 'trap', i: trap.i, x: trap.x, z: trap.z, gone: 1 }); alertSeekers(room, 'trap', trap.x, trap.z); send(s, powerMsg(s));
   broadcast(room, { t: 'trapped', id: h.id, i: trap.i });
 }
@@ -580,10 +591,10 @@ function completeRelic(room, q, by, all = [by]) {
   broadcast(room, { t: 'collected', i: q.i, n: tr.n, need: T_.NEED, by: by.id });
   by.score += 3;
   alertSeekers(room, 'relic', q.x, q.z);
-  for (const h of all) send(h, { t: 'exposed', ttl: ALERT_TTL }); // the collector(s) learn the seeker was told where they are
+  for (const h of all) send(h, { t: 'exposed', ttl: TC.ALERT_TTL }); // the collector(s) learn the seeker was told where they are
   if (tr.n >= T_.NEED && !tr.gatesOpen) {
     tr.gatesOpen = true; broadcast(room, { t: 'gates', open: true });
-    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z, ttl: ALERT_TTL });
+    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z, ttl: TC.ALERT_TTL });
   }
 }
 function trialChannels(room, t, dt) {
@@ -614,7 +625,7 @@ function trialChannels(room, t, dt) {
       broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: 1 });
       for (const h of c.cn) h.chan = null;
       c.cn[0].score += 4;
-      if (o) { o.cageT = 0; o.boostEnd = t + T_.BOOST_S; setSt(room, o, 'free'); o.st = 'injured'; } // rescued: back as injured (`hurt free` tells the client)
+      if (o) { o.cageT = 0; o.boostEnd = t + TC.BOOST_S; setSt(room, o, 'injured', { rescued: 1 }); } // rescued: back as injured (`hurt {st:'injured', rescued:1}` tells the client)
     } else if (t - c.pT >= 0.2) { c.pT = t; broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: r2(c.p) }); }
   }
 }
@@ -635,7 +646,7 @@ function doSwing(room, s) {
     if (!los(s.x, ey, s.z, a.x, a.y + 0.5, a.z) && !los(s.x, ey, s.z, a.x, a.y + 1.3 * (1 - 0.35 * a.c), a.z)) continue;
     best = h; bd = d;
   }
-  s.swingEnd = t + (best ? T_.HIT_CD : T_.MISS_CD);
+  s.swingEnd = t + (best ? TC.SWING_HIT_CD : TC.SWING_MISS_CD);
   broadcast(room, { t: 'swing', by: s.id, hit: best ? best.id : 0 });
   if (best) hurtHider(room, s, best);
   return true;
@@ -672,7 +683,7 @@ function usePower(room, s) {
 // ----- per-tick trial logic
 function trialTick(room, t, dt) {
   const tr = room.trial, ms = Date.now(), S = seekersOf(room)[0];
-  for (const p of room.players.values()) if (!p.bot && ms - p.lastPos > 300) p.speed = 0; // no recent pos: standing still
+  for (const p of room.players.values()) if (!p.bot && ms - p.lastPos > 300) p.speed = 0; // no recent pos: standing still (concealed() also checks, between ticks)
   if (S) {
     if (S.cloak && t >= S.cloakEnd) endCloak(room, S);
     if (S.rush && t >= S.rushEnd) { S.rush = false; send(S, powerMsg(S)); }
@@ -682,7 +693,7 @@ function trialTick(room, t, dt) {
     if (h.cageT <= 0) { const c = tr.cages.find((q) => q.occ === h.id); if (c) { c.occ = 0; c.p = 0; } setSt(room, h, 'out'); }
   }
   if (S && room.phase === 'seek') for (const trap of tr.traps.slice()) {
-    const h = hidersOf(room).find((q) => (q.st === 'free' || q.st === 'injured') && ms >= q.trapped && Math.hypot(q.x - trap.x, q.z - trap.z) < T_.TRAP_R);
+    const h = hidersOf(room).find((q) => (q.st === 'free' || q.st === 'injured') && t >= q.trapped && Math.hypot(q.x - trap.x, q.z - trap.z) < T_.TRAP_R);
     if (h) springTrap(room, S, h, trap);
   }
   trialChannels(room, t, dt);
@@ -692,7 +703,7 @@ function trialTick(room, t, dt) {
     const k = S && !cloaked && room.phase === 'seek' && live ? Math.max(0, 1 - Math.hypot(h.x - S.x, h.z - S.z) / T_.TERROR_R) : 0, kq = Math.round(k * 10) / 10;
     if (kq !== h.terr && t - h.terrT >= 0.2) { h.terr = kq; h.terrT = t; send(h, { t: 'terror', k: kq }); }
     if (S && S.cls === 'tracker' && room.phase === 'seek' && live) {
-      const gap = h.speed > 5.5 ? 0.5 : h.st === 'injured' ? 0.8 : 0;
+      const gap = h.speed > TC.SPRINT_SPEED ? 0.5 : h.st === 'injured' ? 0.8 : 0;
       if (gap && t - h.markT >= gap) { h.markT = t; marks.push({ x: r2(h.x), z: r2(h.z) }); }
     }
   }
@@ -711,14 +722,14 @@ const trialApiBase = {
   goTo: (room, b, x, z, st, speed) => { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.mv = st; b.speed = speed; }, // b.st is the health state in trial mode, so the bot's own movement label lives in b.mv
   startChannel, stopChannel, swing: doSwing, usePower, hidersOf, seekersOf, now, concealed,
 };
-let TRIALBOTS = null;
-try { TRIALBOTS = require('./trialbots'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') console.error('trialbots failed to load', e); }
+let TRIALBOTS = null, botErrT = -99;
+try { TRIALBOTS = require('./trialbots'); } catch (e) { console.error(e.code === 'MODULE_NOT_FOUND' ? 'WARNING: server/trialbots.js (or a module it requires) is missing, trial bots will stand still:' : 'trialbots failed to load:', e); }
 function trialBots(room, t, dt) {
   if (!TRIALBOTS || typeof TRIALBOTS.think !== 'function') return; // no bot AI: bots stand still
   const api = { ...trialApiBase, nav: NAVS[room.map], bounds: worldOf(room).meta.bounds };
   for (const b of room.players.values()) {
-    if (!b.bot || (b.role === 'seeker' && room.phase !== 'seek') || b.st === 'caged' || b.st === 'out' || b.st === 'escaped' || Date.now() < b.trapped) continue;
-    try { TRIALBOTS.think(room, b, t, dt, api); } catch (e) { console.error('trial bot error', e); }
+    if (!b.bot || (b.role === 'seeker' && room.phase !== 'seek') || b.st === 'caged' || b.st === 'out' || b.st === 'escaped' || t < b.trapped) continue;
+    try { TRIALBOTS.think(room, b, t, dt, api); } catch (e) { if (t - botErrT > 5) { botErrT = t; console.error('trial bot error (logged at most every 5 s)', e); } }
     if (!b.path || b.pi >= b.path.length) b.speed = 0; // not walking: still (grass concealment reads speed)
   }
 }
@@ -734,9 +745,9 @@ function pickSpot(room, b, avoid) {
   if (!c.length) c = all;
   return c.length ? c[(Math.random() * c.length) | 0] : null;
 }
-function goTo(room, b, x, z, st, speed) { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.st = st; b.speed = speed; }
+function goTo(room, b, x, z, st, speed) { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.bst = st; b.speed = speed; }
 function botHear(room, b, x, z) { // a seeker bot walks over to a noise
-  if (b.role !== 'seeker' || b.st === 'chase' || room.phase !== 'seek') return;
+  if (b.role !== 'seeker' || b.bst === 'chase' || room.phase !== 'seek') return;
   goTo(room, b, x + (Math.random() - 0.5) * 3, z + (Math.random() - 0.5) * 3, 'investigate', 3.6);
 }
 function nextSearch(room, b) {
@@ -753,18 +764,18 @@ function nextSearch(room, b) {
 function botThink(room, b, t, dt) {
   const nav = NAVS[room.map];
   if (b.role === 'hider') {
-    if (b.st === 'init') { b.spot = pickSpot(room, b); if (b.spot) goTo(room, b, b.spot.x, b.spot.z, 'run', 4.5); else b.st = 'hide'; b.fleeCd = 3; }
-    if (b.st === 'run') {
+    if (b.bst === 'init') { b.spot = pickSpot(room, b); if (b.spot) goTo(room, b, b.spot.x, b.spot.z, 'run', 4.5); else b.bst = 'hide'; b.fleeCd = 3; }
+    if (b.bst === 'run') {
       b.c = Math.max(0, b.c - dt * 4);
       if (nav.follow(b, b.speed, dt)) {
-        b.st = 'hide';
+        b.bst = 'hide';
         if (room.mode === 'prophunt') { // become the nearest prop
           let best = null, bd = DISGUISE_RANGE;
           worldOf(room).props.forEach((pr) => { const d = Math.hypot(b.x - pr.x, b.z - pr.z) - Math.max(pr.w, pr.d) / 2; if (d < bd) { bd = d; best = pr; } });
           if (best) applyDisguise(room, b, best.id);
         }
       }
-    } else if (b.st === 'hide') {
+    } else if (b.bst === 'hide') {
       b.c = Math.min(1, b.c + dt * 4); b.fleeCd -= dt;
       if (b.fleeCd <= 0 && Math.random() < dt * 0.9) {
         const s = seekersOf(room).find((q) => Math.hypot(q.x - b.x, q.z - b.z) < 2.6 && nav.losClear(q.x, q.y + 1.5, q.z, b.x, b.y + 0.5, b.z));
@@ -781,8 +792,8 @@ function botThink(room, b, t, dt) {
       if (!(d < 1.1 || (dx * fx + dz * fz) / d > COS35)) continue;
       if (nav.losClear(b.x, ey, b.z, h.x, h.y + 0.5, h.z) || nav.losClear(b.x, ey, b.z, h.x, h.y + 1.3, h.z)) { td = d; tgt = h; }
     }
-    if (tgt) { b.detect = Math.min(1, b.detect + dt / 0.6); b.last = { x: tgt.x, z: tgt.z }; b.lostT = 0; if (b.st !== 'chase') { b.st = 'chase'; b.rep = 0; } } else b.detect = Math.max(0, b.detect - dt * 0.9);
-    switch (b.st) {
+    if (tgt) { b.detect = Math.min(1, b.detect + dt / 0.6); b.last = { x: tgt.x, z: tgt.z }; b.lostT = 0; if (b.bst !== 'chase') { b.bst = 'chase'; b.rep = 0; } } else b.detect = Math.max(0, b.detect - dt * 0.9);
+    switch (b.bst) {
       case 'chase':
         if (tgt) {
           b.rep -= dt; if (b.rep <= 0) { b.path = nav.findPath(b.x, b.z, tgt.x, tgt.z); b.pi = 0; b.rep = 0.3; }
@@ -806,7 +817,7 @@ function botThink(room, b, t, dt) {
         }
         break;
       case 'patrol': case 'investigate':
-        if (nav.follow(b, b.speed, dt)) { b.st = 'look'; b.timer = 2.2; if (b.base == null) b.base = b.heading; }
+        if (nav.follow(b, b.speed, dt)) { b.bst = 'look'; b.timer = 2.2; if (b.base == null) b.base = b.heading; }
         break;
       case 'look':
         b.timer -= dt; b.heading = b.base + Math.sin((2.2 - b.timer) * 3) * 0.9;
@@ -952,7 +963,7 @@ const handlers = {
     const room = p.room;
     if (!room || room.mode !== 'trial' || !room.trial || p.role !== 'hider') return;
     if (m.k === 'stop') return stopChannel(room, p);
-    if (m.k === 'start' && (m.what === 'relic' || m.what === 'gate' || m.what === 'cage') && Number.isInteger(m.i)) startChannel(room, p, m.what, m.i);
+    if (m.k === 'start' && (m.what === 'relic' || m.what === 'gate' || m.what === 'cage') && Number.isInteger(m.i) && !startChannel(room, p, m.what, m.i)) send(p, { t: 'chanx', what: m.what, i: m.i }); // refused: the client drops its channelling state
   },
   swing(p) { const room = p.room; if (room) doSwing(room, p); },
   power(p) { const room = p.room; if (room) usePower(room, p); },
@@ -1104,8 +1115,8 @@ setInterval(() => { try { sampleHistory(); } catch (e) { console.error('history 
 
 const port = process.env.PORT || 3000;
 // the shared modules (colliders + prop table per map, nav, protocol) are ES modules; load them all before accepting connections
-Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js'), import('../src/shared/trialpick.js')]).then(([m, proto, nav, pick]) => {
-  PR = proto; MAPS = m.MAPS; PICK = pick; WORLDS = {}; NAVS = {}; BOTSPOTS = {}; TRIALS = {};
+Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js'), import('../src/shared/trialpick.js'), import('../src/shared/trial.js')]).then(([m, proto, nav, pick, tc]) => {
+  PR = proto; TC = tc; MAPS = m.MAPS; PICK = pick; WORLDS = {}; NAVS = {}; BOTSPOTS = {}; TRIALS = {};
   let stub = null; try { stub = process.env.TRIAL_STUB ? JSON.parse(process.env.TRIAL_STUB) : null; } catch { console.error('bad TRIAL_STUB'); } // test hook: injects a `trial` block into the house map
   for (const [id, map] of Object.entries(MAPS)) {
     WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };

@@ -215,6 +215,7 @@ const handlers = {
   prog(m) { TR.onProg(m); },
   collected(m) { TR.onCollected(m, feed); },
   alert(m) { TR.onAlert(m); },
+  chanx(m) { TR.onChanx(m); },
   exposed(m) { TR.onExposed(m); },
   gates() { TR.onGates(); },
   hurt(m) { TR.onHurt(m, feed); },

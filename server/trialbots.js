@@ -269,11 +269,9 @@ function seeker(room, b, t, dt, api) {
   if (arrived || dd < 4) { if (s.pat.i != null) s.visit[s.pat.i] = t; s.patDone = true; s.look = t + rnd(1.5, 2.5); s.base = b.heading; b.speed = 0; }
 }
 
-function think(room, b, t, dt, api) {
-  try {
-    if (!room || !room.trial || !b || !api || !api.nav) return;
-    if (b.role === 'seeker') seeker(room, b, t, dt, api); else if (b.role === 'hider') hider(room, b, t, dt, api);
-  } catch (e) { /* a bot must never take the room tick down */ }
+function think(room, b, t, dt, api) { // errors propagate: index.js trialBots catches and logs them (a bot must not take the room tick down)
+  if (!room || !room.trial || !b || !api || !api.nav) return;
+  if (b.role === 'seeker') seeker(room, b, t, dt, api); else if (b.role === 'hider') hider(room, b, t, dt, api);
 }
 
 module.exports = { think };

@@ -116,6 +116,7 @@ async function startRound(cs) {
       A.send('interact', { k: 'start', what: 'relic', i: far.i });
       await sleep(700);
       ok(!A.log.some((m) => m.t === 'prog'), 'interact from out of range makes no progress');
+      ok(A.log.some((m) => m.t === 'chanx' && m.what === 'relic' && m.i === far.i), 'a refused interact start is answered with chanx');
       A.send('interact', { k: 'stop', what: 'relic', i: far.i });
       const go = async (c, q) => { await c.walk(q.x, q.z); c.send('interact', { k: 'start', what: 'relic', i: q.i }); };
       await Promise.all([go(A, r.relics[0]), go(B, r.relics[1])]);
@@ -162,8 +163,8 @@ async function startRound(cs) {
       const cg = r.cages[caged.cage];
       await B.walk(cg.x, cg.z);
       B.send('interact', { k: 'start', what: 'cage', i: caged.cage });
-      const t0 = Date.now(), free = await B.wait((m) => m.t === 'hurt' && m.id === A.id && m.st === 'free', 8000);
-      ok(!!free && Date.now() - t0 > 3000, `rescue takes ~4 s (${Date.now() - t0} ms) and frees the hider`);
+      const t0 = Date.now(), free = await B.wait((m) => m.t === 'hurt' && m.id === A.id && m.st === 'injured' && m.rescued === 1, 8000);
+      ok(!!free && Date.now() - t0 > 3000, `rescue takes ~4 s (${Date.now() - t0} ms) and frees the hider (hurt injured, rescued:1)`);
       seeker.send('swing'); // wrong place: seeker is far from the freed hider now, nothing to hit
       await sleep(100);
     }
