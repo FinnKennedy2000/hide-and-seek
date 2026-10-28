@@ -52,6 +52,7 @@ const SND = {
   toll: (o) => { osc(o, { f: 196, dur: 2, vol: 0.4 }); osc(o, { f: 392, dur: 1.6, vol: 0.2 }); osc(o, { f: 590, dur: 1.2, vol: 0.1 }); },
   thud: (o) => { osc(o, { f: 140, to: 50, dur: 0.3, vol: 0.55 }); noise(o, { freq: 500, type: 'lowpass', dur: 0.18, vol: 0.4 }); },
   swing: (o) => { noise(o, { freq: 500, to: 2600, q: 1.1, dur: 0.28, vol: 0.4 }); },
+  whiff: (o) => { noise(o, { freq: 1800, to: 300, q: 0.9, dur: 0.22, vol: 0.3 }); osc(o, { f: 260, to: 150, dur: 0.18, vol: 0.12 }); },
   snap: (o) => { noise(o, { freq: 2400, q: 1.5, dur: 0.07, vol: 0.5 }); osc(o, { f: 1500, to: 400, type: 'square', dur: 0.12, vol: 0.25, filt: ['bandpass', 1500, 4] }); SND.clank(o); },
   stinger: (o) => { osc(o, { f: 110, to: 55, type: 'sawtooth', dur: 0.9, vol: 0.4, filt: ['lowpass', 500], att: 0.02 }); osc(o, { f: 233, to: 220, type: 'square', dur: 0.7, vol: 0.12, filt: ['lowpass', 900] }); noise(o, { freq: 300, type: 'lowpass', dur: 0.3, vol: 0.25 }); },
   creak: (o) => { osc(o, { f: rnd(90, 140), to: rnd(180, 260), type: 'sawtooth', dur: rnd(0.8, 1.4), vol: 0.5, vib: 12, vibHz: 17, filt: ['bandpass', 380, 5], att: 0.2 }); },
@@ -76,6 +77,7 @@ export const alertSound = guard((kind, x, z) => {
 export const scream = guard((x, z) => { const p = pos(x, z); if (p) cueAt('scream', p, 0.6); shot('scream', p, 0.8, 1.3, 3, 'sfx', true); });
 export const swingSound = guard(() => shot('swing', null, 0.5, 0.4));
 export const hitSound = guard((x, z) => shot('thud', pos(x, z), 0.8, 0.4, 3));
+export const missSound = guard(() => shot('whiff', null, 0.5, 0.3));
 export const trapSound = guard((x, z) => { const p = pos(x, z); if (p) cueAt('scrape', p, 0.5); shot('snap', p, 0.9, 0.7, 3); });
 export const gateSound = guard((x, z) => shot('gate', pos(x, z), 0.8, 2.6, 3));
 

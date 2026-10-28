@@ -279,6 +279,20 @@ input[type=range]{padding:0;border:0;background:none;width:100%;accent-color:var
 #trPrompt .bar.on{display:block}
 #trPrompt .bar i{display:block;height:100%;width:100%;transform:scaleX(0);transform-origin:0 50%;background:linear-gradient(90deg,var(--lamp),var(--lamp-hot))}
 #trToast{position:absolute;left:50%;top:24%;transform:translateX(-50%);font:900 clamp(26px,4vw,46px)/1.05 var(--display);font-variation-settings:"SOFT" 100,"WONK" 1;white-space:nowrap;letter-spacing:.01em;color:var(--lamp-hot);text-shadow:0 0 34px rgba(255,180,77,.6),0 4px 18px #000;opacity:0}
+#trStrike{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;opacity:0}
+#trStrike i{position:absolute;left:-2px;top:-26px;width:4px;height:18px;background:#ff3b30;box-shadow:0 0 10px #ff3b30,0 0 2px #000;transform-origin:2px 26px}
+#trStrike i:nth-child(1){transform:rotate(45deg)}#trStrike i:nth-child(2){transform:rotate(135deg)}#trStrike i:nth-child(3){transform:rotate(225deg)}#trStrike i:nth-child(4){transform:rotate(315deg)}
+#trStrike b{position:absolute;left:0;top:34px;transform:translateX(-50%);font:900 18px/1 var(--display);letter-spacing:.14em;color:#ff5a4d;text-shadow:0 2px 8px #000}
+#trStrike.hit{animation:trStrikeHit .55s ease-out forwards}
+#trStrike.hit::after{content:"";position:fixed;inset:0;box-shadow:inset 0 0 140px 30px rgba(255,40,30,.45);animation:trStrikeFlash .35s ease-out forwards}
+#trStrike.miss{animation:trStrikeMiss .5s ease-out forwards}
+#trStrike.miss i{display:none}
+#trStrike.miss::before{content:"";position:absolute;left:-18px;top:-18px;width:36px;height:36px;border:2px dashed rgba(220,220,220,.8);border-radius:50%}
+#trStrike.miss b{color:#cfcfcf;font-size:14px;top:28px}
+@keyframes trStrikeHit{0%{opacity:1;transform:scale(1.5)}30%{transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+@keyframes trStrikeMiss{0%{opacity:1;transform:scale(.7)}40%{transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}
+@keyframes trStrikeFlash{from{opacity:1}to{opacity:0}}
+:root[data-motion="reduced"] #trStrike.hit,:root[data-motion="reduced"] #trStrike.miss{animation:none;opacity:1}
 #trToast.gate{color:var(--hide);text-shadow:0 0 34px rgba(94,200,255,.55),0 4px 18px #000}
 #trToast.show{animation:trToast 2.6s ease-out forwards}
 #trBanner{position:absolute;top:150px;left:50%;transform:translateX(-50%);max-width:92vw;padding:9px 26px;border:1px solid var(--hide);border-left:5px solid var(--hide);border-radius:8px;background:rgba(15,11,34,.86);color:var(--hide);font-weight:700;font-size:19px;letter-spacing:.12em;white-space:nowrap;text-shadow:0 2px 8px #000;opacity:0;pointer-events:none;transition:font-size .6s,padding .6s,opacity .6s}

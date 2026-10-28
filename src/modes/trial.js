@@ -18,9 +18,9 @@ import { setHeld } from '../characters/index.js';
 // every export this file calls is listed here and anything absent is console.error'd once at load.
 const mods = import.meta.glob(['../ui/trialhud.js', '../fx/trialfx.js', '../audio/trial.js'], { eager: true });
 const REQUIRED = {
-  '../ui/trialhud.js': ['concealed', 'edgeAlert', 'exposed', 'gatesOpen', 'hideTrialHud', 'initTrialHud', 'relicDone', 'resetTrialHud', 'setPlayerState', 'setPower', 'setPrompt', 'setRelicProgress', 'showResults', 'terror', 'tickTrialHud'],
+  '../ui/trialhud.js': ['concealed', 'edgeAlert', 'exposed', 'gatesOpen', 'hideTrialHud', 'initTrialHud', 'relicDone', 'resetTrialHud', 'setPlayerState', 'setPower', 'setPrompt', 'setRelicProgress', 'showResults', 'strike', 'terror', 'tickTrialHud'],
   '../fx/trialfx.js': ['beacon', 'buildRoundProps', 'cageOccupied', 'clearRoundProps', 'cloakFx', 'mark', 'openGates', 'placeTrap', 'relicDone', 'removeTrap', 'setRelicProgress'],
-  '../audio/trial.js': ['alertSound', 'chanLoop', 'gateSound', 'heartbeat', 'hitSound', 'startAmbient', 'stopAmbient', 'swingSound', 'trapSound'],
+  '../audio/trial.js': ['alertSound', 'chanLoop', 'gateSound', 'heartbeat', 'hitSound', 'missSound', 'startAmbient', 'stopAmbient', 'swingSound', 'trapSound'],
 };
 const loadMod = (path) => {
   const m = mods[path], missing = m ? REQUIRED[path].filter((k) => typeof m[k] !== 'function') : ['(whole module)'];
@@ -353,7 +353,11 @@ export function onPower(m) {
 export function onCloak(m) { if (m.id === T.id) return; const a = R.remotes.get(m.id); if (a) FX.cloakFx?.(a.root, !!m.on); }
 export function onTrap(m) { if (m.gone) { T.traps.delete(m.i); FX.removeTrap?.(m.i); } else { T.traps.set(m.i, m); FX.placeTrap?.(m.i, m.x, m.z); } }
 export function onSwing(m) {
-  if (m.by === T.id) { if (m.hit) T.swingCd = Math.min(T.swingCd, Math.max(0, SWING_HIT_CD - T.swingAge)); return; }
+  if (m.by === T.id) {
+    UI.strike?.(!!m.hit); if (m.hit) { AU.hitSound?.(); addShake(0.6); } else AU.missSound?.();
+    if (m.hit) T.swingCd = Math.min(T.swingCd, Math.max(0, SWING_HIT_CD - T.swingAge));
+    return;
+  }
   const a = R.remotes.get(m.by); if (a) R.flinchAvatar(a);
   if (m.hit) AU.hitSound?.();
 }

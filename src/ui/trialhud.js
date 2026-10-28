@@ -51,6 +51,7 @@ function build() {
   el.prompt = mk('div', null, `<span class="pt"></span><span class="bar"><i></i></span>`, root); el.prompt.id = 'trPrompt';
   el.toast = mk('div', null, null, root); el.toast.id = 'trToast';
   el.banner = mk('div', null, null, root); el.banner.id = 'trBanner';
+  el.strike = mk('div', null, `<i></i><i></i><i></i><i></i><b></b>`, root); el.strike.id = 'trStrike';
   el.edges = mk('div', null, null, root); el.edges.id = 'trEdges';
   el.chip = mk('div', 'hidden', `${IC.eyeOff}<span>HIDDEN</span>`, root); el.chip.id = 'trHidden';
   el.exp = mk('div', 'hidden', `${IC.eye}<span>THE KILLER KNOWS WHERE YOU ARE</span>`, root); el.exp.id = 'trExposed';
@@ -181,6 +182,13 @@ export const terror = safe((k) => {
   el.beat.classList.toggle('hidden', !(k > 0 && settings.cues));
 });
 
+// seeker swing result at the crosshair: red X + HIT (hit), grey ring + MISS (miss); re-triggerable
+export const strike = safe((hit) => {
+  if (!build()) return;
+  const e = el.strike; e.className = ''; void e.offsetWidth; e.className = hit ? 'hit' : 'miss';
+  e.querySelector('b').textContent = hit ? 'HIT' : 'MISS';
+  say(hit ? 'Hit' : 'Missed');
+});
 export const exposed = safe((secs) => {
   if (!build()) return;
   el.exp.classList.remove('hidden'); clearTimeout(expT); expT = setTimeout(() => el.exp.classList.add('hidden'), Math.max(1, secs || 6) * 1000);
