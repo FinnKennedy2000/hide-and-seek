@@ -481,7 +481,7 @@ function concealed(room, r, o, t) {
 
 function trialInfo(room) {
   const tr = room.trial;
-  return { cls: tr.cls, seed: tr.seed, relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, id: q.id })), gates: tr.gates.map((q) => ({ i: q.i, x: q.x, z: q.z })), cages: tr.cages.map((q) => ({ i: q.i, x: q.x, z: q.z })), grass: tr.grass, vaults: tr.vaults, need: T_.NEED, trialSecs: TRIAL_SECS };
+  return { cls: tr.cls, relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, id: q.id })), gates: tr.gates.map((q) => ({ i: q.i, x: q.x, z: q.z })), cages: tr.cages.map((q) => ({ i: q.i, x: q.x, z: q.z })), grass: tr.grass, vaults: tr.vaults, need: T_.NEED, trialSecs: TRIAL_SECS };
 }
 function powerMsg(p) { return { t: 'power', cls: p.cls, cd: Math.max(0, r2(p.cdEnd - now())), on: !!(p.cloak || p.rush), n: p.traps }; }
 
