@@ -5,10 +5,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWorld, MAPS } from '../../src/shared/worlddata.js';
 
-const CELL = 0.1, MIN = -35, N = 700, R = 0.3, CROUCH = 1.0;
-const ci = (v) => Math.floor((v - MIN) / CELL);
+import { createNav } from '../../src/shared/nav.js';
+
+// Flood grid: 0.1 m cells over +-35 m (the original maps); maps bigger than that (the 132 m Coldwood estate) get 0.2 m cells over their bounds
+const R = 0.3, CROUCH = 1.0;
+const gridOf = (b) => (b.x0 >= -35 && b.z0 >= -35 && b.x1 <= 35 && b.z1 <= 35 ? { CELL: 0.1, MIN: -35, N: 700 } : { CELL: 0.2, MIN: Math.floor(Math.min(b.x0, b.z0)) - 1, N: Math.ceil((Math.max(b.x1, b.z1) + 1 - (Math.floor(Math.min(b.x0, b.z0)) - 1)) / 0.2) });
 
 function fill(map, colliders) {
+  const { CELL, MIN, N } = gridOf(map.meta.bounds), ci = (v) => Math.floor((v - MIN) / CELL);
   const near = new Map(), under = new Map(), EMPTY = []; // colliders within R of a cell centre / within 0.1 (ground)
   const add = (m, margin, c) => {
     for (let j = Math.max(0, ci(c.z0 - margin)); j <= Math.min(N - 1, ci(c.z1 + margin)); j++) {
@@ -37,43 +41,14 @@ function fill(map, colliders) {
       push(ni, nj, ground);
     }
   }
-  return reached;
+  return { reached, ci, N };
 }
 
-// The AI nav grid exactly as src/ai/nav.js builds it (setSpots drops spots it cannot reach, so none may be dropped).
+// The AI nav grid exactly as src/ai/nav.js builds it (the shared nav, sized by the map's bounds; setSpots drops spots it cannot reach, so none may be dropped).
 function navReach(map, colliders) {
-  const NG = 140, C = 0.5, M = -35, NR = 0.3, blocked = new Uint8Array(NG * NG), cl = (v) => Math.min(NG - 1, Math.max(0, Math.floor((v - M) / C)));
-  for (const c of colliders) {
-    if (c.y0 > 0.69 || c.y1 < 0.15) continue;
-    for (let j = Math.max(0, Math.floor((c.z0 - NR - M) / C)); j <= Math.min(NG - 1, Math.ceil((c.z1 + NR - M) / C)); j++) {
-      for (let i = Math.max(0, Math.floor((c.x0 - NR - M) / C)); i <= Math.min(NG - 1, Math.ceil((c.x1 + NR - M) / C)); i++) {
-        const x = M + (i + 0.5) * C, z = M + (j + 0.5) * C;
-        if (x > c.x0 - NR && x < c.x1 + NR && z > c.z0 - NR && z < c.z1 + NR) blocked[j * NG + i] = 1;
-      }
-    }
-  }
-  const nearestFree = (x, z) => {
-    const i0 = cl(x), j0 = cl(z);
-    if (!blocked[j0 * NG + i0]) return [i0, j0];
-    let best = null, bd = 1e9;
-    for (let r = 1; r < 10 && !best; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
-      const i = i0 + di, j = j0 + dj;
-      if (i < 0 || j < 0 || i >= NG || j >= NG || blocked[j * NG + i]) continue;
-      const d = di * di + dj * dj; if (d < bd) { bd = d; best = [i, j]; }
-    }
-    return best || [i0, j0];
-  };
-  const { x, z } = map.meta.seekerStart, [si, sj] = nearestFree(x, z), seen = new Uint8Array(NG * NG), q = [sj * NG + si];
-  seen[q[0]] = 1;
-  for (let h = 0; h < q.length; h++) {
-    const i0 = q[h] % NG, j0 = (q[h] / NG) | 0;
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const i = i0 + di, j = j0 + dj;
-      if (i < 0 || j < 0 || i >= NG || j >= NG || seen[j * NG + i] || blocked[j * NG + i]) continue;
-      seen[j * NG + i] = 1; q.push(j * NG + i);
-    }
-  }
-  return (p) => { const [i, j] = nearestFree(p.x, p.z); return seen[j * NG + i] === 1; };
+  const nav = createNav(colliders, map.meta.bounds); nav.buildNav();
+  const r = nav.reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);
+  return (p) => r(p.x, p.z);
 }
 
 for (const id of Object.keys(MAPS)) {
@@ -81,7 +56,7 @@ for (const id of Object.keys(MAPS)) {
   const w = buildWorld(undefined, id);
   const pts = [...map.spots.map((s) => ({ ...s, t: 'spot' })), ...map.spawns.map(([x, z]) => ({ x, z, t: 'spawn' }))];
   test(`${id}: every spot and spawn is reachable from seekerStart`, () => {
-    const reached = fill(map, w.colliders);
+    const { reached, ci, N } = fill(map, w.colliders);
     const bad = pts.filter((p) => ![-1e-6, 1e-6].some((e) => reached[ci(p.z + e) * N + ci(p.x + e)])).map((p) => `${p.t} ${p.x},${p.z}`);
     assert.deepEqual(bad, []);
   });

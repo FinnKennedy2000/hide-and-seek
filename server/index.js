@@ -441,7 +441,8 @@ const T_ = { RELICS: 6, NEED: 3, RELIC_S: 6, GATE_S: 3, FREE_S: 4, CAGE_S: 40, B
 const TRIAL_SECS = Number(process.env.SEEK_SECS) || 360;
 const CLASSES = ['tracker', 'phantom', 'trapper', 'charger'];
 const RUSH_MAX_SPEED = 13;
-let TRIALS = null; // mapId -> validated map.trial (only trial-capable maps)
+let TRIALS = null; // mapId -> validated map.trial (only trial-capable maps) + relD / spawnInfo (trialPrep)
+let PICK = null;   // src/shared/trialpick.js
 const trialMapIds = () => Object.keys(TRIALS || {});
 const isActive = (h) => h.st === 'free' || h.st === 'injured' || h.st === 'caged'; // still in the round
 const canAct = (h) => h.role === 'hider' && (h.st === 'free' || h.st === 'injured') && Date.now() >= h.trapped;
@@ -450,6 +451,15 @@ function validTrial(t) { // a map's `trial` block: anything malformed makes the 
   if (!t || !pairs(t.relics) || t.relics.length < T_.NEED || !pairs(t.gates) || !t.gates.length || !pairs(t.cages) || !t.cages.length || !pairs(t.hiderSpawns) || !t.hiderSpawns.length) return null;
   const ss = t.seekerStart; if (!ss || !Number.isFinite(ss.x) || !Number.isFinite(ss.z)) return null;
   return { ...t, grass: Array.isArray(t.grass) ? t.grass : [], vaults: Array.isArray(t.vaults) ? t.vaults : [] };
+}
+// per map, once at load: walking distances between relic candidates, and for each hider start its walking distance from the seeker start
+// and whether the seeker start can see it (eye 1.6 m to chest 1.0 m, within 60 m)
+function trialPrep(tr, nv) {
+  const plen = (a, b) => { const p = [{ x: a[0], z: a[1] }, ...nv.findPath(a[0], a[1], b[0], b[1])]; let d = 0; for (let i = 1; i < p.length; i++) d += Math.hypot(p[i].x - p[i - 1].x, p[i].z - p[i - 1].z); return d; };
+  tr.relD = tr.relics.map((a) => tr.relics.map((b) => (a === b ? 0 : plen(a, b))));
+  const ss = tr.seekerStart, df = nv.distField(ss.x, ss.z);
+  tr.spawnInfo = { path: tr.hiderSpawns.map(([x, z]) => df(x, z)), seen: tr.hiderSpawns.map(([x, z]) => Math.hypot(x - ss.x, z - ss.z) < 60 && nv.losClear(ss.x, 1.6, ss.z, x, 1.0, z)) };
+  return tr;
 }
 const maxSpeed = (p, t = now()) => (p.rush || t < p.rushEnd + 0.3 ? RUSH_MAX_SPEED : MAX_SPEED);
 const inGrass = (tr, x, z) => tr.grass.some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
@@ -471,27 +481,33 @@ function concealed(room, r, o, t) {
 
 function trialInfo(room) {
   const tr = room.trial;
-  return { cls: tr.cls, relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z })), gates: tr.gates.map((q) => ({ i: q.i, x: q.x, z: q.z })), cages: tr.cages.map((q) => ({ i: q.i, x: q.x, z: q.z })), grass: tr.grass, vaults: tr.vaults, need: T_.NEED, trialSecs: TRIAL_SECS };
+  return { cls: tr.cls, seed: tr.seed, relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, id: q.id })), gates: tr.gates.map((q) => ({ i: q.i, x: q.x, z: q.z })), cages: tr.cages.map((q) => ({ i: q.i, x: q.x, z: q.z })), grass: tr.grass, vaults: tr.vaults, need: T_.NEED, trialSecs: TRIAL_SECS };
 }
 function powerMsg(p) { return { t: 'power', cls: p.cls, cd: Math.max(0, r2(p.cdEnd - now())), on: !!(p.cloak || p.rush), n: p.traps }; }
 
 function startTrial(room) {
   syncBots(room);
-  const T = TRIALS[room.map], ps = shuffle([...room.players.values()]), seeker = ps[0], hiders = ps.slice(1);
-  const relicPts = shuffle(T.relics.slice()).slice(0, T_.RELICS);
+  const ps = shuffle([...room.players.values()]);
+  if (process.env.TEST_SEEKER) { const k = ps.findIndex((p) => p.name === process.env.TEST_SEEKER); if (k > 0) [ps[0], ps[k]] = [ps[k], ps[0]]; } // test hook: who seeks
+  const T = TRIALS[room.map], seeker = ps[0], hiders = ps.slice(1);
+  // seeded set-up (src/shared/trialpick.js): TRIAL_SEED pins it for tests (+1 per round in the room), otherwise a fresh random seed
+  room.trialN = (room.trialN || 0) + 1;
+  const seed = process.env.TRIAL_SEED != null && Number.isFinite(+process.env.TRIAL_SEED) ? (+process.env.TRIAL_SEED + room.trialN - 1) >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+  const live = PICK.pickRelics(T.relics, (a, b) => T.relD[a][b], seed, T_.RELICS);
   room.trial = {
-    relics: relicPts.map(([x, z], i) => ({ i, x, z, p: 0, done: false, on: false, cn: [], pT: 0 })),
+    seed,
+    relics: live.map((k, i) => ({ i, id: T.relicIds?.[k] ?? `R${k + 1}`, x: T.relics[k][0], z: T.relics[k][1], p: 0, done: false, on: false, cn: [], pT: 0 })),
     gates: T.gates.map(([x, z], i) => ({ i, x, z, p: 0 })), cages: T.cages.map(([x, z], i) => ({ i, x, z, occ: 0, p: 0, on: false, cn: [], pT: 0 })),
     gatesOpen: false, n: 0, cls: null, vaults: T.vaults, grass: T.grass, traps: [], trapN: 0, marks: [],
   };
-  const spots = shuffle(T.hiderSpawns.slice()), spawns = [];
+  const spots = PICK.pickSpawns(T.hiderSpawns, hiders.length, T.spawnInfo, seed).map((k) => T.hiderSpawns[k]), spawns = [];
   const rnd = (c) => (CLASSES.includes(c) ? c : CLASSES[(Math.random() * CLASSES.length) | 0]);
   ps.forEach((p, i) => {
     p.role = i === 0 ? 'seeker' : 'hider';
     Object.assign(p, { score: 0, tags: 0, lastTag: 0, hp: 0, mag: 0, res: 0, out: false, shots: 0, hits: 0, disguise: null, tint: null, tagT: 0, first: i === 0, y: 0, pitch: 0, c: 0,
       st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, lastPos: 0, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
     if (i === 0) { p.cls = rnd(p.cls); room.trial.cls = p.cls; p.traps = p.cls === 'trapper' ? 3 : 0; Object.assign(p, { x: T.seekerStart.x, z: T.seekerStart.z, yaw: T.seekerStart.yaw || 0 }); }
-    else { const [sx, sz] = spots[(i - 1) % spots.length], k = Math.floor((i - 1) / spots.length) * 1.2; p.x = sx + k; p.z = sz; p.yaw = Math.random() * Math.PI * 2; }
+    else { const [sx, sz] = spots[i - 1], k = spots.slice(0, i - 1).filter((q) => q === spots[i - 1]).length * 1.2; p.x = sx + k; p.z = sz; p.yaw = Math.random() * Math.PI * 2; } // (a shared candidate: 1.2 m apart)
     p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map(); p.told = new Map();
     Object.assign(p, { path: null, pi: 0, heading: p.yaw - Math.PI });
     spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
@@ -695,7 +711,7 @@ let TRIALBOTS = null;
 try { TRIALBOTS = require('./trialbots'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') console.error('trialbots failed to load', e); }
 function trialBots(room, t, dt) {
   if (!TRIALBOTS || typeof TRIALBOTS.think !== 'function') return; // no bot AI: bots stand still
-  const api = { ...trialApiBase, nav: NAVS[room.map] };
+  const api = { ...trialApiBase, nav: NAVS[room.map], bounds: worldOf(room).meta.bounds };
   for (const b of room.players.values()) {
     if (!b.bot || (b.role === 'seeker' && room.phase !== 'seek') || b.st === 'caged' || b.st === 'out' || b.st === 'escaped' || Date.now() < b.trapped) continue;
     try { TRIALBOTS.think(room, b, t, dt, api); } catch (e) { console.error('trial bot error', e); }
@@ -972,7 +988,7 @@ const handlers = {
   shoot(p, m) { // authoritative blaster: validate, rewind hiders to what the shooter saw, raycast hiders and world, apply economy
     const room = p.room;
     if (!room || room.mode !== 'prophunt' || room.phase !== 'seek' || p.role !== 'seeker' || p.out || p.hp <= 0) return;
-    const ox = num(m.ox, -40, 40), oy = num(m.oy, -1, 10), oz = num(m.oz, -40, 40), dx = num(m.dx, -1.5, 1.5), dy = num(m.dy, -1.5, 1.5), dz = num(m.dz, -1.5, 1.5);
+    const bd = worldOf(room).meta.bounds, ox = num(m.ox, Math.min(-40, bd.x0 - 2), Math.max(40, bd.x1 + 2)), oy = num(m.oy, -1, 10), oz = num(m.oz, Math.min(-40, bd.z0 - 2), Math.max(40, bd.z1 + 2)), dx = num(m.dx, -1.5, 1.5), dy = num(m.dy, -1.5, 1.5), dz = num(m.dz, -1.5, 1.5);
     if ([ox, oy, oz, dx, dy, dz].includes(null)) return;
     const len = Math.hypot(dx, dy, dz);
     if (Math.abs(len - 1) > 0.05) return;                                              // direction must be a unit vector
@@ -1084,13 +1100,13 @@ setInterval(() => { try { sampleHistory(); } catch (e) { console.error('history 
 
 const port = process.env.PORT || 3000;
 // the shared modules (colliders + prop table per map, nav, protocol) are ES modules; load them all before accepting connections
-Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js')]).then(([m, proto, nav]) => {
-  PR = proto; MAPS = m.MAPS; WORLDS = {}; NAVS = {}; BOTSPOTS = {}; TRIALS = {};
+Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js'), import('../src/shared/trialpick.js')]).then(([m, proto, nav, pick]) => {
+  PR = proto; MAPS = m.MAPS; PICK = pick; WORLDS = {}; NAVS = {}; BOTSPOTS = {}; TRIALS = {};
   let stub = null; try { stub = process.env.TRIAL_STUB ? JSON.parse(process.env.TRIAL_STUB) : null; } catch { console.error('bad TRIAL_STUB'); } // test hook: injects a `trial` block into the house map
   for (const [id, map] of Object.entries(MAPS)) {
-    const tr = validTrial(map.trial || (id === 'house' ? stub : null)); if (tr) TRIALS[id] = tr;
     WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
-    NAVS[id] = nav.createNav(WORLDS[id].colliders); NAVS[id].buildNav();
+    NAVS[id] = nav.createNav(WORLDS[id].colliders, map.meta.bounds); NAVS[id].buildNav();
+    const tr = validTrial(map.trial || (id === 'house' ? stub : null)); if (tr) TRIALS[id] = trialPrep(tr, NAVS[id]);
     const reach = NAVS[id].reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);
     BOTSPOTS[id] = map.spots.filter((s) => map.meta.trusted || reach(s.x, s.z)); // same sealed-pocket filter as the client AI
   }

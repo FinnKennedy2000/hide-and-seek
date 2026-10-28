@@ -1,0 +1,226 @@
+[
+ {
+  "id": "GRASS_01",
+  "clumps": 450,
+  "inCore": 335,
+  "coreArea": 48.76,
+  "perM2": 6.87,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_02",
+  "clumps": 335,
+  "inCore": 240,
+  "coreArea": 34.96,
+  "perM2": 6.86,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_03",
+  "clumps": 258,
+  "inCore": 155,
+  "coreArea": 23.76,
+  "perM2": 6.52,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_04",
+  "clumps": 305,
+  "inCore": 213,
+  "coreArea": 31.36,
+  "perM2": 6.79,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_05",
+  "clumps": 221,
+  "inCore": 133,
+  "coreArea": 20.16,
+  "perM2": 6.6,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_06",
+  "clumps": 305,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_07",
+  "clumps": 304,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_08",
+  "clumps": 373,
+  "inCore": 269,
+  "coreArea": 39.56,
+  "perM2": 6.8,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_09",
+  "clumps": 382,
+  "inCore": 266,
+  "coreArea": 39.56,
+  "perM2": 6.72,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_10",
+  "clumps": 256,
+  "inCore": 174,
+  "coreArea": 25.76,
+  "perM2": 6.75,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_11",
+  "clumps": 183,
+  "inCore": 108,
+  "coreArea": 16.56,
+  "perM2": 6.52,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_12",
+  "clumps": 257,
+  "inCore": 173,
+  "coreArea": 27.36,
+  "perM2": 6.32,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_13",
+  "clumps": 379,
+  "inCore": 269,
+  "coreArea": 39.56,
+  "perM2": 6.8,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_14",
+  "clumps": 314,
+  "inCore": 216,
+  "coreArea": 31.36,
+  "perM2": 6.89,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_15",
+  "clumps": 365,
+  "inCore": 252,
+  "coreArea": 36.96,
+  "perM2": 6.82,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_16",
+  "clumps": 364,
+  "inCore": 248,
+  "coreArea": 36.96,
+  "perM2": 6.71,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_17",
+  "clumps": 296,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_18",
+  "clumps": 334,
+  "inCore": 240,
+  "coreArea": 34.96,
+  "perM2": 6.86,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_19",
+  "clumps": 259,
+  "inCore": 178,
+  "coreArea": 25.76,
+  "perM2": 6.91,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_20",
+  "clumps": 260,
+  "inCore": 155,
+  "coreArea": 23.76,
+  "perM2": 6.52,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_21",
+  "clumps": 402,
+  "inCore": 292,
+  "coreArea": 42.56,
+  "perM2": 6.86,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_22",
+  "clumps": 401,
+  "inCore": 296,
+  "coreArea": 42.56,
+  "perM2": 6.95,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_23",
+  "clumps": 336,
+  "inCore": 240,
+  "coreArea": 34.96,
+  "perM2": 6.86,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_24",
+  "clumps": 329,
+  "inCore": 240,
+  "coreArea": 34.96,
+  "perM2": 6.86,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_25",
+  "clumps": 410,
+  "inCore": 300,
+  "coreArea": 44.16,
+  "perM2": 6.79,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_26",
+  "clumps": 306,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.51
+ },
+ {
+  "id": "GRASS_27",
+  "clumps": 303,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.5
+ },
+ {
+  "id": "GRASS_28",
+  "clumps": 296,
+  "inCore": 204,
+  "coreArea": 30.36,
+  "perM2": 6.72,
+  "minTop": 1.5
+ }
+]

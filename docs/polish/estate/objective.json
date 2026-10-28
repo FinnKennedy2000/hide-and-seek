@@ -1,0 +1,121 @@
+{
+ "steps": [
+  {
+   "relic": "R8",
+   "ok": true,
+   "nBefore": 0,
+   "nAfter": 1,
+   "gatesOpen": false,
+   "secs": 18
+  },
+  {
+   "relic": "R6",
+   "ok": true,
+   "nBefore": 1,
+   "nAfter": 2,
+   "gatesOpen": false,
+   "secs": 20
+  },
+  {
+   "relic": "R7",
+   "ok": true,
+   "nBefore": 2,
+   "nAfter": 3,
+   "gatesOpen": true,
+   "secs": 15
+  },
+  {
+   "gate": {
+    "i": 1,
+    "x": 0,
+    "z": 63.6
+   },
+   "escaped": false
+  }
+ ],
+ "resultTitle": "SURVIVORS ESCAPED",
+ "seekerAlerts": [
+  {
+   "kind": "relic",
+   "x": 0,
+   "z": 2,
+   "ttl": 6
+  },
+  {
+   "kind": "relic",
+   "x": -7,
+   "z": 43,
+   "ttl": 6
+  },
+  {
+   "kind": "relic",
+   "x": -42,
+   "z": 8,
+   "ttl": 6
+  },
+  {
+   "kind": "gate",
+   "x": 0,
+   "z": -63.6,
+   "ttl": 6
+  },
+  {
+   "kind": "gate",
+   "x": 0,
+   "z": 63.6,
+   "ttl": 6
+  }
+ ],
+ "collectedMsgs": [
+  1,
+  2,
+  3
+ ],
+ "gatesMsgs": 1,
+ "end": {
+  "winner": "hiders",
+  "escaped": 1,
+  "out": 0
+ },
+ "relicsLive": [
+  {
+   "i": 0,
+   "x": -42,
+   "z": 8,
+   "id": "R7"
+  },
+  {
+   "i": 1,
+   "x": 43,
+   "z": 42,
+   "id": "R5"
+  },
+  {
+   "i": 2,
+   "x": 44,
+   "z": 3,
+   "id": "R4"
+  },
+  {
+   "i": 3,
+   "x": 0,
+   "z": 2,
+   "id": "R8"
+  },
+  {
+   "i": 4,
+   "x": 1,
+   "z": -44,
+   "id": "R2"
+  },
+  {
+   "i": 5,
+   "x": -7,
+   "z": 43,
+   "id": "R6"
+  }
+ ],
+ "errors": [],
+ "console": [],
+ "failed": []
+}

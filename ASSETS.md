@@ -71,4 +71,21 @@ Ground textures (`public/textures/<set>/{c,n,r}_{1024,512}.webp`, Poly Haven 1k,
 No new files. Fuse stinger, grass rustle, distant creaks, wind / cricket ambience, heartbeat and channel hum are all synthesised at runtime (src/audio/trial.js, src/audio/sfx.js). Footsteps reuse the Kenney CC0 set listed above. The master bus now ends in a limiter (threshold -9 dB, ratio 20, x0.7 trim) so peaks stay under about -6 dBFS.
 
 Coldwood Yard (polish pass): the layout reuses the models above. Sawmill, crane/gantry, water tower, log stacks, truck, rock banks, plank barriers and lamp posts are built from
-`b.box` geometry in `src/shared/maps/coldwood.js` (own work, no files). No new downloads, so the prop payload is unchanged (1.0 MB of prop GLBs; all textures 6.2 MB, of which Coldwood loads only mud, dirt, dryGrass, wood, wall).
+`b.box` geometry in `src/shared/maps/coldwood_yard.js` (own work, no files; the Yard is no longer registered, replaced by the estate below). No new downloads, so the prop payload is unchanged (1.0 MB of prop GLBs; all textures 6.2 MB, of which Coldwood loads only mud, dirt, dryGrass, wood, wall).
+
+## Coldwood Farm estate (trial map, replaces Coldwood Yard)
+
+Source: the COLDWOOD Farm Map Pack ("Coldwood Farm - Expanded Estate" v1.0) supplied by the project owner. Original work: meshes, surface
+textures and placement data were made for this project with procedural Blender authoring scripts (pack START_HERE.txt, PROVENANCE). No Dead by
+Daylight (or any other game's) assets were extracted or bundled; no third-party models or textures are inside. The pack's optional viewer
+ships Three.js 0.180.0 (MIT) under preview/vendor; none of that is copied into this repo.
+
+| File | From | Processing | Size |
+| --- | --- | --- | --- |
+| `public/models/map/coldwood_estate.glb` | `models/coldwood_farm_web.glb` (24.6 MB, 4.02 M instanced tris) | `scripts/estate/glb.mjs` (@gltf-transform 4.5.1, meshoptimizer, sharp): ground flattened to y = 0 inside the fence (`scripts/estate/field.mjs`, every instance / node / merged vertex re-seated by the same field), gameplay empties dropped, bark and heavy props simplified (meshopt), the scenic forest outside the fence uses tree copies with 55% of the leaf triangles, textures WebP (base colour q82, normals q92, max 1024 px; terrain 2048 -> 1024), dedup / prune, EXT_meshopt_compression + quantization. Material names, sRGB base colour / linear normals, double-sided vegetation and EXT_mesh_gpu_instancing kept; the 28 tall-grass patches are untouched. | 5.15 MB, 3.14 M tris |
+| `src/shared/maps/coldwood_data.js` | `data/gameplay.json`, `data/colliders.json`, `data/terrain_heightfield.json` | `scripts/estate/import.mjs`: colliders to the engine's AABBs (rotated boxes sliced, see the file header), markers, vaults, grass cores | 48 KB |
+| `scripts/estate/grass-audit.json` | the processed GLB | clumps per m2 inside each concealment core (tests/world/coldwood.test.mjs checks it) | 3 KB |
+
+The pack's `coldwood_farm_portable.glb`, `coldwood_modular_library.glb`, the .blend source, the PNG textures (embedded in the GLB) and the
+previews are not shipped. Rebuild: install @gltf-transform/{core,functions,extensions}@4.5.1, meshoptimizer and sharp in a scratch dir, then
+`GLTF_DEPS=<dir> node scripts/estate/glb.mjs <pack>` and `node scripts/estate/import.mjs <pack>`.

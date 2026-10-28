@@ -9,10 +9,12 @@ import { applyPBR, tier, atlasUV } from './textures.js';
 import { buildGarden } from './garden.js';
 import { modelLayer } from './models.js';
 import { buildGrassFields } from './grassfield.js';
+import { mapGlbLayer } from './mapglb.js';
 import { applyEnv } from './env.js';
 import { buildNav, setSpots } from '../ai/nav.js';
 import { propRaycast } from '../perf/helpers.js'; // (also installs the BVH raycast)
 import { makeZones, zoneAt } from '../perf/zones.js';
+import { DEBUG } from '../core/state.js';
 
 // ======================================================================
 // world building. Rebuildable: setWorld(mapId) tears the current map down and builds another (see shared/maps/index.js).
@@ -28,7 +30,7 @@ const GEO = {
 const geoOf = (spec) => { const k = spec.join(); let g = geoCache.get(k); if (!g) { g = GEO[spec[0]](...spec.slice(1)); geoCache.set(k, g); } return g; };
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const insts = new Map();       // W: matName -> [{m: Matrix4, color}] boxes flagged `inst` (shelf products), flushed as one InstancedMesh per material
-let gardenOff = null, grassOff = null, models = null; // models: this map's GLB placement layer (models.js)
+let gardenOff = null, grassOff = null, models = null, glb = null; // models: this map's GLB placement layer (models.js); glb: a map drawn by one GLB (mapglb.js)
 function track(m, propId, solid = true) {
   m.userData.propId = propId;
   if (propId >= 0) (propMeshes[propId] ||= []).push(m);
@@ -182,7 +184,7 @@ export function makePropClone(id) {
 function clearWorld() {
   if (!world) return;
   scene.remove(world);
-  gardenOff?.(); gardenOff = null; grassOff?.(); grassOff = null; models?.dispose(); models = null;
+  gardenOff?.(); gardenOff = null; grassOff?.(); grassOff = null; models?.dispose(); models = null; glb?.dispose(); glb = null;
   world.traverse((o) => { if (o.isInstancedMesh) o.dispose(); o.geometry?.disposeBoundsTree?.(); o.geometry?.dispose(); }); // world geometry is all per-map (geoCache bases are never in the scene)
   for (const rs of propRecs) for (const r of rs || []) r.g.dispose();
   for (const ps of cloneCache) for (const p of ps || []) p.g.dispose();
@@ -208,14 +210,19 @@ export function setWorld(id) {
   const built = buildWorld(visual, id); // colliders + props come from the shared module; meshes via `visual`
   colliders.push(...built.colliders); props.push(...built.props);
   flushRecs();
-  const gm = id === 'house' ? mat.grass : M(0x14161a, 0.95); // outside the shop fence: dark verge
-  if (id !== 'house') ownMats.push(gm);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), gm);
-  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
-  ground.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(4 * 3).fill(1), 3)); // W: the shared mats read vertex colours
-  world.add(ground); solids.push(ground);
+  if (meta.glb) { // the GLB brings its own terrain (flattened to y = 0 inside the fence, scripts/estate) and authored tall grass
+    glb = mapGlbLayer(world, meta.glb, { solids, cull: zoneMeshes, onMesh: (m) => { if (liteOn) m.material = liteOf(m.userData.hi); } });
+    if (DEBUG) window.__glb = glb.stats;
+  } else {
+    const gm = id === 'house' ? mat.grass : M(0x14161a, 0.95); // outside the shop fence: dark verge
+    if (id !== 'house') ownMats.push(gm);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), gm);
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+    ground.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(4 * 3).fill(1), 3)); // W: the shared mats read vertex colours
+    world.add(ground); solids.push(ground);
+  }
   if (id === 'house') gardenOff = buildGarden(world, ownMats); // W: instanced grass, flowers, pines
-  if (map.trial) grassOff = buildGrassFields(world, ownMats, map.trial.grass); // tall swaying grass over the trial rectangles
+  if (map.trial && !meta.glb) grassOff = buildGrassFields(world, ownMats, map.trial.grass); // tall swaying grass over the trial rectangles
   models.start(); // GLB props: instances appear as each file arrives
   worldKey = id;
   if (liteOn) setLite(true);

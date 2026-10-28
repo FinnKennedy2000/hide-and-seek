@@ -57,17 +57,18 @@ const colMat = (color, a, depthTest) => new THREE.ShaderMaterial({
 function addOwn(o) { scene.add(o); own.push(o); return o; }
 
 // ----- relics: stone pedestal, lantern with emissive core, additive glow, flat progress ring
-function buildRelic(r, k) {
+// scenery: the map's own model already stands here (Coldwood estate relic stations, 2.07 m tall): no pedestal, the lantern sits on top
+function buildRelic(r, k, scenery) {
   const q = res(), { x, z } = xz(r), id = r.i ?? k, g = new THREE.Group(); g.position.set(x, 0, z);
-  mesh(q.cyl, q.stone, g, 0.5, 0.7, 0.5, 0, 0.35, 0); mesh(q.cyl, q.stone, g, 0.62, 0.12, 0.62, 0, 0.06, 0);
-  const lan = new THREE.Group(); lan.position.y = 1.15; g.add(lan);
+  if (!scenery) { mesh(q.cyl, q.stone, g, 0.5, 0.7, 0.5, 0, 0.35, 0); mesh(q.cyl, q.stone, g, 0.62, 0.12, 0.62, 0, 0.06, 0); }
+  const lan = new THREE.Group(); lan.position.y = scenery ? 2.38 : 1.15; g.add(lan);
   const core = new THREE.MeshBasicMaterial({ color: C.relic });
   mesh(q.sphere, core, lan, 0.17, 0.24, 0.17);
   for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) mesh(q.box, q.iron, lan, 0.025, 0.5, 0.025, 0.2 * sx, 0, 0.2 * sz);
   mesh(q.box, q.iron, lan, 0.46, 0.04, 0.46, 0, 0.27, 0); mesh(q.box, q.iron, lan, 0.46, 0.04, 0.46, 0, -0.27, 0);
   const spr = new THREE.Sprite(additive(C.relic, q.glowTex)); spr.scale.setScalar(2.6); lan.add(spr);
   const rm = ringMat(), ring = new THREE.Mesh(q.ring, rm); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.scale.setScalar(1.6); g.add(ring);
-  addOwn(g); relics.set(id, { g, lan, core, spr, ring, rm, p: 0, done: false, ph: Math.random() * 6, x, z });
+  addOwn(g); relics.set(id, { g, lan, y0: lan.position.y, core, spr, ring, rm, p: 0, done: false, ph: Math.random() * 6, x, z });
 }
 export const setRelicProgress = guard((i, p) => {
   const r = relics.get(i); if (!r || r.done) return;
@@ -84,8 +85,15 @@ export const relicDone = guard((i) => {
 });
 
 // ----- gates: iron frame, two swinging leaves, lever, red -> green lamp
-function buildGate(o, k) {
+// scenery: the map's gate (posts at +-4 m, closed leaves) is part of the GLB, 1.4 m outward of the interaction point: only the lamp is added,
+// on top of one post; red while unpowered, green once the fuses are in (the leaves stay shut: escaping is the gate channel)
+function buildGate(o, k, scenery) {
   const q = res(), { x, z } = xz(o), id = o.i ?? k, g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = Math.atan2(-x, -z); // faces the map centre
+  if (scenery) {
+    const lampMat = new THREE.MeshBasicMaterial({ color: C.red }); mesh(q.sphere, lampMat, g, 0.22, 0.22, 0.22, 4, 3.55, -1.4);
+    const spr = new THREE.Sprite(additive(C.red, q.glowTex)); spr.scale.setScalar(2.4); spr.position.set(4, 3.55, -1.3); g.add(spr);
+    addOwn(g); gates.set(id, { g, leaves: [], arm: null, lampMat, spr, open: 0, want: 0, x, z }); return;
+  }
   const W = 4.6, H = 3.6;
   for (const s of [-1, 1]) { mesh(q.box, q.iron, g, 0.4, H, 0.4, s * W / 2, H / 2, 0); mesh(q.box, q.rust, g, 0.6, 0.25, 0.6, s * W / 2, 0.12, 0); }
   mesh(q.box, q.iron, g, W + 0.4, 0.4, 0.4, 0, H + 0.1, 0); mesh(q.box, q.iron, g, W, 0.12, 0.2, 0, H - 0.4, 0);
@@ -109,12 +117,14 @@ export const openGates = guard(() => {
 });
 
 // ----- cages: chain, iron cage with bars, silhouette inside
-function buildCage(o, k) {
+function buildCage(o, k, scenery) { // scenery: the map's cage frame is in the GLB; only the occupant silhouette + glow are added
   const q = res(), { x, z } = xz(o), id = o.i ?? k, g = new THREE.Group(); g.position.set(x, 0, z);
-  mesh(q.cyl, q.iron, g, 0.025, 4.4, 0.025, 0, 4.2, 0);
   const c = new THREE.Group(); c.position.y = 1.15; g.add(c);
-  mesh(q.cyl, q.iron, c, 0.8, 0.08, 0.8, 0, -1, 0); mesh(q.cyl, q.iron, c, 0.8, 0.08, 0.8, 0, 1, 0); mesh(q.cyl, q.iron, c, 0.12, 0.2, 0.12, 0, 1.12, 0);
-  for (let b = 0; b < 10; b++) { const a = (b / 10) * Math.PI * 2; mesh(q.box, q.iron, c, 0.05, 2, 0.05, Math.cos(a) * 0.75, 0, Math.sin(a) * 0.75); }
+  if (!scenery) {
+    mesh(q.cyl, q.iron, g, 0.025, 4.4, 0.025, 0, 4.2, 0);
+    mesh(q.cyl, q.iron, c, 0.8, 0.08, 0.8, 0, -1, 0); mesh(q.cyl, q.iron, c, 0.8, 0.08, 0.8, 0, 1, 0); mesh(q.cyl, q.iron, c, 0.12, 0.2, 0.12, 0, 1.12, 0);
+    for (let b = 0; b < 10; b++) { const a = (b / 10) * Math.PI * 2; mesh(q.box, q.iron, c, 0.05, 2, 0.05, Math.cos(a) * 0.75, 0, Math.sin(a) * 0.75); }
+  }
   const sil = new THREE.Group(); sil.visible = false; c.add(sil);
   mesh(q.sphere, q.shadow, sil, 0.18, 0.2, 0.18, 0, 0.35, 0); mesh(q.cyl, q.shadow, sil, 0.24, 0.5, 0.18, 0, -0.1, 0);
   const rg = new THREE.Sprite(additive(C.cage, q.glowTex)); rg.scale.setScalar(2.2); rg.position.y = 0.1; rg.visible = false; c.add(rg);
@@ -126,13 +136,14 @@ export const cageOccupied = guard((i, on) => { const c = cages.get(i); if (c) { 
 function buildVaults(v) {
   if (!v?.length) return;
   const q = res(), im = new THREE.InstancedMesh(q.box, q.pale, v.length), m = new THREE.Matrix4(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3(), qt = new THREE.Quaternion();
-  v.forEach((w, k) => { const alongX = w.ax === 'x' || w.ax === 0 || w.ax === 'X'; e.set(0, alongX ? 0 : Math.PI / 2, 0); qt.setFromEuler(e); s.set(2.4, 0.06, 0.55); p.set(w.x, 1.22, w.z); m.compose(p, qt, s); im.setMatrixAt(k, m); });
+  v.forEach((w, k) => { const alongX = w.ax === 'x' || w.ax === 0 || w.ax === 'X'; e.set(0, alongX ? 0 : Math.PI / 2, 0); qt.setFromEuler(e); s.set(w.w ?? 2.4, 0.06, w.sill ? 0.45 : 0.55); p.set(w.x, (w.sill ?? 1.2) + 0.02, w.z); m.compose(p, qt, s); im.setMatrixAt(k, m); }); // (w.sill: the visible sill height when the collider is taller)
   im.frustumCulled = false; addOwn(im);
 }
 
 export const buildRoundProps = guard((o = {}) => {
   clearRoundProps(); res();
-  (o.relics || []).forEach(buildRelic); (o.gates || []).forEach(buildGate); (o.cages || []).forEach(buildCage); buildVaults(o.vaults);
+  const sc = !!o.scenery;
+  (o.relics || []).forEach((r, k) => buildRelic(r, k, sc)); (o.gates || []).forEach((g, k) => buildGate(g, k, sc)); (o.cages || []).forEach((c, k) => buildCage(c, k, sc)); buildVaults(o.vaults);
 });
 
 // ----- light columns: relic beams (depth tested) and beacons (seen through walls)
@@ -212,13 +223,13 @@ export const updateTrialFx = guard((dt) => {
   const t = performance.now() / 1000;
   for (const r of relics.values()) {
     if (r.done) continue;
-    r.lan.position.y = 1.15 + Math.sin(t * 1.6 + r.ph) * 0.06; r.lan.rotation.y += dt * 0.6;
+    r.lan.position.y = r.y0 + Math.sin(t * 1.6 + r.ph) * 0.06; r.lan.rotation.y += dt * 0.6;
     const f = 1 + Math.sin(t * 5 + r.ph) * 0.08; r.spr.material.opacity = 0.75 + Math.sin(t * 3 + r.ph) * 0.2; r.spr.scale.setScalar((2.6 + r.p * 1.6) * f);
   }
   for (const o of gates.values()) {
     o.open += (o.want - o.open) * Math.min(1, dt * 1.6);
     for (const l of o.leaves) l.piv.rotation.y = l.s * o.open * 1.45;
-    o.arm.rotation.x = -0.6 + o.open * 1.2;
+    if (o.arm) o.arm.rotation.x = -0.6 + o.open * 1.2;
     if (!o.want) o.spr.material.opacity = 0.6 + Math.sin(t * 4) * 0.3;
   }
   for (const c of cages.values()) { c.c.rotation.y = Math.sin(t * 0.8 + c.ph) * 0.06; c.c.position.y = 1.15 + Math.sin(t * 1.1 + c.ph) * 0.03; if (c.on) { c.rg.material.opacity = 0.5 + Math.sin(t * 6) * 0.25; c.sil.rotation.y = Math.sin(t * 3) * 0.3; } }

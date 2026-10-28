@@ -1,0 +1,171 @@
+{
+ "rows": [
+  {
+   "vault": "V01",
+   "label": "A->B",
+   "from": [
+    -17.87,
+    -7.36
+   ],
+   "to": [
+    -15.4,
+    -7.36
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.47
+  },
+  {
+   "vault": "V01",
+   "label": "B->A",
+   "from": [
+    -16.09,
+    -7.29
+   ],
+   "to": [
+    -18.6,
+    -7.29
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.51
+  },
+  {
+   "vault": "V03",
+   "label": "A->B",
+   "from": [
+    -46.92,
+    -25.79
+   ],
+   "to": [
+    -46.92,
+    -23.4
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.39
+  },
+  {
+   "vault": "V03",
+   "label": "B->A",
+   "from": [
+    -47.18,
+    -24.14
+   ],
+   "to": [
+    -47.18,
+    -26.6
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.46
+  },
+  {
+   "vault": "V16",
+   "label": "A->B",
+   "from": [
+    -40.88,
+    -12.65
+   ],
+   "to": [
+    -40.88,
+    -10.4
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.25
+  },
+  {
+   "vault": "V16",
+   "label": "B->A",
+   "from": [
+    -41.33,
+    -10.97
+   ],
+   "to": [
+    -41.33,
+    -13.6
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.63
+  },
+  {
+   "vault": "V05",
+   "label": "A->B",
+   "from": [
+    -20.66,
+    -40.58
+   ],
+   "to": [
+    -20.66,
+    -40.58
+   ],
+   "crossed": false,
+   "landedInsideCollider": false,
+   "hopM": 0
+  },
+  {
+   "vault": "V05",
+   "label": "B->A",
+   "from": [
+    -18.24,
+    -45.29
+   ],
+   "to": [
+    -18.24,
+    -45.29
+   ],
+   "crossed": false,
+   "landedInsideCollider": false,
+   "hopM": 0
+  },
+  {
+   "vault": "V01",
+   "label": "A->B with a player on the landing (expect refused)",
+   "from": [
+    -17.82,
+    -7.12
+   ],
+   "to": [
+    -17.82,
+    -7.12
+   ],
+   "crossed": false,
+   "landedInsideCollider": false,
+   "hopM": 0
+  },
+  {
+   "vault": "V01",
+   "label": "A->B landing clear again, Space held 1.5 s (expect exactly one hop)",
+   "from": [
+    -17.49,
+    -7.09
+   ],
+   "to": [
+    -15.4,
+    -7.09
+   ],
+   "crossed": true,
+   "landedInsideCollider": false,
+   "hopM": 2.09
+  },
+  {
+   "vault": "none",
+   "label": "Space at the barn wall (no vault)",
+   "from": [
+    -11.05,
+    -9.34
+   ],
+   "to": [
+    -11.05,
+    -9.34
+   ],
+   "crossed": false,
+   "hopM": 0
+  }
+ ],
+ "errors": [],
+ "console": [],
+ "failed": []
+}

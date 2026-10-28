@@ -1,0 +1,153 @@
+{
+ "quality": "low",
+ "sprint": true,
+ "backend": "rapier",
+ "samples": 1013,
+ "penetrations": 0,
+ "inside": [],
+ "report": [
+  {
+   "stop": "barn N door",
+   "ok": true,
+   "at": [
+    0.14,
+    -13.23
+   ],
+   "secs": 15,
+   "err": ""
+  },
+  {
+   "stop": "barn centre",
+   "ok": true,
+   "at": [
+    -0.03,
+    -4.14
+   ],
+   "secs": 2,
+   "err": ""
+  },
+  {
+   "stop": "barn W door",
+   "ok": true,
+   "at": [
+    -11.47,
+    0.45
+   ],
+   "secs": 6,
+   "err": ""
+  },
+  {
+   "stop": "hayfield",
+   "ok": true,
+   "at": [
+    -42.34,
+    12.12
+   ],
+   "secs": 4,
+   "err": ""
+  },
+  {
+   "stop": "chapel",
+   "ok": true,
+   "at": [
+    -39.84,
+    -33.49
+   ],
+   "secs": 6,
+   "err": ""
+  },
+  {
+   "stop": "timber",
+   "ok": true,
+   "at": [
+    2.79,
+    -39.69
+   ],
+   "secs": 8,
+   "err": ""
+  },
+  {
+   "stop": "north gate",
+   "ok": true,
+   "at": [
+    -0.02,
+    -63.5
+   ],
+   "secs": 4,
+   "err": ""
+  },
+  {
+   "stop": "farmhouse",
+   "ok": true,
+   "at": [
+    38.71,
+    -33.23
+   ],
+   "secs": 16,
+   "err": ""
+  },
+  {
+   "stop": "pump",
+   "ok": true,
+   "at": [
+    46.1,
+    0.85
+   ],
+   "secs": 5,
+   "err": ""
+  },
+  {
+   "stop": "barn E door",
+   "ok": true,
+   "at": [
+    11.19,
+    0.2
+   ],
+   "secs": 5,
+   "err": ""
+  },
+  {
+   "stop": "barn S door",
+   "ok": true,
+   "at": [
+    -0.07,
+    12.19
+   ],
+   "secs": 3,
+   "err": ""
+  },
+  {
+   "stop": "marsh dry bank",
+   "ok": true,
+   "at": [
+    42.33,
+    44.28
+   ],
+   "secs": 8,
+   "err": ""
+  },
+  {
+   "stop": "scrapyard",
+   "ok": true,
+   "at": [
+    -3.89,
+    39.88
+   ],
+   "secs": 14,
+   "err": ""
+  },
+  {
+   "stop": "south gate",
+   "ok": true,
+   "at": [
+    0.34,
+    64.01
+   ],
+   "secs": 3,
+   "err": ""
+  }
+ ],
+ "errors": [],
+ "console": [],
+ "failed": []
+}

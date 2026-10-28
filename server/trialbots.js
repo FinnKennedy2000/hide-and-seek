@@ -65,7 +65,8 @@ function hider(room, b, t, dt, api) {
         const sc = ds * 0.5 - db * 0.3 + (c.g ? 8 : 0) + (((c.x - b.x) * ax + (c.z - b.z) * az) / ((db || 1) * al)) * 10 + (hurt && c.g ? 6 : 0);
         if (sc > bs) { bs = sc; best = c; }
       }
-      if (!best) best = { x: Math.max(-33, Math.min(33, b.x + (ax / al) * 15)), z: Math.max(-33, Math.min(33, b.z + (az / al) * 15)) };
+      const bd = api.bounds || { x0: -33, x1: 33, z0: -33, z1: 33 };
+      if (!best) best = { x: Math.max(bd.x0 + 1, Math.min(bd.x1 - 1, b.x + (ax / al) * 15)), z: Math.max(bd.z0 + 1, Math.min(bd.z1 - 1, b.z + (az / al) * 15)) };
       s.flee = { x: best.x, z: best.z, t };
     }
     walk(s.flee.x, s.flee.z, sp, 'flee' + Math.round(s.flee.x) + ',' + Math.round(s.flee.z), 1);
