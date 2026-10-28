@@ -19,9 +19,9 @@ test('governor: 10 s of 10 ms frames climbs back', () => {
   assert.ok(g.scale > low, `scale ${g.scale} vs ${low}`);
 });
 
-test('governor: scale floor is 0.5 and never exceeds the tier scale', () => {
+test('governor: scale floor is 0.6 and never exceeds the tier scale', () => {
   const g = new Governor({ tier: 'low', minTier: 'low', maxTier: 'low' });
-  feed(g, 40, 30); assert.equal(g.scale, 0.5);
+  feed(g, 40, 30); assert.equal(g.scale, 0.6);
   feed(g, 8, 60); assert.ok(g.scale <= budget.low.scale + 1e-9);
 });
 

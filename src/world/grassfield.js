@@ -57,7 +57,7 @@ export function grassShader() {
   const uTime = { value: 0 }, uFade = { value: 0 };
   const patch = (s) => {
     s.uniforms.uTime = uTime; s.uniforms.uFade = uFade;
-    s.vertexShader = 'uniform float uTime; varying float vCamD;\n' + s.vertexShader.replace('#include <begin_vertex>',
+    s.vertexShader = 'invariant gl_Position; uniform float uTime; varying float vCamD;\n' + s.vertexShader.replace('#include <begin_vertex>',
       `#include <begin_vertex>
        float ph = instanceMatrix[3].x * 0.5 + instanceMatrix[3].z * 0.37;
        float gust = sin(uTime * 0.6 + instanceMatrix[3].x * 0.11 + instanceMatrix[3].z * 0.07) * 0.5 + 0.7;
@@ -68,17 +68,43 @@ export function grassShader() {
        if (uFade > 0.5 && vCamD < ${NEAR_FADE.toFixed(2)}) { float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453); if (n > smoothstep(0.15, ${NEAR_FADE.toFixed(2)}, vCamD)) discard; }`);
   };
   const apply = (m) => { if (m.onBeforeCompile !== patch) { m.onBeforeCompile = patch; m.userData.gp = true; m.needsUpdate = true; } };
+  // Depth prepass: blades overlap many times over and the lit grass shader has a discard (the hider fade), which turns off early-z, so every
+  // hidden blade fragment was shaded. A depth-only twin (same geometry, instances, wind and fade discard) draws first (renderOrder -10);
+  // the lit pass then runs with depthWrite off, so only the front blade of each pixel is shaded. Same depth buffer, same front blade:
+  // the image (and what the seeker can see) is unchanged: pixel-identical on the Intel iGPU (docs/polish/PERF.md).
+  // Both passes declare `invariant gl_Position`, so the lit pass gets exactly its twin's depth and passes LessEqual on the front blade only.
+  const PRE_NEAR = 6; // m beyond a patch's bounding sphere: in or right next to the grass, where it fills the screen
+  const preMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
+  apply(preMat);
+  function prepass(im) {
+    if (im.userData.pre) { im.userData.pre.material = preMat; return im.userData.pre; } // a cached GLB revisited: bind this shader's uniforms
+    const p = new THREE.InstancedMesh(im.geometry, preMat, im.count);
+    p.instanceMatrix = im.instanceMatrix; p.count = im.count; p.boundingSphere = im.boundingSphere; p.frustumCulled = im.frustumCulled;
+    p.renderOrder = -10; p.matrixAutoUpdate = false; p.castShadow = p.receiveShadow = false; p.name = 'grass-depth';
+    p.userData.noScan = true; p.userData.grassDepth = true; p.raycast = () => {};
+    im.add(p); im.userData.pre = p; // a child: hidden, moved and removed with its grass
+    return p;
+  }
   function drive(meshes) {
     let seeker = false, off = false;
     import('../modes/trial.js').then((m) => { if (!off) seeker = m.trial; }).catch(() => {}); // lazy: trial.js imports the world indirectly
     const stop = addSystem({ name: 'grass-wind', order: 40, update: (dt, t) => {
       uTime.value = t;
-      for (const im of meshes) apply(im.material); // the Lambert twin on potato / low
+      for (const im of meshes) apply(im.material); // (also the Lambert twin on potato / low)
       uFade.value = seeker && seeker.on && seeker.role === 'seeker' ? 0 : 1;
     } });
-    return () => { off = true; stop(); };
+    // the prepass costs a second vertex pass; it only pays where a patch covers a lot of screen, so it runs for patches near the camera
+    // (order 99: after every camera update of the frame, just before the render)
+    const stopPre = addSystem({ name: 'grass-prepass', order: 99, update: () => {
+      for (const im of meshes) {
+        const p = im.userData.pre; if (!p) continue;
+        const c = im.userData.wc ??= im.boundingSphere.center.clone().applyMatrix4(im.matrixWorld), r = im.boundingSphere.radius * im.matrixWorld.getMaxScaleOnAxis() + PRE_NEAR;
+        p.visible = camera.position.distanceToSquared(c) < r * r; im.material.depthWrite = !p.visible;
+      }
+    } });
+    return () => { off = true; stop(); stopPre(); };
   }
-  return { patch, apply, drive, uTime, uFade };
+  return { patch, apply, drive, prepass, uTime, uFade };
 }
 
 export function buildGrassFields(world, ownMats, rects) {
@@ -96,7 +122,7 @@ export function buildGrassFields(world, ownMats, rects) {
     im.setMatrixAt(i, d.matrix); im.setColorAt(i, col.copy(pal[(c.tint * pal.length) | 0]).multiplyScalar(0.85 + ((c.tint * 97) % 1) * 0.3));
   });
   im.count = clumps.length; im.computeBoundingSphere(); im.castShadow = false; im.receiveShadow = true; im.userData.noScan = true; im.userData.gameplayGrass = true;
-  world.add(im);
+  world.add(im); sh.prepass(im);
   const patches = shadowPatches(rects); world.add(patches.mesh); ownMats.push(patches.mat);
   im.userData.stats = { clumps: clumps.length, tris: clumps.length * 9 * 3 };
 

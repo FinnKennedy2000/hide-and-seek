@@ -56,3 +56,35 @@ test('propRaycast: a hit on a merged mesh reports the owning prop via a proxy th
 });
 
 import { mergeGeometries as mergeGeometriesLocal } from 'three/addons/utils/BufferGeometryUtils.js';
+
+test('summarize: percentiles, fps from the mean, hitch counts', async () => {
+  const { summarize } = await import('../../src/perf/helpers.js');
+  const ms = [...Array(98).fill(16), 40, 100];
+  const s = summarize(ms);
+  assert.equal(s.n, 100); assert.equal(s.p50, 16); assert.equal(s.p95, 16); assert.equal(s.p99, 100); assert.equal(s.max, 100);
+  assert.equal(s.over33, 2); assert.equal(s.over50, 1);
+  assert.equal(s.mean, 17.1); assert.equal(s.fps, 58.5);
+  assert.deepEqual(summarize([]), { n: 0 });
+});
+
+test('batchStatic: small quantized / instanced meshes -> one world-space mesh per material and cell; big ones untouched', async () => {
+  const { batchStatic } = await import('../../src/perf/helpers.js');
+  const q = new THREE.BoxGeometry(1, 1, 1), pos = q.attributes.position; // int16-normalized positions, scaled back by the node (as KHR_mesh_quantization does)
+  const qa = new THREE.BufferAttribute(new Int16Array(pos.count * 3), 3, true);
+  for (let i = 0; i < pos.count; i++) qa.setXYZ(i, pos.getX(i), pos.getY(i), pos.getZ(i));
+  q.setAttribute('position', qa);
+  const mat = new THREE.MeshBasicMaterial(), other = new THREE.MeshBasicMaterial(), root = new THREE.Group(), top = new THREE.Group(); root.add(top);
+  const a = new THREE.Mesh(q, mat); a.position.set(2, 0, 0); a.scale.setScalar(2); top.add(a);
+  const im = new THREE.InstancedMesh(q, mat, 2); im.setMatrixAt(0, new THREE.Matrix4().makeTranslation(5, 0, 0)); im.setMatrixAt(1, new THREE.Matrix4().makeTranslation(7, 0, 0)); top.add(im);
+  const far = new THREE.Mesh(q, mat); far.position.set(100, 0, 0); top.add(far); // another 66 m cell
+  const big = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), other); top.add(big); // > BATCH_MAX_TRIS: stays
+  const kept = new THREE.Mesh(q, other); kept.name = 'keep'; top.add(kept);
+  const r = batchStatic(root, (o) => o.name === 'keep');
+  assert.deepEqual(r, { from: 3, to: 2 });
+  const ms = meshes(root), batches = ms.filter((m) => m.name === 'batch');
+  assert.equal(ms.length, 4); assert.ok(ms.includes(big) && ms.includes(kept));
+  const near = batches.find((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox.max.x < 50; });
+  assert.equal(near.geometry.index.count / 3, 12 * 3); // 3 boxes of 12 triangles
+  const bb = near.geometry.boundingBox;
+  assert.ok(Math.abs(bb.min.x - 1) < 1e-3 && Math.abs(bb.max.x - 7.5) < 1e-3 && Math.abs(bb.max.y - 1) < 1e-3, JSON.stringify(bb));
+});

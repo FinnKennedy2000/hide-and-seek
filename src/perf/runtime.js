@@ -11,6 +11,7 @@ import { perf } from './index.js';
 import { budget, TIERS } from './budget.js';
 import { pickTier, benchTier, BENCH } from './tier.js';
 import { Governor } from './governor.js';
+import { DEBUG } from '../core/state.js';
 
 export function initPerf() {
   const gl = renderer.getContext();
@@ -158,4 +159,5 @@ export function initPerf() {
   if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
   window.__perf = { st, gov, perf, bounds: () => bounds, makePropClone, props }; // tests/perf/budget.spec.js
+  if (DEBUG && /[?&]perf=1/.test(location.search)) import('./bench.js'); // one-click GPU benchmark (src/perf/bench.js)
 }

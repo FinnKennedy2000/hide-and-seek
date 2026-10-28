@@ -111,8 +111,8 @@ export const render = {
     if (cfg.ao && !N8AO) import('n8ao').then((m) => { N8AO = m.N8AOPostPass; if (level === l) rebuild(); }).catch((e) => console.warn('n8ao failed to load, AO off', e));
     rebuild(); applyShadows(); resize();
   },
-  setScale(s) { // dynamic resolution, 0.5..1 of the preset's pixel ratio
-    s = Math.min(1, Math.max(0.5, s)); if (Math.abs(s - view.scale) < 0.01) return;
+  setScale(s) { // dynamic resolution, 0.6..1 of the preset's pixel ratio
+    s = Math.min(1, Math.max(0.6, s)); if (Math.abs(s - view.scale) < 0.01) return;
     view.scale = s; resize();
   },
   setMap(meta) { // grade + environment light + shadow wiring for a freshly built map; called before the map's meshes exist, so refresh runs after the build
@@ -129,6 +129,17 @@ export const render = {
     const m = new THREE.Mesh(blobGeo, blobMat);
     m.rotation.x = -Math.PI / 2; m.position.y = 0.02; m.scale.setScalar(radius * 2); m.renderOrder = 1; m.visible = cfg.lambert; m.name = 'blob';
     obj.userData.keepShadow = true; obj.add(m); blobs.add(m); return m;
+  },
+  // Compile `obj`'s programs for the current preset before it is added to the scene (KHR_parallel_shader_compile where available), with
+  // the same material swap and CSM wiring the 1 Hz refresh would do, so its first visible frame does not stall on shader compiles.
+  // `patch()` runs after the swap (onBeforeCompile hooks the caller puts on the swapped-in materials, e.g. the grass shader).
+  async warm(obj, patch) {
+    if (cfg.lambert !== undefined) useLambert(obj, cfg.lambert);
+    patch?.();
+    if (csm) obj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (!csmMats.has(m) && m.isMeshStandardMaterial) { csm.setupMaterial(m); m.needsUpdate = true; csmMats.add(m); } });
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(pipe?.composer.inputBuffer ?? null); // programs are keyed on the target's colour space: compile for the RenderPass's target
+    try { const p = renderer.compileAsync(obj, camera, scene); renderer.setRenderTarget(prev); await p; } catch (e) { renderer.setRenderTarget(prev); console.warn('shader warm-up failed (compiles on first sight instead)', e); }
   },
   hit() { hitT = 0.25; }, // brief chromatic aberration on a hit
   stats() { return { calls: last.calls, tris: last.tris, fps: Math.round(fpsEma) }; }, // last frame, all passes

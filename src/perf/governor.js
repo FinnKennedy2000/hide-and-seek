@@ -1,10 +1,10 @@
 // Frame-time governor: the single owner of automatic render-scale and tier changes. Pure (no DOM/THREE): feed it frame ms.
-//  - 1 s window. Average > 18 ms: scale -0.1 (floor 0.5). Average < 13 ms for 5 s straight: scale +0.1 (up to the tier's scale).
+//  - 1 s window. Average > 18 ms: scale -0.1 (floor 0.6: below that the image is too soft to spot anyone). Average < 13 ms for 5 s straight: scale +0.1 (up to the tier's scale).
 //  - Tier changes are rarer: down after 3 windows still > 18 ms at the scale floor, up after 15 s < 13 ms at full scale,
 //    never more than one per 8 s, and a step up that is immediately undone raises a ceiling for 60 s so it never thrashes.
 import { TIERS, budget } from './budget.js';
 
-export const GOV = { windowMs: 1000, hiMs: 18, loMs: 13, upAfterMs: 5000, floor: 0.5, step: 0.1, tierDownWindows: 3, tierUpMs: 15000, tierCooldownMs: 8000, upTrialMs: 120000, ceilingMs: 60000 };
+export const GOV = { windowMs: 1000, hiMs: 18, loMs: 13, upAfterMs: 5000, floor: 0.6, step: 0.1, tierDownWindows: 3, tierUpMs: 15000, tierCooldownMs: 8000, upTrialMs: 120000, ceilingMs: 60000 };
 const r2 = (x) => Math.round(x * 100) / 100;
 
 export class Governor {
