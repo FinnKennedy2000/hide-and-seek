@@ -21,6 +21,7 @@ export function syncClock(stMs, local) {
   return s;
 }
 export const remotes = new Map(); // id -> avatar
+if (typeof window !== "undefined" && new URLSearchParams(location.search).has("debug")) window.__remotes = remotes; // debug hook (playtests)
 export const opts = { cone: true, hideHiders: false }; // set per round by online.js
 const rnd = (a, b) => a + Math.random() * (b - a);
 

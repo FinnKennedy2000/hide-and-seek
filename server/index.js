@@ -76,6 +76,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end(req.method === 'HEAD' ? undefined : 'ok');
   }
+  if (rel === '/botdebug' && process.env.BOT_DEBUG) { // playtest hook only (env-gated, off in production): bot brain state per room
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify([...rooms.values()].map((r) => [...r.players.values()].filter((q) => q.bot).map((q) => ({ id: q.id, role: q.role, st: q.st, x: q.x, z: q.z, speed: q.speed, mode: q.tb?.mode, mem: q.tb?.mem, hasAlert: !!q.lastAlert })))));
+  }
   if (rel === '/metrics') { // Prometheus text format; set METRICS_TOKEN to require ?token=
     if (process.env.METRICS_TOKEN && new URL(req.url, 'http://x').searchParams.get('token') !== process.env.METRICS_TOKEN) { res.writeHead(403); return res.end('Forbidden'); }
     let humans = 0, bots = 0;

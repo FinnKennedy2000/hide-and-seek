@@ -60,11 +60,11 @@ function shot(name, p, vol, secs, prio = 2, bus = 'sfx', arg) {
   const o = out(p, vol, prio, bus); if (!o) return;
   SND[name](o, arg); o.end(secs);
 }
-const CUEK = { relic: 'taunt', scream: 'shot', gate: 'puff', trap: 'scrape', cage: 'land', hit: 'splat' };
+const CUEK = { relic: 'fuse', scream: 'scream', gate: 'gatecue', trap: 'scrape', cage: 'cagecue', hit: 'hitcue' };
 
 export const alertSound = guard((kind, x, z) => {
   const p = pos(x, z);
-  if (p) cueAt(CUEK[kind] || 'shot', p, 0.4);
+  if (p) cueAt(CUEK[kind] || 'scream', p, 0.4);
   if (kind === 'relic') { shot('bell', p, 0.5, 1.6, 3, 'ui'); shot('stinger', null, 0.55, 1.2, 3, 'ui'); } // spatial bell at the fuse + a non-positional sting so it is heard from anywhere
   else if (kind === 'scream') shot('scream', p, 0.6, 1.2, 3, 'ui', false);
   else if (kind === 'gate') shot('siren', p, 0.45, 1.7, 3, 'ui');
@@ -72,7 +72,7 @@ export const alertSound = guard((kind, x, z) => {
   else if (kind === 'cage') shot('toll', p, 0.5, 2.1, 3, 'ui');
   else shot('thud', p, 0.5, 0.4, 3, 'ui');
 });
-export const scream = guard((x, z) => { const p = pos(x, z); if (p) cueAt('shot', p, 0.6); shot('scream', p, 0.8, 1.3, 3, 'sfx', true); });
+export const scream = guard((x, z) => { const p = pos(x, z); if (p) cueAt('scream', p, 0.6); shot('scream', p, 0.8, 1.3, 3, 'sfx', true); });
 export const swingSound = guard(() => shot('swing', null, 0.5, 0.4));
 export const hitSound = guard((x, z) => shot('thud', pos(x, z), 0.8, 0.4, 3));
 export const trapSound = guard((x, z) => { const p = pos(x, z); if (p) cueAt('scrape', p, 0.5); shot('snap', p, 0.9, 0.7, 3); });

@@ -1,0 +1,15 @@
+[
+ "spawn {\"x\":-29,\"z\":13,\"n\":0,\"st\":\"free\",\"chan\":null,\"gatesOpen\":false,\"prompt\":\"\",\"toast\":\"\",\"banner\":\"\",\"exposed\":\"none/1\",\"fuse\":\"0/3\"}",
+ "relics [[0,-21,15.5],[1,-24,-4],[2,-15,-26],[3,31,-11],[4,22,-31],[5,-8,2.5]] gates [[-23.5,-32.2],[23.5,32.2]]",
+ "gate with 0 fuses: held E 5 s -> {\"chan\":null,\"prompt\":\"Gate unpowered - install fuses (0/3)\",\"toast\":\"\",\"st\":\"free\",\"gatesOpen\":false}",
+ "while holding E: {\"chan\":null,\"prompt\":\"Gate unpowered - install fuses (0/3)\"}",
+ "fuse 0/3 after holding E 30.8 s: {\"toast\":\"\",\"exposed\":\"none/1\",\"fuse\":\"0/3\",\"banner\":\"\"}",
+ "while holding E: {\"chan\":{\"what\":\"relic\",\"i\":1},\"prompt\":\"Hold E to install fuse\"}",
+ "fuse 1/3 after holding E 30.8 s: {\"toast\":\"FUSE 1/3 INSTALLED\",\"exposed\":\"none/1\",\"fuse\":\"1/3\",\"banner\":\"\"}",
+ "while holding E: {\"chan\":null,\"prompt\":\"Hold E to install fuse\"}",
+ "fuse 1/3 after holding E 31.0 s: {\"toast\":\"FUSE 1/3 INSTALLED\",\"exposed\":\"none/1\",\"fuse\":\"1/3\",\"banner\":\"\"}",
+ "after 3 fuses {\"gatesOpen\":false,\"banner\":\"\",\"toast\":\"FUSE 1/3 INSTALLED\"}",
+ "gate with 3 fuses: state free after 22.7 s; chan null",
+ "results {\"results\":false,\"title\":\"\"}",
+ "errs []"
+]

@@ -25,6 +25,7 @@ export function show(id, on) { $(id).classList.toggle('hidden', !on); }
 export const CUE = { // type -> [caption, colour, glyph]
   step: ['Footsteps', '#cbd5e1', '•'], sprint: ['Running', '#ffd58a', '»'], land: ['Landing', '#ffb44d', '▼'], scrape: ['Scraping', '#c4b5fd', '≈'],
   taunt: ['Taunt', '#f9a8d4', '♪'], shot: ['Shot', '#ff8a8a', '✸'], rustle: ['Rustling', '#a7f3c0', '~'], puff: ['Disguise poof', '#a5f3fc', '○'], splat: ['Paint splat', '#fdba74', '●'],
+  fuse: ['Fuse installed', '#ffd58a', '▲'], scream: ['Scream', '#ff8a8a', '!'], gatecue: ['Gate powered', '#a5f3fc', '▣'], cagecue: ['Cage', '#c4b5fd', '▼'], hitcue: ['Hit', '#fdba74', '●'], // trial-mode alert captions
 };
 const cues = [], caps = [];
 const CUE_LIFE = 1.5, CUE_MIN = 0.012; // seconds on screen; smallest (volume x falloff) loudness that is still audible

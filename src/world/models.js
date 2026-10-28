@@ -18,7 +18,7 @@ function ensure(name) {
       if (!gltf) return null;
       gltf.scene.updateMatrixWorld(true);
       const parts = [];
-      gltf.scene.traverse((o) => { if (o.isMesh) parts.push({ geo: o.geometry.clone().applyMatrix4(o.matrixWorld), mat: o.material }); });
+      gltf.scene.traverse((o) => { if (o.isMesh) { const g = o.geometry.clone().applyMatrix4(o.matrixWorld); g.morphAttributes = {}; parts.push({ geo: g, mat: o.material }); } }); // static props: drop morph targets (an InstancedMesh left with morphAttributes but no morphTargetInfluences makes three throw every frame)
       return parts;
     });
     loaded.set(name, p);
