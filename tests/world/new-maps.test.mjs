@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { buildWorld, MAPS } from '../../src/shared/worlddata.js';
 
 const IDS = process.argv.slice(2).length ? process.argv.slice(2) : ['school', 'museum', 'funfair', 'office'].filter((i) => MAPS[i]);
-const NG = 104, CELL = 0.5, NMIN = -26, NR = 0.3;
+const NG = 140, CELL = 0.5, NMIN = -35, NR = 0.3;
 let fail = 0;
 const ok = (c, n) => { if (!c) fail++; console.log((c ? 'PASS ' : 'FAIL ') + n); };
 

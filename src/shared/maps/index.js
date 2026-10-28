@@ -9,6 +9,7 @@ import * as school from './school.js';
 import * as museum from './museum.js';
 import * as funfair from './funfair.js';
 import * as office from './office.js';
+import * as coldwood from './coldwood.js';
 
 export const MAPS = {
   house,
@@ -17,4 +18,5 @@ export const MAPS = {
   museum,
   funfair,
   office,
+  coldwood,
 };

@@ -1,6 +1,6 @@
 // Navigation grid, A*-ish (BFS + string-pulling) pathing and line of sight over a collider list. No DOM, no THREE:
 // the client AI (src/ai/nav.js) and the server (bots, interest management) both build one from the shared world colliders.
-const NG = 104, CELL = 0.5, NMIN = -26, NR = 0.3;
+const NG = 140, CELL = 0.5, NMIN = -35, NR = 0.3;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const turnTo = (cur, target, rate) => cur + clamp(((target - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -rate, rate);

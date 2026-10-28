@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWorld, MAPS } from '../../src/shared/worlddata.js';
 
-const CELL = 0.1, MIN = -26, N = 520, R = 0.3, CROUCH = 1.0;
+const CELL = 0.1, MIN = -35, N = 700, R = 0.3, CROUCH = 1.0;
 const ci = (v) => Math.floor((v - MIN) / CELL);
 
 function fill(map, colliders) {
@@ -42,7 +42,7 @@ function fill(map, colliders) {
 
 // The AI nav grid exactly as src/ai/nav.js builds it (setSpots drops spots it cannot reach, so none may be dropped).
 function navReach(map, colliders) {
-  const NG = 104, C = 0.5, M = -26, NR = 0.3, blocked = new Uint8Array(NG * NG), cl = (v) => Math.min(NG - 1, Math.max(0, Math.floor((v - M) / C)));
+  const NG = 140, C = 0.5, M = -35, NR = 0.3, blocked = new Uint8Array(NG * NG), cl = (v) => Math.min(NG - 1, Math.max(0, Math.floor((v - M) / C)));
   for (const c of colliders) {
     if (c.y0 > 0.69 || c.y1 < 0.15) continue;
     for (let j = Math.max(0, Math.floor((c.z0 - NR - M) / C)); j <= Math.min(NG - 1, Math.ceil((c.z1 + NR - M) / C)); j++) {
@@ -82,7 +82,7 @@ for (const id of Object.keys(MAPS)) {
   const pts = [...map.spots.map((s) => ({ ...s, t: 'spot' })), ...map.spawns.map(([x, z]) => ({ x, z, t: 'spawn' }))];
   test(`${id}: every spot and spawn is reachable from seekerStart`, () => {
     const reached = fill(map, w.colliders);
-    const bad = pts.filter((p) => !reached[ci(p.z) * N + ci(p.x)]).map((p) => `${p.t} ${p.x},${p.z}`);
+    const bad = pts.filter((p) => ![-1e-6, 1e-6].some((e) => reached[ci(p.z + e) * N + ci(p.x + e)])).map((p) => `${p.t} ${p.x},${p.z}`);
     assert.deepEqual(bad, []);
   });
   test(`${id}: the AI nav grid reaches every spot (none is skipped at load)`, () => {

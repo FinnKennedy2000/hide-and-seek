@@ -7,6 +7,8 @@ import { mat, M, bookTex } from './materials.js';
 import { worldUV, bakeAO, boxGeometry } from './bake.js';   // world workstream (W): UVs, baked AO, bevelled / subdivided boxes
 import { applyPBR, tier, atlasUV } from './textures.js';
 import { buildGarden } from './garden.js';
+import { modelLayer } from './models.js';
+import { buildGrassFields } from './grassfield.js';
 import { applyEnv } from './env.js';
 import { buildNav, setSpots } from '../ai/nav.js';
 import { propRaycast } from '../perf/helpers.js'; // (also installs the BVH raycast)
@@ -26,7 +28,7 @@ const GEO = {
 const geoOf = (spec) => { const k = spec.join(); let g = geoCache.get(k); if (!g) { g = GEO[spec[0]](...spec.slice(1)); geoCache.set(k, g); } return g; };
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const insts = new Map();       // W: matName -> [{m: Matrix4, color}] boxes flagged `inst` (shelf products), flushed as one InstancedMesh per material
-let gardenOff = null;
+let gardenOff = null, grassOff = null, models = null; // models: this map's GLB placement layer (models.js)
 function track(m, propId, solid = true) {
   m.userData.propId = propId;
   if (propId >= 0) (propMeshes[propId] ||= []).push(m);
@@ -141,6 +143,7 @@ const visual = {
     addRec(geoOf(spec), matName, o.cast ?? true, true, propId, o.cast !== false);
     if (o.atlas) { const [u0, v0, u1, v1] = atlasUV(o.atlas), uv = recs[recs.length - 1].g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); } // W: atlas cell
   },
+  model(name, x, z, o) { models?.place(name, x, z, o); },
   light(x, y, z, intensity, dist, color) {
     const l = new THREE.PointLight(color, intensity, dist, 2); l.position.set(x, y, z); world.add(l); lights.push(l);
     if (color === meta.flicker) flickers.push({ l, base: intensity, dip: 0 });
@@ -179,7 +182,7 @@ export function makePropClone(id) {
 function clearWorld() {
   if (!world) return;
   scene.remove(world);
-  gardenOff?.(); gardenOff = null;
+  gardenOff?.(); gardenOff = null; grassOff?.(); grassOff = null; models?.dispose(); models = null;
   world.traverse((o) => { if (o.isInstancedMesh) o.dispose(); o.geometry?.disposeBoundsTree?.(); o.geometry?.dispose(); }); // world geometry is all per-map (geoCache bases are never in the scene)
   for (const rs of propRecs) for (const r of rs || []) r.g.dispose();
   for (const ps of cloneCache) for (const p of ps || []) p.g.dispose();
@@ -201,6 +204,7 @@ export function setWorld(id) {
   applyEnv(meta); bounds = meta.bounds;
   world = new THREE.Group(); world.userData.noScan = true; scene.add(world);
   recs = [];
+  models = modelLayer(world, (m) => { m.userData.hi = m.material; if (liteOn) m.material = liteOf(m.material); });
   const built = buildWorld(visual, id); // colliders + props come from the shared module; meshes via `visual`
   colliders.push(...built.colliders); props.push(...built.props);
   flushRecs();
@@ -211,6 +215,8 @@ export function setWorld(id) {
   ground.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(4 * 3).fill(1), 3)); // W: the shared mats read vertex colours
   world.add(ground); solids.push(ground);
   if (id === 'house') gardenOff = buildGarden(world, ownMats); // W: instanced grass, flowers, pines
+  if (map.trial) grassOff = buildGrassFields(world, ownMats, map.trial.grass); // tall swaying grass over the trial rectangles
+  models.start(); // GLB props: instances appear as each file arrives
   worldKey = id;
   if (liteOn) setLite(true);
   buildNav();

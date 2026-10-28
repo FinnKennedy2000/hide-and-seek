@@ -1,6 +1,7 @@
 // Avatars (character or disguised prop) for the local hider and for remote players, plus snapshot interpolation.
 import * as THREE from 'three';
 import { scene } from '../render/renderer.js';
+import { burst } from '../render/fx.js';
 import { makePropClone } from '../world/build.js';
 import { makeChar, setSeeker as charSeeker, tintChar, animate, taunt as charTaunt, flinch as charFlinch, paintChar, clearPaint, playChar } from '../characters/index.js';
 
@@ -164,9 +165,19 @@ export function updateRemotes(now, localSeeker = false, dt = 0) {
       n.lat = sp > 0.3 ? (vx * Math.cos(ry) - vz * Math.sin(ry)) / sp : 0; n.crouch = s.c;
     }
     a.px = s.x; a.py = s.y; a.pz = s.z;
-    animAvatar(a, dt);
+    const sp0 = a.anim.speed; if (a.limp) a.anim.speed = sp0 * 0.6; // injured: limp
+    animAvatar(a, dt); a.anim.speed = sp0;
+    if (a.limp && dt > 0 && (a.bloodT = (a.bloodT ?? 0.8) - dt) <= 0) { a.bloodT = 0.8; burst(s.x, 0.9, s.z, 0xb00000, 5, 0.5, 0.6, 0.07); }
     // prop hunt: hiders can't see other hiders, so nobody hides next to a teammate or gives them away
-    a.root.visible = !(opts.hideHiders && !localSeeker && !a.seeker);
+    a.root.visible = !a.hidden && !(opts.hideHiders && !localSeeker && !a.seeker);
     if (a.tag) { a.tag.position.y = 2.2 - 0.6 * s.c; a.tag.visible = !a.prop && (a.seeker || !localSeeker); }
   }
+}
+
+// trial mode: st = free | injured | trapped | caged | out | escaped. Injured / trapped limp, bleed and tint red; caged / out / escaped are not drawn (the cage prop shows the occupant).
+export function setRemoteState(id, st) {
+  const a = remotes.get(id); if (!a) return;
+  a.limp = st === 'injured' || st === 'trapped'; a.hidden = st === 'caged' || st === 'out' || st === 'escaped';
+  tintAvatar(a, a.limp ? 0xc03030 : null);
+  if (a.hidden) a.root.visible = false;
 }

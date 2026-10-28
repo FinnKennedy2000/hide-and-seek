@@ -14,11 +14,11 @@ export function playersLabel(meta) {
   if (Array.isArray(p)) p = `${p[0]}–${p[1]}`; else if (typeof p === 'object') p = p.recommended ? String(p.recommended).replace('-', '–') : `${p.min}–${p.max}`;
   return `${p} players`;
 }
-export const randomMapId = () => pick(Object.keys(MAPS));
+export const randomMapId = (ids = Object.keys(MAPS)) => pick(ids);
 
 // onPick(id); `current` is the selected id. Re-render to refresh. disabled: show but do not allow changes (lobby guests).
-export function renderMapPicker(box, { current, onPick, disabled = false, onRandom = null }) {
-  const ids = Object.keys(MAPS), have = [...box.children].filter((n) => n.dataset.map).map((n) => n.dataset.map);
+export function renderMapPicker(box, { current, onPick, disabled = false, onRandom = null, ids = Object.keys(MAPS) }) { // ids: subset to show (trial mode: maps that have a trial layout)
+  const have = [...box.children].filter((n) => n.dataset.map).map((n) => n.dataset.map);
   if (have.length === ids.length && have.every((id, i) => id === ids[i]) && !!box.querySelector('.rand') === !!onRandom) { // same cards: update state in place so keyboard focus survives
     for (const b of box.children) {
       if (b.dataset.map) { b.setAttribute('aria-checked', String(b.dataset.map === current)); b.disabled = disabled; b.onclick = () => onPick(b.dataset.map); }
@@ -27,8 +27,8 @@ export function renderMapPicker(box, { current, onPick, disabled = false, onRand
     return;
   }
   box.textContent = '';
-  for (const [id, m] of Object.entries(MAPS)) {
-    const meta = m.meta, b = document.createElement('button');
+  for (const id of ids) {
+    const m = MAPS[id], meta = m.meta, b = document.createElement('button');
     b.type = 'button'; b.className = 'map'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(id === current)); b.dataset.map = id; b.disabled = disabled;
     const th = document.createElement('span'); th.className = 'th'; th.setAttribute('aria-hidden', 'true');
     if (meta.thumbnail) th.style.backgroundImage = `url(${JSON.stringify(meta.thumbnail)})`;

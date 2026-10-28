@@ -49,6 +49,14 @@ export function buildWorld(v = {}, mapId = 'house') {
       grow(x - e[0], x + e[0], y - e[1], y + e[1], z - e[2], z + e[2]);
       return v.mesh?.(geo, mat, x, y, z, o, cur);
     },
+    // Placed GLB model (client: src/world/models.js, instanced). o: {ry=0, s=1, w, d, h, y0=0, collide=true, deco}. w/d/h = collider size before rotation.
+    model(name, x, z, o = {}) {
+      const { ry = 0, y0 = 0 } = o, c = Math.abs(Math.cos(ry)), sn = Math.abs(Math.sin(ry));
+      const hw = ((o.w ?? 1) * c + (o.d ?? 1) * sn) / 2, hd = ((o.w ?? 1) * sn + (o.d ?? 1) * c) / 2; // AABB of the rotated footprint
+      if (o.collide !== false && o.w != null && o.d != null && o.h != null) colliders.push({ x0: x - hw, x1: x + hw, z0: z - hd, z1: z + hd, y0, y1: y0 + o.h });
+      grow(x - hw, x + hw, y0, y0 + (o.h ?? 1), z - hd, z + hd);
+      return v.model?.(name, x, z, o, cur);
+    },
     collider(c) { colliders.push(c); grow(c.x0, c.x1, c.y0, c.y1, c.z0, c.z1); },
     light(x, y, z, intensity, dist, color) { v.light?.(x, y, z, intensity, dist, color); },
     books(cx, cz, len) { v.books?.(cx, cz, len, cur); },

@@ -17,17 +17,19 @@ import { updatePlayer } from '../player/controller.js';
 import { connect } from './net.js';
 import * as R from './remote.js';
 import * as PH from '../modes/prophunt.js';
+import * as TR from '../modes/trial.js';
 import { HATS, OUTFITS } from '../characters/index.js';
 import { RECONNECT_SECS, F_GONE, F_SELF } from '../shared/protocol.js';
 
 const NAME_KEY = 'hs-name', COS_KEY = 'hs-cos';
 const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2ec4b6, 0xf15bb5, 0x3a86ff, 0xa7c957, 0xe9edc9, 0x8d5a3b]; // server palette
-const MODE_NAMES = { classic: 'CLASSIC', prophunt: 'PROP HUNT' };
+const MODE_NAMES = { trial: 'TRIAL', classic: 'CLASSIC', prophunt: 'PROP HUNT' };
+const CLS_IDS = [...Object.keys(TR.CLASSES), 'random'];
 const TAG_RANGE = 3.0;   // client-side check; server accepts <= 3.5 to absorb latency
 const now = () => performance.now() / 1000;
 
 // view: menu | lobby | play | results | conn
-const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, token: '', recon: false, reconUntil: 0, seq: 0, hist: [], fill: false, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'classic', map: 'house', cos: {} };
+const st = { net: null, view: 'menu', id: 0, code: '', hostId: 0, players: [], role: 'hider', phase: 'lobby', deadline: 0, hidersLeft: 0, sendT: 0, tagCd: 0, token: '', recon: false, reconUntil: 0, seq: 0, hist: [], fill: false, lastCount: -1, linkCode: '', retry: null, waitT: 0, retrying: false, mode: 'trial', map: 'house', cos: {}, cls: 'random', trialMaps: [] };
 
 const readName = () => { try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; } };
 const readCos = () => { try { const c = JSON.parse(localStorage.getItem(COS_KEY) || '{}'); return { color: COLORS.includes(c.color) ? c.color : undefined, hat: HATS.includes(c.hat) ? c.hat : undefined, outfit: OUTFITS.includes(c.outfit) ? c.outfit : undefined }; } catch { return {}; } };
@@ -46,7 +48,7 @@ function setView(v) {
   show('title', false);
   show('hud', v === 'play');
   show('btnLeave', v === 'play');
-  if (v !== 'play') { PH.end(); $('intro').classList.remove('show'); $('blackout').classList.remove('on'); document.exitPointerLock?.(); G.phase = 'menu'; }
+  if (v !== 'play') { PH.end(); TR.end(); $('intro').classList.remove('show'); $('blackout').classList.remove('on'); document.exitPointerLock?.(); G.phase = 'menu'; }
 }
 const msg = (t) => { $('olMsg').textContent = t || ''; };
 
@@ -142,7 +144,7 @@ const handlers = {
   room(m) {
     if (st.view === 'play') for (const p of st.players) if (!m.players.some((q) => q.id === p.id)) { feed(`${p.name} left`); R.removeRemote(p.id); }
     const resuming = st.recon && (m.phase === 'hide' || m.phase === 'seek'); st.recon = false; st.token = m.token || st.token; st.fill = !!m.fill;
-    st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic'; st.map = m.map || 'house';
+    st.retrying = false; st.id = m.you; st.code = m.code; st.hostId = m.host; st.players = m.players; st.mode = m.mode || 'classic'; st.map = m.map || 'house'; st.trialMaps = Array.isArray(m.trialMaps) ? m.trialMaps : st.trialMaps;
     if (!resuming && (st.view === 'menu' || st.view === 'conn')) {
       setView('lobby'); history.replaceState(null, '', `?room=${m.code}`);
       st.cos = readCos(); if (Object.values(st.cos).some((v) => v !== undefined)) st.net?.send('cosmetic', st.cos); // push saved look
@@ -153,6 +155,7 @@ const handlers = {
     G.mode = 'online'; G.paused = false; st.mode = m.mode || 'classic'; st.map = m.map || 'house';
     if (worldId() !== st.map) setWorld(st.map); // rebuild colliders / props / scenery for the room's map before anything is placed
     R.clearRemotes(); R.opts.cone = st.mode === 'classic'; R.opts.hideHiders = st.mode === 'prophunt';
+    const tri = st.mode === 'trial';
     const seekers = new Set(m.seekers);
     for (const p of st.players) {
       p.role = seekers.has(p.id) ? 'seeker' : 'hider';
@@ -168,9 +171,11 @@ const handlers = {
     $('blackmsg').textContent = 'THE HIDERS ARE HIDING...';
     setView('play'); G.phase = 'play';
     const self = playerOf(st.id), pro = st.mode === 'prophunt';
+    if (tri) TR.begin({ id: st.id, role: st.role, m, send: (t, d) => st.net?.send(t, d), nameOf, teleport: (x, z) => { P.x = x; P.z = z; P.vx = 0; P.vz = 0; st.hist.length = 0; }, self: { color: self.color, hat: self.hat, pattern: self.outfit } });
     if (pro) PH.begin({ id: st.id, role: st.role, send: (t, d) => st.net?.send(t, d), colorOf: (id) => playerOf(id)?.color ?? 0xffffff, self: { color: self.color, hat: self.hat, pattern: self.outfit } });
     const seekerRole = st.role === 'seeker';
-    intro(`You are a ${seekerRole ? 'SEEKER' : 'HIDER'} \u2014 ${seekerRole ? (pro ? 'hunt them down with your blaster!' : 'tag every hider!') : (pro ? 'find a prop!' : 'find a hiding spot!')}`);
+    if (tri) intro(seekerRole ? `You are ${TR.CLASSES[m.cls]?.name || 'the SEEKER'} \u2014 hunt them down!` : 'You are a HIDER \u2014 collect relics, then escape!');
+    else intro(`You are a ${seekerRole ? 'SEEKER' : 'HIDER'} \u2014 ${seekerRole ? (pro ? 'hunt them down with your blaster!' : 'tag every hider!') : (pro ? 'find a prop!' : 'find a hiding spot!')}`);
     requestLock();
   },
   phase(m) {
@@ -207,6 +212,19 @@ const handlers = {
     if (st.view !== 'play') return;
     if (m.k === 'scrape') PH.onScrape(m); else if (m.k === 'sprint') sfx.step(0.35, m, 450, 'sprint'); else sfx.step(0.6, m, 200, 'land');
   },
+  prog(m) { TR.onProg(m); },
+  collected(m) { TR.onCollected(m, feed); },
+  alert(m) { TR.onAlert(m); },
+  gates() { TR.onGates(); },
+  hurt(m) { TR.onHurt(m, feed); },
+  terror(m) { TR.onTerror(m); },
+  marks(m) { TR.onMarks(Array.isArray(m) ? m : m.marks || m.list || m.m || []); },
+  pulse(m) { TR.onPulse(Array.isArray(m) ? m : m.pulse || m.list || m.m || []); },
+  power(m) { TR.onPower(m); },
+  cloak(m) { TR.onCloak(m); },
+  trap(m) { TR.onTrap(m); },
+  trapped(m) { TR.onTrapped(m); },
+  swing(m) { TR.onSwing(m); },
   disguise(m) { PH.onDisguise(m); },
   camo(m) { PH.onCamo(m); },
   taunt(m) { PH.onTaunt(m); },
@@ -216,21 +234,23 @@ const handlers = {
   pickup(m) { PH.onPickup(m); },
   picked(m) { PH.onPicked(m); },
   end(m) {
+    if (m.mode === 'trial') TR.onEnd(m);
     const mine = m.players.find((p) => p.id === st.id);
     const won = (m.winner === 'seekers') === (mine?.role === 'seeker');
     (won ? sfx.win : sfx.lose)();
     for (const p of m.players) if ((m.winner === 'seekers') === (p.role === 'seeker')) R.victoryPose(p.id);
     $('resTitle').textContent = m.winner === 'seekers' ? 'SEEKERS WIN' : 'HIDERS WIN';
     $('resTitle').style.color = won ? 'var(--good)' : 'var(--bad)';
-    $('resSub').textContent = m.winner === 'seekers' ? 'Every hider was tagged.' : m.mode === 'prophunt' ? 'The seekers ran out of time, health or ammo.' : 'Time ran out with hiders still free.';
+    $('resSub').textContent = m.mode === 'trial' ? `${m.escaped ?? 0} escaped, ${m.out ?? 0} eliminated.` : m.winner === 'seekers' ? 'Every hider was tagged.' : m.mode === 'prophunt' ? 'The seekers ran out of time, health or ammo.' : 'Time ran out with hiders still free.';
     const tbl = $('resTable'); tbl.textContent = '';
     const row = (cells, tag = 'td', color) => {
       const tr = tbl.insertRow();
       cells.forEach((v, i) => { const c = document.createElement(tag); c.textContent = v; if (i === 0 && color) c.style.color = color; tr.append(c); });
     };
-    row(['PLAYER', 'ROLE', 'ROUND', 'TOTAL', 'TAGS', 'SHOTS', 'ACC', 'SURVIVED'], 'th');
+    const tr = m.mode === 'trial';
+    row(tr ? ['PLAYER', 'ROLE', 'ROUND', 'TOTAL', 'TAGS', 'RESULT'] : ['PLAYER', 'ROLE', 'ROUND', 'TOTAL', 'TAGS', 'SHOTS', 'ACC', 'SURVIVED'], 'th');
     const secs = (v) => (v == null ? '-' : `${(v / 60) | 0}:${String(Math.floor(v % 60)).padStart(2, '0')}`);
-    for (const p of m.players) row([p.name + (p.id === st.id ? ' (you)' : ''), p.role === 'seeker' ? 'seeker' : 'hider', `+${p.score}`, p.total, p.tags, p.shots || '-', p.shots ? `${Math.round((p.hits / p.shots) * 100)}%` : '-', secs(p.surv)], 'td', hex(p.color));
+    for (const p of m.players) row(tr ? [p.name + (p.id === st.id ? ' (you)' : ''), p.role === 'seeker' ? 'seeker' : 'hider', `+${p.score}`, p.total, p.tags, p.st || '-'] : [p.name + (p.id === st.id ? ' (you)' : ''), p.role === 'seeker' ? 'seeker' : 'hider', `+${p.score}`, p.total, p.tags, p.shots || '-', p.shots ? `${Math.round((p.hits / p.shots) * 100)}%` : '-', secs(p.surv)], 'td', hex(p.color));
     setView('results');
     bus.emit(EV.END, m); // podium (src/ui/podium.js)
   },
@@ -272,9 +292,18 @@ function renderLobby() {
     });
   };
   const me = playerOf(st.id) || {}, pick = (k) => (v) => { st.cos = { ...st.cos, [k]: v }; saveCos(); st.net?.send('cosmetic', { [k]: v }); };
+  const cb = $('lobCls'); // killer class chips (trial mode only); container added by the HUD / markup
+  if (cb) {
+    const on = st.mode === 'trial'; cb.classList.toggle('hidden', !on); if (cb.previousElementSibling?.matches('.lbl')) cb.previousElementSibling.classList.toggle('hidden', !on);
+    if (on) {
+      row('lobCls', CLS_IDS.map((c) => [c, (TR.CLASSES[c]?.name || 'Random').replace(/^The /, '').toUpperCase()]), me.cls || st.cls, (v) => { st.cls = v; st.net?.send('cls', { cls: v }); renderLobby(); });
+      for (const b of cb.children) { const d = TR.CLASSES[b.dataset.v]?.desc || 'A random killer class each round.'; b.title = d; b.setAttribute('aria-label', `${b.textContent}: ${d}`); }
+    }
+  }
   row('lobMode', Object.entries(MODE_NAMES), st.mode, (v) => host && st.net?.send('mode', { mode: v }));
   for (const b of $('lobMode').children) b.disabled = !host;
-  renderMapPicker($('lobMap'), { current: st.map, disabled: !host, onPick: (v) => host && st.net?.send('map', { map: v }), onRandom: host ? () => st.net?.send('map', { map: randomMapId() }) : null }); // everyone sees the pick; only the host can change it
+  const ids = st.mode === 'trial' && st.trialMaps.length ? st.trialMaps : undefined;
+  renderMapPicker($('lobMap'), { current: st.map, disabled: !host, ids, onPick: (v) => host && st.net?.send('map', { map: v }), onRandom: host ? () => st.net?.send('map', { map: randomMapId(ids) }) : null }); // everyone sees the pick; only the host can change it
   let fb = $('lobFill'); // "fill with bots": host-only toggle, created here so it needs no markup change
   if (!fb) { fb = document.createElement('button'); fb.id = 'lobFill'; fb.type = 'button'; fb.className = 'chip'; $('lobMode').after(fb); }
   fb.textContent = `Fill with bots: ${st.fill ? 'on' : 'off'}`; fb.setAttribute('aria-pressed', String(!!st.fill)); fb.disabled = !host; fb.onclick = () => host && st.net?.send('fill', { on: !st.fill });
@@ -292,6 +321,7 @@ function renderLobby() {
 // (a refused move) snaps us back, and both shift the remembered history so the next comparison starts from the corrected path.
 const SNAP_ERR = 0.5, SOFT_K = 0.2;
 function reconcile(ack, sx, sy, sz) {
+  if (TR.vaulting()) return; // scripted hop: the server's view lags the arc; the next snapshot after landing corrects any real error
   const i = st.hist.findIndex((h) => h.s === ack);
   if (i < 0) return;
   st.hist.splice(0, i); // everything older than the acked move is settled
@@ -338,8 +368,8 @@ hooks.tag = () => {
 };
 hooks.leave = () => leave(true);
 hooks.inRoom = () => !!st.code;
-hooks.fire = () => (st.mode === 'prophunt' ? PH.fire() : hooks.tag());
-hooks.key = (code) => { if (st.view === 'play' && st.mode === 'prophunt') PH.onKey(code); };
+hooks.fire = () => (st.mode === 'prophunt' ? PH.fire() : st.mode === 'trial' ? TR.fire() : hooks.tag());
+hooks.key = (code) => { if (st.view === 'play') { if (st.mode === 'prophunt') PH.onKey(code); else if (st.mode === 'trial') TR.onKey(code); } };
 hooks.wheel = (d) => { if (st.view === 'play') PH.onWheel(d); };
 let lastNoise = 0;
 hooks.noise = (x, z, r) => {
@@ -351,24 +381,24 @@ hooks.update = (dt) => {
   const t = now(), left = Math.max(0, st.deadline - t), hide = st.phase === 'hide', seeker = st.role === 'seeker';
   const frozen = hide && seeker;
   st.tagCd -= dt;
-  const pro = st.mode === 'prophunt';
-  if (pro) PH.frame(dt, frozen, st.phase); else updatePlayer(dt, !frozen);
+  const pro = st.mode === 'prophunt', tri = st.mode === 'trial';
+  if (pro) PH.frame(dt, frozen, st.phase); else if (tri) TR.frame(dt, frozen, st.phase); else updatePlayer(dt, !frozen);
   R.updateRemotes(t, st.role === 'seeker', dt);
-  if (pro) PH.tick(dt);
+  if (pro) PH.tick(dt); else if (tri) TR.tickFx(dt);
   st.sendT -= dt;
-  if (st.sendT <= 0 && !frozen && !(pro && PH.ph.out)) {
+  if (st.sendT <= 0 && !frozen && !(pro && PH.ph.out) && !(tri && TR.isOut())) {
     st.sendT = 1 / 15;
-    const r = (v) => Math.round(v * 100) / 100, po = pro ? PH.pose() : { yaw: P.yaw, c: P.crouch };
+    const r = (v) => Math.round(v * 100) / 100, po = pro ? PH.pose() : tri ? TR.pose() : { yaw: P.yaw, c: P.crouch };
     st.seq = (st.seq + 1) & 0xffff;
     st.hist.push({ s: st.seq, x: r(P.x), z: r(P.z) }); if (st.hist.length > 120) st.hist.shift();
     st.net?.send('pos', { s: st.seq, x: r(P.x), y: r(P.y), z: r(P.z), yaw: r(po.yaw), pitch: r(P.pitch), c: r(po.c) });
   }
   // HUD
-  setText('modeLabel', `${seeker ? 'SEEKER' : 'HIDER'} - ${pro ? 'PROP HUNT' : 'CLASSIC'} - ${hide ? 'HIDING TIME' : 'SEEK'}`);
-  setText('hints', pro ? PH.hints() : seeker ? 'E / CLICK tag within 3m  -  Shift sprint (loud)' : 'Find a spot  -  C crouch (quiet)  -  tagged hiders become seekers');
+  setText('modeLabel', `${seeker ? 'SEEKER' : 'HIDER'} - ${pro ? 'PROP HUNT' : tri ? 'TRIAL' : 'CLASSIC'} - ${hide ? 'HIDING TIME' : 'SEEK'}`);
+  setText('hints', pro ? PH.hints() : tri ? TR.hints() : seeker ? 'E / CLICK tag within 3m  -  Shift sprint (loud)' : 'Find a spot  -  C crouch (quiet)  -  tagged hiders become seekers');
   $('modeLabel').style.color = seeker ? '#ff4d5e' : '';
   setText('timer', fmt(left)); $('timer').classList.toggle('low', !hide && left <= 15);
-  setText('found', `HIDERS LEFT ${st.hidersLeft}`);
+  setText('found', tri ? `${TR.status()}  -  HIDERS ${st.hidersLeft}` : `HIDERS LEFT ${st.hidersLeft}`);
   const n = Math.ceil(left);
   if (frozen && n !== st.lastCount) {
     st.lastCount = n;
@@ -377,7 +407,7 @@ hooks.update = (dt) => {
   }
   const locked = document.pointerLockElement === canvas;
   setText('banner', !locked ? 'CLICK TO LOOK AROUND' : hide && !seeker ? `HIDE! SEEKERS ARE RELEASED IN ${n}` : '');
-  if (pro) return;
+  if (pro || tri) return;
   const tgt = tagTarget();
   $('crosshair').classList.toggle('hot', !!tgt); $('prompt').classList.toggle('show', !!tgt);
   setText('prompt', 'E \u00b7 TAG');

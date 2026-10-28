@@ -16,10 +16,12 @@ const small = () => tier() === 'low' || tier() === 'potato';
 const SETS = {
   wall: { dir: 'wall', rough: 1 }, floor: { dir: 'floor', rough: 0.9 }, wood: { dir: 'wood', rough: 1 }, metal: { dir: 'metal', rough: 1 },
   tile: { dir: 'tile', rough: 0.9 }, asphalt: { dir: 'asphalt', rough: 1 }, grass: { dir: 'grass', rough: 1, ground: 400 },
+  mud: { dir: 'mud', rough: 1 }, dirt: { dir: 'dirt', rough: 1 }, dryGrass: { dir: 'dryGrass', rough: 1 }, // Coldwood ground (CC0 Poly Haven)
 };
 // per-map colour multipliers on top of the (neutral) textures
 const TINT = {
   house: { wall: 0xe3d3bc, floor: 0xffffff, wood: 0xe8d4bb, metal: 0xc4cad4, grass: 0xffffff },
+  coldwood: { mud: 0xf0e4d8, dirt: 0xe8dccc, dryGrass: 0x8c8c6c, wood: 0x9a9aa4, wall: 0xc0b8b0, metal: 0xa89a90 },
   lateshop: { wall: 0xe4e8ee, wood: 0xdcc8ac, metal: 0xd4dae4, tile: 0xffffff, asphalt: 0xb8bcc4 },
 };
 
@@ -48,7 +50,7 @@ export function applyPBR(mat, mapId, mapMaterials = []) {
     const m = mat[name];
     if (!m) continue;
     const tint = TINT[mapId]?.[name];
-    if (tint != null) m.color.setHex(tint); else if (!m.userData.pbr) m.color.setHex(0xffffff);
+    if (tint != null) m.color.setHex(tint); else m.color.setHex(0xffffff); // (always reset: a previous map's tint must not leak)
     const rep = cfg.ground ? cfg.ground / (TILE[name] ?? 1) : 0;
     m.map = load(cfg.dir, 'c', size, rep);
     m.normalMap = normals ? load(cfg.dir, 'n', size, rep) : null;

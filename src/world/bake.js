@@ -5,7 +5,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 // (bevelled for disguisable props, subdivided for big flat surfaces so the AO has vertices to land on).
 
 // metres of world per texture repeat; anything not listed maps 1:1
-export const TILE = { wall: 2.2, floor: 2.4, wood: 1.2, metal: 1.5, tile: 3.2, asphalt: 3, grass: 3, trim: 1.2, ceiling: 2.2 };
+export const TILE = { wall: 2.2, floor: 2.4, wood: 1.2, metal: 1.5, tile: 3.2, asphalt: 3, grass: 3, mud: 3, dirt: 2.5, dryGrass: 3, trim: 1.2, ceiling: 2.2 };
 
 // Box-project the UVs from world position: the dominant normal axis picks the plane. Texture seams between boxes never show
 // because every box samples the same world-space grid. Geometry must already be in world space and non-indexed.

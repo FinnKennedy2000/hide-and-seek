@@ -33,7 +33,7 @@ const sun = new THREE.DirectionalLight(0xff9a62, 1.9); // the only shadow caster
 sun.position.copy(sunDir).multiplyScalar(45);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 5, far: 110 });
+Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, near: 5, far: 110 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
 scene.add(sun);
 const hemi = new THREE.HemisphereLight(0x7a68b0, 0x2a2030, 0.62);
@@ -45,6 +45,7 @@ export function applyEnv(m) {
   skyMat.uniforms.horizon.value.set(f.color);
   skyMat.uniforms.night.value = m.sky === 'night' ? 1 : 0;
   sun.visible = m.sky !== 'night';
+  sun.color.set(m.sun?.color ?? 0xff9a62); sun.intensity = m.sun?.intensity ?? 1.9; // optional per-map override (Coldwood: cooler, dimmer)
   hemi.color.set(m.ambient.color); hemi.groundColor.set(m.ambient.ground ?? m.ambient.color); if (m.ambient.ground == null) hemi.groundColor.multiplyScalar(0.5);
   hemi.intensity = m.ambient.intensity;
   render.setMap(m);

@@ -32,7 +32,7 @@ const COLORS = [0xff5a5f, 0x4cc9f0, 0xffd166, 0x80ed99, 0xc77dff, 0xff924c, 0x2e
 // cosmetic enums: must match src/characters/character.js (HATS / OUTFITS)
 const HATS = ['none', 'cap', 'beanie', 'bucket', 'crown'];
 const OUTFITS = ['plain', 'stripes', 'dots', 'overalls'];
-const MODES = ['classic', 'prophunt'];
+const MODES = ['classic', 'prophunt', 'trial'];
 // prop hunt tunables
 const MAG = 6, RESERVE0 = 12, HP0 = 100, MISS_DMG = 8, REFUND = MAG, PICKUP_SHOTS = 6; // a hit earns a whole extra mag
 const FIRE_GAP = 0.25, RELOAD_S = 1.2, SHOT_RANGE = 60, ORIGIN_TOL = 1.5 + 6.8 * 0.3, PICKUP_RANGE = 2.5; // origin tolerance: 1.5m + sprint speed (6.8) x 0.3s of lag (~3.5m)
@@ -129,6 +129,7 @@ function newPlayer(ws, bot = false) {
     id: allocId(), ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, c: 0, lastPos: 0, lastTag: 0, lastNoise: 0, tokens: 120, tokT: Date.now(),
     ack: 0, budget: BUDGET_CAP, budgetT: Date.now(), rtt: 0, rtts: [], pings: new Set(), lastPingS: 0, told: new Map(), ip: '', disc: 0,
+    cls: 'random', st: 'free', chan: null, speed: 0, cloak: false, rush: false, rushEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, cdEnd: 0, traps: 0,
     hist: [], sent: new Map(), seen: new Map(), reveal: new Map(), // lag-comp history; per-receiver snapshot state (what we sent / when each player was last in LOS / sound reveals)
   };
 }
@@ -159,7 +160,7 @@ const humansOf = (room) => [...room.players.values()].filter((p) => !p.bot);
 
 function roomMsg(room, p) {
   const list = [...room.players.values()].map((q) => ({ id: q.id, name: q.name, color: q.color, hat: q.hat, outfit: q.outfit, total: q.total, bot: q.bot || undefined }));
-  return { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, map: room.map, fill: room.fill, token: p.token, players: list };
+  return { t: 'room', code: room.code, you: p.id, host: room.hostId, phase: room.phase, mode: room.mode, map: room.map, fill: room.fill, token: p.token, trialMaps: trialMapIds(), players: list };
 }
 function sendRoom(room) { for (const p of room.players.values()) if (!p.bot) send(p, roomMsg(room, p)); }
 
@@ -205,6 +206,7 @@ function leaveRoom(p) {
 }
 
 function startRound(room) {
+  if (room.mode === 'trial') return startTrial(room);
   syncBots(room);
   const ps = shuffle([...room.players.values()]);
   const nSeek = ps.length >= 6 ? 2 : 1;
@@ -235,15 +237,16 @@ function startRound(room) {
 function endRound(room, winner) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
   for (const p of room.players.values()) {
-    if (winner === 'hiders' && p.role === 'hider') p.score += 5;
+    if (winner === 'hiders' && p.role === 'hider' && room.mode !== 'trial') p.score += 5; // (trial: the +5 is paid per gate escape)
     p.total += p.score;
   }
   const t = now();
-  const players = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, role: p.role, score: p.score, total: p.total, tags: p.tags, shots: p.shots, hits: p.hits, surv: p.first ? null : r2((p.role === 'hider' ? t : p.tagT) - room.t0) }))
+  const players = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, role: p.role, score: p.score, total: p.total, tags: p.tags, st: room.mode === 'trial' && p.role === 'hider' ? p.st : null, shots: p.shots, hits: p.hits, surv: p.first ? null : r2((p.role === 'hider' ? t : p.tagT) - room.t0) }))
     .sort((a, b) => b.score - a.score);
-  room.phase = 'lobby';
-  for (const p of room.players.values()) { p.role = null; p.hist = []; p.sent.clear(); p.seen.clear(); p.reveal.clear(); }
-  broadcast(room, { t: 'end', winner, mode: room.mode, players });
+  const hs = hidersOf(room), extra = room.mode === 'trial' ? { escaped: hs.filter((h) => h.st === 'escaped').length, out: hs.filter((h) => h.st !== 'escaped').length } : {};
+  room.phase = 'lobby'; room.trial = null;
+  for (const p of room.players.values()) { p.role = null; p.chan = null; p.cloak = p.rush = false; p.hist = []; p.sent.clear(); p.seen.clear(); p.reveal.clear(); }
+  broadcast(room, { t: 'end', winner, mode: room.mode, players, ...extra });
   syncBots(room);
   sendRoom(room);
 }
@@ -253,6 +256,7 @@ function checkRound(room) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
   if (!hidersOf(room).length) endRound(room, 'seekers');
   else if (!seekersOf(room).length) endRound(room, 'hiders');
+  else if (room.mode === 'trial') trialCheck(room);
   else if (room.mode === 'prophunt' && room.phase === 'seek' && seekersOf(room).every((p) => spent(room, p))) endRound(room, 'hiders');
 }
 // a seeker that can no longer shoot: out of health, or empty with no crate left to find
@@ -290,7 +294,12 @@ const hideGate = (room, r, o) => room.phase === 'hide' && r.role === 'seeker' &&
 function visible(room, r, o, t) {
   if (hideGate(room, r, o)) return false;
   if (room.mode === 'prophunt' && r.role === 'hider' && o.role === 'hider') return false; // prop hunt: hiders never see each other (the client already hides them)
+  if (room.mode === 'trial') {
+    if (o.role === 'hider' && (o.st === 'out' || o.st === 'escaped')) return false;
+    if (o.cloak && r.role === 'hider' && Math.hypot(o.x - r.x, o.z - r.z) > 3) return false; // a cloaked seeker is only seen up close
+  }
   if ((r.reveal.get(o.id) ?? 0) > t) return true;
+  if (room.mode === 'trial' && r.role === 'seeker' && o.role === 'hider' && concealed(room, r, o, t)) return false;
   const dx = o.x - r.x, dz = o.z - r.z;
   if (dx * dx + dz * dz <= PR.INTEREST_RANGE * PR.INTEREST_RANGE) {
     const los = NAVS[room.map].losClear, ey = r.y + 1.5 * (1 - 0.35 * r.c);
@@ -301,7 +310,7 @@ function visible(room, r, o, t) {
 const GONE_Q = new Int32Array(6);
 const sameQ = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3] && a[4] === b[4] && a[5] === b[5];
 function sendSnapshots(room, t) {
-  const all = [...room.players.values()], hl = hidersOf(room).length, tl = Math.max(0, room.phaseEnd - t), st = Date.now();
+  const all = [...room.players.values()], hl = hidersLeft(room), tl = Math.max(0, room.phaseEnd - t), st = Date.now();
   for (const r of all) {
     if (r.bot || r.ws.readyState !== 1) continue;
     const ents = [];
@@ -326,8 +335,9 @@ function tickRoom(room, t) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
   const dt = room.lt ? Math.min(0.25, t - room.lt) : 0; room.lt = t;
   if (room.phase === 'hide' && t >= room.phaseEnd) {
-    room.phase = 'seek'; room.phaseEnd = t + SEEK_SECS; room.nextAward = t + 10;
-    broadcast(room, { t: 'phase', phase: 'seek', tl: SEEK_SECS });
+    const secs = room.mode === 'trial' ? TRIAL_SECS : SEEK_SECS;
+    room.phase = 'seek'; room.phaseEnd = t + secs; room.nextAward = t + 10;
+    broadcast(room, { t: 'phase', phase: 'seek', tl: secs });
     room.pickupAt = t + SEEK_SECS / 2;
   }
   if (room.mode === 'prophunt') for (const p of hidersOf(room)) if (p.disguise != null && t - p.disguiseAt > DISGUISE_MAX) { p.bannedProp = p.disguise; applyDisguise(room, p, null); }
@@ -342,13 +352,14 @@ function tickRoom(room, t) {
   }
   if (room.phase === 'seek') {
     while (t >= room.nextAward && room.nextAward < room.phaseEnd) { // +1 per 10s survived
-      for (const p of hidersOf(room)) p.score += 1;
+      for (const p of hidersOf(room)) if (room.mode !== 'trial' || isActive(p)) p.score += 1;
       room.nextAward += 10;
     }
-    if (t >= room.phaseEnd) return endRound(room, 'hiders');
+    if (t >= room.phaseEnd) return room.mode === 'trial' ? finishTrial(room) : endRound(room, 'hiders');
   }
+  if (room.mode === 'trial') { trialTick(room, t, dt); if (room.phase !== 'hide' && room.phase !== 'seek') return; }
   room.botAcc += dt; // bot brains run at BOT_HZ, not every tick
-  if (room.botAcc >= 1 / BOT_HZ - 1e-6) { const bdt = room.botAcc; room.botAcc = 0; for (const b of room.players.values()) if (b.bot && (room.phase === 'hide' || room.phase === 'seek')) botThink(room, b, t, bdt); }
+  if (room.botAcc >= 1 / BOT_HZ - 1e-6) { const bdt = room.botAcc; room.botAcc = 0; if (room.mode === 'trial') trialBots(room, t, bdt); else for (const b of room.players.values()) if (b.bot && (room.phase === 'hide' || room.phase === 'seek')) botThink(room, b, t, bdt); }
   if (room.phase !== 'hide' && room.phase !== 'seek') return; // a bot's tag or shot may have ended the round
   sendSnapshots(room, t);
 }
@@ -421,6 +432,268 @@ function doTag(room, p, target) { // classic tag, range already checked
   const hl = hidersOf(room).length;
   broadcast(room, { t: 'tagged', by: p.id, target: target.id, hl });
   if (!hl) endRound(room, 'seekers');
+}
+
+// ======================================================================
+// trial mode (docs/TRIAL-PROTOCOL.md): relics -> gates -> escape, one seeker with a class, hits / injured / cage / rescue
+// ======================================================================
+const T_ = { RELICS: 6, NEED: 3, RELIC_S: 6, GATE_S: 3, FREE_S: 4, CAGE_S: 40, BOOST_S: 2, SWING: 2.4, LUNGE: 3.4, CONE: Math.cos(30 * Math.PI / 180), HIT_CD: 1.0, MISS_CD: 1.6, TERROR_R: 24, INTERACT: 2.2, SCREAM_P: 0.25, SCAN: 28, TRAP_R: 0.9, TRAP_HOLD_MS: 2500 };
+const TRIAL_SECS = Number(process.env.SEEK_SECS) || 360;
+const CLASSES = ['tracker', 'phantom', 'trapper', 'charger'];
+const RUSH_MAX_SPEED = 13;
+let TRIALS = null; // mapId -> validated map.trial (only trial-capable maps)
+const trialMapIds = () => Object.keys(TRIALS || {});
+const isActive = (h) => h.st === 'free' || h.st === 'injured' || h.st === 'caged'; // still in the round
+const canAct = (h) => h.role === 'hider' && (h.st === 'free' || h.st === 'injured') && Date.now() >= h.trapped;
+const pairs = (a) => Array.isArray(a) && a.every((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]));
+function validTrial(t) { // a map's `trial` block: anything malformed makes the map not trial-capable
+  if (!t || !pairs(t.relics) || t.relics.length < T_.NEED || !pairs(t.gates) || !t.gates.length || !pairs(t.cages) || !t.cages.length || !pairs(t.hiderSpawns) || !t.hiderSpawns.length) return null;
+  const ss = t.seekerStart; if (!ss || !Number.isFinite(ss.x) || !Number.isFinite(ss.z)) return null;
+  return { ...t, grass: Array.isArray(t.grass) ? t.grass : [], vaults: Array.isArray(t.vaults) ? t.vaults : [] };
+}
+const maxSpeed = (p, t = now()) => (p.rush || t < p.rushEnd + 0.3 ? RUSH_MAX_SPEED : MAX_SPEED);
+const inGrass = (tr, x, z) => tr.grass.some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
+const toSeekers = (room, msg) => { for (const s of seekersOf(room)) send(s, msg); };
+const hidersLeft = (room) => (room.mode === 'trial' ? hidersOf(room).filter(isActive).length : hidersOf(room).length);
+
+// is hider `o` concealed from seeker `r` (grass)? Spec: crouched still 2.5 m, crouch-walking 4 m, standing 9 m, never when sprinting / injured-boosted
+function concealed(room, r, o, t) {
+  if (!room.trial || !inGrass(room.trial, o.x, o.z)) return false;
+  if (o.speed > 5.5 || o.boostEnd > t) return false;
+  const R = o.c > 0.6 ? (o.speed < 1 ? 2.5 : 4) : 9;
+  return Math.hypot(o.x - r.x, o.z - r.z) > R;
+}
+
+function trialInfo(room) {
+  const tr = room.trial;
+  return { cls: tr.cls, relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z })), gates: tr.gates.map((q) => ({ i: q.i, x: q.x, z: q.z })), cages: tr.cages.map((q) => ({ i: q.i, x: q.x, z: q.z })), grass: tr.grass, vaults: tr.vaults, need: T_.NEED, trialSecs: TRIAL_SECS };
+}
+function powerMsg(p) { return { t: 'power', cls: p.cls, cd: Math.max(0, r2(p.cdEnd - now())), on: !!(p.cloak || p.rush), n: p.traps }; }
+
+function startTrial(room) {
+  syncBots(room);
+  const T = TRIALS[room.map], ps = shuffle([...room.players.values()]), seeker = ps[0], hiders = ps.slice(1);
+  const relicPts = shuffle(T.relics.slice()).slice(0, T_.RELICS);
+  room.trial = {
+    relics: relicPts.map(([x, z], i) => ({ i, x, z, p: 0, done: false, on: false, cn: [], pT: 0 })),
+    gates: T.gates.map(([x, z], i) => ({ i, x, z, p: 0 })), cages: T.cages.map(([x, z], i) => ({ i, x, z, occ: 0, p: 0, on: false, cn: [], pT: 0 })),
+    gatesOpen: false, n: 0, cls: null, vaults: T.vaults, grass: T.grass, traps: [], trapN: 0, marks: [],
+  };
+  const spots = shuffle(T.hiderSpawns.slice()), spawns = [];
+  const rnd = (c) => (CLASSES.includes(c) ? c : CLASSES[(Math.random() * CLASSES.length) | 0]);
+  ps.forEach((p, i) => {
+    p.role = i === 0 ? 'seeker' : 'hider';
+    Object.assign(p, { score: 0, tags: 0, lastTag: 0, hp: 0, mag: 0, res: 0, out: false, shots: 0, hits: 0, disguise: null, tint: null, tagT: 0, first: i === 0, y: 0, pitch: 0, c: 0,
+      st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, lastPos: 0, trapEnd: 0, cloakEnd: 0 });
+    if (i === 0) { p.cls = rnd(p.cls); room.trial.cls = p.cls; p.traps = p.cls === 'trapper' ? 3 : 0; Object.assign(p, { x: T.seekerStart.x, z: T.seekerStart.z, yaw: T.seekerStart.yaw || 0 }); }
+    else { const [sx, sz] = spots[(i - 1) % spots.length], k = Math.floor((i - 1) / spots.length) * 1.2; p.x = sx + k; p.z = sz; p.yaw = Math.random() * Math.PI * 2; }
+    p.hist = []; p.sent = new Map(); p.seen = new Map(); p.reveal = new Map(); p.told = new Map();
+    Object.assign(p, { path: null, pi: 0, heading: p.yaw - Math.PI });
+    spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
+  });
+  room.phase = 'hide'; room.lt = 0; room.t0 = now(); room.phaseEnd = room.t0 + HIDE_SECS; room.pickup = null; room.pickupDone = false; room.pickupAt = 0;
+  const info = trialInfo(room);
+  for (const p of ps) {
+    if (p.bot) continue;
+    send(p, { t: 'round', mode: 'trial', map: room.map, seekers: [seeker.id], spawns: spawns.filter((sp) => sp.id === p.id || room.players.get(sp.id).role === p.role), hide: HIDE_SECS, seek: TRIAL_SECS, ...info });
+  }
+  send(seeker, powerMsg(seeker));
+  void hiders;
+}
+function trialResume(room, old) { // extra fields of the resume `round` message
+  const tr = room.trial;
+  return { ...trialInfo(room), relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, p: r2(q.p), done: q.done })), gatesOpen: tr.gatesOpen, states: Object.fromEntries(hidersOf(room).map((h) => [h.id, h.st])), n: tr.n, caged: tr.cages.map((c) => ({ i: c.i, occ: c.occ })), power: old.role === 'seeker' ? powerMsg(old) : undefined };
+}
+
+// ----- health states
+function setSt(room, h, st, extra) { h.st = st; broadcast(room, { t: 'hurt', id: h.id, st, ...extra }); }
+function dropChan(room, h) {
+  const c = h.chan; h.chan = null;
+  if (c && c.what === 'gate') { h.chanP = 0; broadcast(room, { t: 'prog', what: 'gate', i: c.i, p: 0 }); }
+}
+function hurtHider(room, s, h) { // the seeker hit `h` (swing)
+  const tr = room.trial, t = now();
+  dropChan(room, h);
+  s.tags++; s.score += 2;
+  if (h.st === 'free') { h.boostEnd = t + T_.BOOST_S; setSt(room, h, 'injured'); return; }
+  const free = tr.cages.filter((c) => !c.occ || room.players.get(c.occ)?.st !== 'caged'), cage = free.length ? free[(Math.random() * free.length) | 0] : null;
+  if (!cage) { setSt(room, h, 'out'); return; }
+  cage.occ = h.id; cage.p = 0; h.cageT = T_.CAGE_S; h.x = cage.x; h.z = cage.z; h.y = 0; h.c = 0; h.speed = 0; s.score += 3;
+  setSt(room, h, 'caged', { cage: cage.i });
+}
+function springTrap(room, s, h, trap) {
+  const tr = room.trial; tr.traps.splice(tr.traps.indexOf(trap), 1); dropChan(room, h);
+  h.trapped = Date.now() + T_.TRAP_HOLD_MS; h.speed = 0;
+  if (h.st === 'free') { h.boostEnd = now() + T_.BOOST_S; setSt(room, h, 'injured'); }
+  s.traps++; send(s, { t: 'trap', i: trap.i, x: trap.x, z: trap.z, gone: 1 }); send(s, { t: 'alert', kind: 'trap', x: trap.x, z: trap.z }); send(s, powerMsg(s));
+  broadcast(room, { t: 'trapped', id: h.id, i: trap.i });
+}
+
+// ----- channels (relic / gate / cage). Shared by the `interact` handler and bots (trialApi).
+const chanTarget = (tr, what, i) => (what === 'relic' ? tr.relics[i] : what === 'gate' ? tr.gates[i] : what === 'cage' ? tr.cages[i] : null);
+function chanOk(room, h, what, i, slack) {
+  const tr = room.trial, ob = tr && Number.isInteger(i) ? chanTarget(tr, what, i) : null;
+  if (!ob || !canAct(h) || (room.phase !== 'hide' && room.phase !== 'seek')) return false;
+  if (Math.hypot(ob.x - h.x, ob.z - h.z) > T_.INTERACT + slack) return false;
+  if (what === 'relic') return !ob.done;
+  if (what === 'gate') return tr.gatesOpen;
+  const o = ob.occ && room.players.get(ob.occ);
+  return !!o && o !== h && o.st === 'caged';
+}
+function startChannel(room, h, what, i) {
+  if (room.mode !== 'trial' || !chanOk(room, h, what, i, 0)) return false;
+  if (h.chan) dropChan(room, h);
+  h.chan = { what, i }; h.chanP = 0; h.screamT = now() + 2; return true;
+}
+function stopChannel(room, h) { if (h.chan) dropChan(room, h); }
+
+function completeRelic(room, q, by) {
+  const tr = room.trial;
+  q.done = true; q.p = 1; tr.n++;
+  broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 1 });
+  broadcast(room, { t: 'collected', i: q.i, n: tr.n, need: T_.NEED, by: by.id });
+  by.score += 3;
+  toSeekers(room, { t: 'alert', kind: 'relic', x: q.x, z: q.z });
+  if (tr.n >= T_.NEED && !tr.gatesOpen) {
+    tr.gatesOpen = true; broadcast(room, { t: 'gates', open: true });
+    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z });
+  }
+}
+function trialChannels(room, t, dt) {
+  const tr = room.trial;
+  for (const o of tr.relics) o.cn = []; for (const o of tr.cages) o.cn = [];
+  for (const h of hidersOf(room)) {
+    const c = h.chan; if (!c) continue;
+    if (!chanOk(room, h, c.what, c.i, 0.6)) { dropChan(room, h); continue; } // walked away / target gone / hit
+    if (c.what === 'gate') {
+      h.chanP += dt / T_.GATE_S;
+      if (h.chanP >= 1) { dropChan(room, h); h.score += 5; setSt(room, h, 'escaped'); continue; }
+      if (t - h.gpT >= 0.2) { h.gpT = t; broadcast(room, { t: 'prog', what: 'gate', i: c.i, p: r2(h.chanP) }); }
+    } else (c.what === 'relic' ? tr.relics : tr.cages)[c.i].cn.push(h);
+  }
+  for (const q of tr.relics) {
+    if (q.done) continue;
+    if (!q.cn.length) { if (q.on) { q.on = false; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 0 }); } q.p = Math.max(0, q.p - 0.1 * dt); continue; }
+    q.on = true; q.p += (dt / T_.RELIC_S) * q.cn.length;
+    for (const h of q.cn) if (t >= h.screamT) { h.screamT = t + 2; if (Math.random() < T_.SCREAM_P) toSeekers(room, { t: 'alert', kind: 'scream', x: r2(h.x), z: r2(h.z) }); }
+    if (q.p >= 1) { for (const h of q.cn) h.chan = null; completeRelic(room, q, q.cn[0]); q.on = false; }
+    else if (t - q.pT >= 0.2) { q.pT = t; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: r2(q.p) }); }
+  }
+  for (const c of tr.cages) {
+    if (!c.cn.length) { if (c.on) { c.on = false; broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: 0 }); } c.p = 0; continue; }
+    c.on = true; c.p += (dt / T_.FREE_S) * c.cn.length;
+    if (c.p >= 1) {
+      const o = room.players.get(c.occ); c.occ = 0; c.p = 0; c.on = false;
+      broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: 1 });
+      for (const h of c.cn) h.chan = null;
+      c.cn[0].score += 4;
+      if (o) { o.cageT = 0; o.boostEnd = t + T_.BOOST_S; setSt(room, o, 'free'); o.st = 'injured'; } // rescued: back as injured (`hurt free` tells the client)
+    } else if (t - c.pT >= 0.2) { c.pT = t; broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: r2(c.p) }); }
+  }
+}
+
+// ----- swing (seeker attack): cone + range + LOS, hiders judged where the swinger saw them (lag comp)
+function doSwing(room, s) {
+  const t = now();
+  if (room.mode !== 'trial' || room.phase !== 'seek' || s.role !== 'seeker' || t < s.swingEnd - 0.05) return false;
+  if (s.cloak) endCloak(room, s);
+  const range = s.rush ? T_.LUNGE : T_.SWING, fx = s.bot ? Math.sin(s.heading) : -Math.sin(s.yaw), fz = s.bot ? Math.cos(s.heading) : -Math.cos(s.yaw);
+  const T = Date.now() - Math.min(PR.MAX_REWIND, s.rtt) * 1000, los = NAVS[room.map].losClear, ey = s.y + 1.5;
+  let best = null, bd = 1e9;
+  for (const h of hidersOf(room)) {
+    if (h.st !== 'free' && h.st !== 'injured') continue;
+    const a = posAt(h, T), dx = a.x - s.x, dz = a.z - s.z, d = Math.hypot(dx, dz);
+    if (d > range || d >= bd || Math.abs(a.y - s.y) > 1.5) continue;
+    if (d > 0.5 && (dx * fx + dz * fz) / d < T_.CONE) continue;
+    if (!los(s.x, ey, s.z, a.x, a.y + 0.5, a.z) && !los(s.x, ey, s.z, a.x, a.y + 1.3 * (1 - 0.35 * a.c), a.z)) continue;
+    best = h; bd = d;
+  }
+  s.swingEnd = t + (best ? T_.HIT_CD : T_.MISS_CD);
+  broadcast(room, { t: 'swing', by: s.id, hit: best ? best.id : 0 });
+  if (best) hurtHider(room, s, best);
+  return true;
+}
+
+// ----- seeker powers
+function endCloak(room, s) { s.cloak = false; broadcast(room, { t: 'cloak', id: s.id, on: false }); send(s, powerMsg(s)); }
+function usePower(room, s) {
+  const t = now();
+  if (room.mode !== 'trial' || room.phase !== 'seek' || s.role !== 'seeker') return false;
+  if (s.cls === 'phantom' && s.cloak) { endCloak(room, s); return true; } // cloak again ends it early
+  if (s.cls === 'trapper') {
+    const tr = room.trial;
+    if (s.traps <= 0 || t < s.trapEnd || tr.traps.length >= 12) return false;
+    const trap = { i: tr.trapN++, x: r2(s.x), z: r2(s.z) };
+    tr.traps.push(trap); s.traps--; s.trapEnd = t + 0.5;
+    send(s, { t: 'trap', i: trap.i, x: trap.x, z: trap.z }); send(s, powerMsg(s));
+    return true;
+  }
+  if (t < s.cdEnd - 0.05) return false;
+  if (s.cls === 'tracker') {
+    s.cdEnd = t + 30;
+    const pulse = hidersOf(room).filter((h) => (h.st === 'free' || h.st === 'injured') && Math.hypot(h.x - s.x, h.z - s.z) <= T_.SCAN).map((h) => ({ id: h.id, x: r2(h.x), z: r2(h.z) }));
+    send(s, { t: 'pulse', pulse });
+  } else if (s.cls === 'phantom') {
+    s.cdEnd = t + 25; s.cloak = true; s.cloakEnd = t + 6; broadcast(room, { t: 'cloak', id: s.id, on: true });
+  } else if (s.cls === 'charger') {
+    s.cdEnd = t + 20; s.rush = true; s.rushEnd = t + 1.6;
+  } else return false;
+  send(s, powerMsg(s));
+  return true;
+}
+
+// ----- per-tick trial logic
+function trialTick(room, t, dt) {
+  const tr = room.trial, ms = Date.now(), S = seekersOf(room)[0];
+  for (const p of room.players.values()) if (!p.bot && ms - p.lastPos > 300) p.speed = 0; // no recent pos: standing still
+  if (S) {
+    if (S.cloak && t >= S.cloakEnd) endCloak(room, S);
+    if (S.rush && t >= S.rushEnd) { S.rush = false; send(S, powerMsg(S)); }
+  }
+  for (const h of hidersOf(room)) if (h.st === 'caged') {
+    h.cageT -= dt;
+    if (h.cageT <= 0) { const c = tr.cages.find((q) => q.occ === h.id); if (c) { c.occ = 0; c.p = 0; } setSt(room, h, 'out'); }
+  }
+  if (S && room.phase === 'seek') for (const trap of tr.traps.slice()) {
+    const h = hidersOf(room).find((q) => (q.st === 'free' || q.st === 'injured') && ms >= q.trapped && Math.hypot(q.x - trap.x, q.z - trap.z) < T_.TRAP_R);
+    if (h) springTrap(room, S, h, trap);
+  }
+  trialChannels(room, t, dt);
+  const cloaked = S && S.cloak && room.phase === 'seek', marks = [];
+  for (const h of hidersOf(room)) {
+    const live = h.st === 'free' || h.st === 'injured';
+    const k = S && !cloaked && room.phase === 'seek' && live ? Math.max(0, 1 - Math.hypot(h.x - S.x, h.z - S.z) / T_.TERROR_R) : 0, kq = Math.round(k * 10) / 10;
+    if (kq !== h.terr && t - h.terrT >= 0.2) { h.terr = kq; h.terrT = t; send(h, { t: 'terror', k: kq }); }
+    if (S && S.cls === 'tracker' && room.phase === 'seek' && live) {
+      const gap = h.speed > 5.5 ? 0.5 : h.st === 'injured' ? 0.8 : 0;
+      if (gap && t - h.markT >= gap) { h.markT = t; marks.push({ x: r2(h.x), z: r2(h.z) }); }
+    }
+  }
+  if (marks.length) send(S, { t: 'marks', marks });
+  trialCheck(room);
+}
+function trialCheck(room) { // everyone escaped / eliminated: the round is decided
+  if (room.mode === 'trial' && (room.phase === 'hide' || room.phase === 'seek') && room.trial && hidersOf(room).length && !hidersLeft(room)) finishTrial(room);
+}
+function finishTrial(room) { // hiders win when at least half (rounded up) escaped; everything still in play counts as eliminated
+  const hs = hidersOf(room), esc = hs.filter((h) => h.st === 'escaped').length;
+  endRound(room, esc >= Math.ceil(hs.length / 2) ? 'hiders' : 'seekers');
+}
+// what bots (server/trialbots.js) may call: the same code paths as the message handlers
+const trialApiBase = {
+  goTo: (room, b, x, z, st, speed) => { b.base = null; b.path = NAVS[room.map].findPath(b.x, b.z, x, z); b.pi = 0; b.mv = st; b.speed = speed; }, // b.st is the health state in trial mode, so the bot's own movement label lives in b.mv
+  startChannel, stopChannel, swing: doSwing, usePower, hidersOf, seekersOf, now,
+};
+let TRIALBOTS = null;
+try { TRIALBOTS = require('./trialbots'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') console.error('trialbots failed to load', e); }
+function trialBots(room, t, dt) {
+  if (!TRIALBOTS || typeof TRIALBOTS.think !== 'function') return; // no bot AI: bots stand still
+  const api = { ...trialApiBase, nav: NAVS[room.map] };
+  for (const b of room.players.values()) {
+    if (!b.bot || (b.role === 'seeker' && room.phase !== 'seek') || b.st === 'caged' || b.st === 'out' || b.st === 'escaped' || Date.now() < b.trapped) continue;
+    try { TRIALBOTS.think(room, b, t, dt, api); } catch (e) { console.error('trial bot error', e); }
+    if (!b.path || b.pi >= b.path.length) b.speed = 0; // not walking: still (grass concealment reads speed)
+  }
 }
 
 // ======================================================================
@@ -550,7 +823,7 @@ const handlers = {
     send(old, roomMsg(room, old));
     broadcast(room, { t: 'conn', id: old.id, on: true }, old);
     if (room.phase === 'hide' || room.phase === 'seek') {
-      send(old, { t: 'round', resume: 1, phase: room.phase, mode: room.mode, map: room.map, seekers: seekersOf(room).map((q) => q.id), spawns: [{ id: old.id, x: r2(old.x), z: r2(old.z), yaw: r2(old.yaw) }], hide: HIDE_SECS, seek: SEEK_SECS, tl: Math.max(0, r2(room.phaseEnd - now())), role: old.role, score: old.score });
+      send(old, { t: 'round', resume: 1, phase: room.phase, mode: room.mode, map: room.map, seekers: seekersOf(room).map((q) => q.id), spawns: [{ id: old.id, x: r2(old.x), z: r2(old.z), yaw: r2(old.yaw) }], hide: HIDE_SECS, seek: room.mode === 'trial' ? TRIAL_SECS : SEEK_SECS, tl: Math.max(0, r2(room.phaseEnd - now())), role: old.role, score: old.score, ...(room.mode === 'trial' && room.trial ? trialResume(room, old) : {}) });
       // others' disguise / tint are re-sent by the snapshot code the moment each player is next visible to us
       if (room.mode === 'prophunt') { if (old.role === 'seeker') sendAmmo(old); if (room.pickup) send(old, { t: 'pickup', x: room.pickup.x, z: room.pickup.z }); }
     }
@@ -560,7 +833,9 @@ const handlers = {
     if (rooms.size >= MAX_ROOMS) return send(p, { t: 'err', msg: 'Server is full, try again in a few minutes' });
     if ([...rooms.values()].filter((r) => r.ip === p.ip).length >= MAX_ROOMS_PER_IP) return send(p, { t: 'err', msg: 'Too many rooms from your connection' });
     p.name = cleanName(m.name);
-    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode: 'classic', map: 'house', pickup: null, pickupDone: false, pickupAt: 0, t0: 0, fill: false, botN: 0, lt: 0, botAcc: 0, ip: p.ip };
+    const want = MODES.includes(process.env.DEFAULT_MODE) ? process.env.DEFAULT_MODE : 'trial', mode = want === 'trial' && !trialMapIds().length ? 'classic' : want; // DEFAULT_MODE: test hook (the old suites assume classic on house)
+    const map = mode === 'trial' ? (trialMapIds().includes('coldwood') ? 'coldwood' : trialMapIds()[0]) : 'house';
+    const room = { code: newCode(), players: new Map(), hostId: 0, phase: 'lobby', phaseEnd: 0, nextAward: 0, mode, map, pickup: null, pickupDone: false, pickupAt: 0, t0: 0, fill: false, botN: 0, lt: 0, botAcc: 0, ip: p.ip };
     rooms.set(room.code, room);
     joinRoom(p, room);
   },
@@ -580,11 +855,16 @@ const handlers = {
   mode(p, m) { // host picks the game mode in the lobby
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby' || !MODES.includes(m.mode)) return;
+    if (m.mode === 'trial') { // only trial-capable maps: switch to one (coldwood first) or refuse
+      if (!trialMapIds().length) return send(p, { t: 'err', msg: 'No map supports Trial yet' });
+      if (!TRIALS[room.map]) room.map = trialMapIds().includes('coldwood') ? 'coldwood' : trialMapIds()[0];
+    }
     room.mode = m.mode; sendRoom(room);
   },
   map(p, m) { // host picks the map in the lobby; only registry keys are accepted
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby' || typeof m.map !== 'string' || !Object.hasOwn(MAPS, m.map)) return;
+    if (room.mode === 'trial' && !TRIALS[m.map]) return send(p, { t: 'err', msg: 'That map does not support Trial' });
     room.map = m.map; sendRoom(room);
   },
   fill(p, m) { // host toggles "fill with bots"
@@ -609,6 +889,7 @@ const handlers = {
     const room = p.room;
     if (!room || room.hostId !== p.id || room.phase !== 'lobby') return;
     syncBots(room);
+    if (room.mode === 'trial' && !TRIALS[room.map]) return send(p, { t: 'err', msg: 'That map does not support Trial' });
     if (room.players.size < MIN_PLAYERS) return send(p, { t: 'err', msg: 'Need at least 2 players' });
     startRound(room);
   },
@@ -622,17 +903,33 @@ const handlers = {
     const x = num(m.x, bd.x0 - 0.5, bd.x1 + 0.5), y = num(m.y, 0, 8), z = num(m.z, bd.z0 - 0.5, bd.z1 + 0.5), yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -1.6, 1.6), c = num(m.c, 0, 1);
     if (x === null || y === null || z === null || yaw === null || pitch === null || c === null) return;
     const seq = Number.isInteger(m.s) ? m.s & 0xffff : null;
-    const dt = Math.min(1, (t - p.lastPos) / 1000);
+    if (room.mode === 'trial' && p.role === 'hider' && (!canAct(p))) { if (seq !== null) p.ack = seq; return; } // caged / out / escaped / held by a trap: the ack snaps the client back
+    const dt = Math.min(1, (t - p.lastPos) / 1000), MS = maxSpeed(p);
     // speed check: BOTH must hold. The per-move rule (9 m/s * dt + 0.5 m) and the bucket (9 m/s of server time, capped at BUDGET_CAP = 1.5 m; 1.0 m refused ~7% of simulated jittered 6.8 m/s walks and an overloaded host bunches packets further),
     // so the sustained speed is at most 9 m/s plus a ~1 m burst, and a jittered 6.8 m/s walker (bunched packets) still fits.
-    p.budget = Math.min(BUDGET_CAP, p.budget + ((t - p.budgetT) / 1000) * MAX_SPEED); p.budgetT = t;
+    p.budget = Math.min(BUDGET_CAP, p.budget + ((t - p.budgetT) / 1000) * MS); p.budgetT = t;
     const dist = Math.hypot(x - p.x, z - p.z);
-    if (dist > MAX_SPEED * dt + 0.5 || dist > p.budget) { if (seq !== null) p.ack = seq; return; } // refused: the ack tells the client to snap back to our position
+    if (dist > MS * dt + 0.5 || dist > p.budget) { if (seq !== null) p.ack = seq; return; } // refused: the ack tells the client to snap back to our position
     p.budget = Math.max(0, p.budget - dist);
     p.lastPos = t;
+    p.speed = p.speed * 0.5 + (dist / Math.max(dt, 0.04)) * 0.5; // derived m/s (grass concealment)
     p.x = x; p.y = y; p.z = z; p.yaw = yaw; p.pitch = pitch; p.c = c;
     if (seq !== null) p.ack = seq;
   },
+  // ----- trial
+  cls(p, m) { // lobby only: one of the class ids or random
+    if (!p.room || p.room.phase !== 'lobby' || typeof m.cls !== 'string' || (m.cls !== 'random' && !CLASSES.includes(m.cls))) return;
+    p.cls = m.cls;
+  },
+  interact(p, m) {
+    const room = p.room;
+    if (!room || room.mode !== 'trial' || !room.trial || p.role !== 'hider') return;
+    if (m.k === 'stop') return stopChannel(room, p);
+    if (m.k === 'start' && (m.what === 'relic' || m.what === 'gate' || m.what === 'cage') && Number.isInteger(m.i)) startChannel(room, p, m.what, m.i);
+  },
+  swing(p) { const room = p.room; if (room) doSwing(room, p); },
+  power(p) { const room = p.room; if (room) usePower(room, p); },
+  vault() { /* client-side scripted move: the server only sees normal position updates */ },
   // ----- prop hunt
   disguise(p, m) { // hider becomes a prop (propId) or reverts (null)
     const room = p.room;
@@ -781,8 +1078,10 @@ setInterval(() => { try { sampleHistory(); } catch (e) { console.error('history 
 const port = process.env.PORT || 3000;
 // the shared modules (colliders + prop table per map, nav, protocol) are ES modules; load them all before accepting connections
 Promise.all([import('../src/shared/worlddata.js'), import('../src/shared/protocol.js'), import('../src/shared/nav.js')]).then(([m, proto, nav]) => {
-  PR = proto; MAPS = m.MAPS; WORLDS = {}; NAVS = {}; BOTSPOTS = {};
+  PR = proto; MAPS = m.MAPS; WORLDS = {}; NAVS = {}; BOTSPOTS = {}; TRIALS = {};
+  let stub = null; try { stub = process.env.TRIAL_STUB ? JSON.parse(process.env.TRIAL_STUB) : null; } catch { console.error('bad TRIAL_STUB'); } // test hook: injects a `trial` block into the house map
   for (const [id, map] of Object.entries(MAPS)) {
+    const tr = validTrial(map.trial || (id === 'house' ? stub : null)); if (tr) TRIALS[id] = tr;
     WORLDS[id] = { ...m.buildWorld({}, id), meta: map.meta, spawns: map.spawns, rayBox: m.rayBox };
     NAVS[id] = nav.createNav(WORLDS[id].colliders); NAVS[id].buildNav();
     const reach = NAVS[id].reachableFrom(map.meta.seekerStart.x, map.meta.seekerStart.z);

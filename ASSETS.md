@@ -36,3 +36,25 @@ converted to WebP (colour, OpenGL normal, roughness; 1024 and 512). The `tile` c
 
 - public/env/dusk.hdr: Venice Sunset 1k HDRI (Greg Zaal), https://polyhaven.com/a/venice_sunset, CC0
 - public/env/night.hdr: St Peters Square Night 1k HDRI, https://polyhaven.com/a/st_peters_square_night, CC0
+
+## Coldwood Farm (trial mode): props and ground textures
+
+Poly Haven (https://polyhaven.com) assets are CC0 1.0 (https://polyhaven.com/license). Downloaded through api.polyhaven.com/files/<id> (glTF 1k), then
+decimated (meshoptimizer simplify), textures resized and re-encoded as WebP, written as plain GLB (no meshopt/draco) with `@gltf-transform`. Files in
+`public/models/props/`, loaded by `src/world/models.js`.
+
+| File | Source (Poly Haven id) | Notes |
+| --- | --- | --- |
+| `rocks.glb` | rock_moss_set_01 | ~3.5k tris, 512 textures |
+| `log.glb` | dead_tree_trunk_02 | ~2.5k tris, 256 textures |
+| `barrel_red.glb` | Barrel_01 | ~0.9k tris |
+| `barrel_blue.glb` | barrel_03 | ~0.7k tris, 256 textures |
+| `tarp_car.glb` | covered_car | ~2.4k tris, car under a tarp (the wreck) |
+| `wheel.glb` | rusted_wheel_rim_01 | ~0.8k tris |
+| `iron_gate.glb` | large_iron_gate | ~2.5k tris |
+| `lantern.glb` | Lantern_01 | ~1.2k tris |
+| `jerrycan.glb` | metal_jerrycan | ~0.7k tris |
+| `pine.glb`, `pine_small.glb`, `dead_tree.glb`, `hay_bale.glb`, `cage.glb` | generated procedurally (own work, vertex colours, no textures); CC0 | no download |
+
+Ground textures (`public/textures/<set>/{c,n,r}_{1024,512}.webp`, Poly Haven 1k, CC0): `mud` = brown_mud_leaves_01, `dirt` = stony_dirt_path, `dryGrass` = withered_grass.
+(Kenney's Nature Kit was the first choice but its download endpoint is gated, so it is not used.)
