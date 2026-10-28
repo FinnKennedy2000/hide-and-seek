@@ -1,16 +1,18 @@
 // Frame-time governor: the single owner of automatic render-scale and tier changes. Pure (no DOM/THREE): feed it frame ms.
-//  - 1 s window. Average > 18 ms: scale -0.1 (floor 0.6: below that the image is too soft to spot anyone). Average < 13 ms for 5 s straight: scale +0.1 (up to the tier's scale).
+//  - 1 s window, judged on its 75th-percentile frame (p75). p75 > 18 ms: scale -0.1 (floor 0.6: below that the image is too soft to spot anyone). p75 < 13 ms for 5 s straight: scale +0.1 (up to the tier's scale).
 //  - Tier changes are rarer: down after 3 windows still > 18 ms at the scale floor, up after 15 s < 13 ms at full scale,
 //    never more than one per 8 s, and a step up that is immediately undone raises a ceiling for 60 s so it never thrashes.
+//  - A tier stepped up into (boot benchmark or governor) is on trial for 2 min: if it needs the scale at or below trialFloor (0.8) it is
+//    given back (and not retried), so a fast-at-the-menu GPU ends on the lower tier at full resolution, not the higher one at 0.6.
 import { TIERS, budget } from './budget.js';
 
-export const GOV = { windowMs: 1000, hiMs: 18, loMs: 13, upAfterMs: 5000, floor: 0.6, step: 0.1, tierDownWindows: 3, tierUpMs: 15000, tierCooldownMs: 8000, upTrialMs: 120000, ceilingMs: 60000 };
+export const GOV = { windowMs: 1000, hiMs: 18, loMs: 13, upAfterMs: 5000, floor: 0.6, step: 0.1, tierDownWindows: 3, tierUpMs: 15000, tierCooldownMs: 8000, upTrialMs: 120000, ceilingMs: 60000, trialFloor: 0.8 };
 const r2 = (x) => Math.round(x * 100) / 100;
 
 export class Governor {
   constructor({ tier = 'med', onScale = () => {}, onTier = () => {}, minTier = 'potato', maxTier = 'high' } = {}) {
     Object.assign(this, { tier, onScale, onTier, minTier, maxTier });
-    this.t = 0; this.sum = 0; this.n = 0; this.win = 0;
+    this.t = 0; this.ms = []; this.win = 0;
     this.scale = budget.of(tier).scale;
     this.good = 0; this.atMaxGood = 0; this.floorBad = 0;
     this.lastTier = -Infinity; this.lastTierUp = -Infinity; this.lastUp = -Infinity; this.ceiling = Infinity; this.ceilingUntil = 0;
@@ -23,23 +25,24 @@ export class Governor {
     const dir = TIERS.indexOf(tier) - TIERS.indexOf(this.tier);
     if (dir < 0 && this.t - this.lastTierUp < GOV.upTrialMs) this.maxTier = tier; // the tier we just stepped up into could not hold: never try it again this session
     if (dir > 0) this.lastTierUp = this.t;
-    this.tier = tier; this.lastTier = this.t; this.good = this.atMaxGood = this.floorBad = 0; this.sum = this.n = this.win = 0;
+    this.tier = tier; this.lastTier = this.t; this.good = this.atMaxGood = this.floorBad = 0; this.ms.length = 0; this.win = 0;
     this.onTier(tier);
     if (resetScale) this.setScale(budget.of(tier).scale);
   }
   frame(ms) { // call once per frame with the frame's cost in ms
     this.t += ms;
     if (!this.enabled) return;
-    this.sum += ms; this.n++; this.win += ms;
+    this.ms.push(ms); this.win += ms;
     if (this.win < GOV.windowMs) return;
-    const avg = this.sum / this.n, w = this.win;
-    this.sum = this.n = this.win = 0;
+    const a = this.ms.sort((x, y) => x - y), avg = a[Math.floor(a.length * 0.75)], w = this.win; // 75th percentile: lone hitches (compile, GC) are
+    this.ms.length = 0; this.win = 0;                                                               // not fill-rate, a lower resolution would not fix them
     this.evaluate(avg, w);
   }
   evaluate(avg, w) {
     const i = TIERS.indexOf(this.tier);
     if (avg > GOV.hiMs) {
       this.good = this.atMaxGood = 0;
+      if (this.t - this.lastTierUp < GOV.upTrialMs && this.scale <= GOV.trialFloor + 1e-6 && i > TIERS.indexOf(this.minTier) && this.t - this.lastTier >= GOV.tierCooldownMs) { this.setTier(TIERS[i - 1]); return; }
       if (this.scale > GOV.floor + 1e-6) {
         if (this.t - this.lastUp < GOV.ceilingMs / 6) { this.ceiling = r2(this.scale - GOV.step); this.ceilingUntil = this.t + GOV.ceilingMs; } // we stepped up and it failed
         this.setScale(Math.max(GOV.floor, this.scale - GOV.step)); this.floorBad = 0;

@@ -72,6 +72,9 @@ export function mapGlbLayer(world, url, opts = {}) {
     if (DEBUG) stats.grassState = () => ({ meshes: grass.length, inScene: grass.filter((o) => { for (let p = o; p; p = p.parent) if (p.isScene) return true; return false; }).length, visible: grass.filter((o) => o.visible).length, instances: grass.reduce((n, o) => n + o.count, 0), casting: grass.filter((o) => o.castShadow).length, mat: [...new Set(grass.map((o) => o.material.type))] });
     world.add(root);
     stats.loaded = true;
+  }).catch((e) => { // the map is the only cover there is: whatever failed above, show what was loaded rather than nothing
+    console.error('[mapglb] map build failed', e);
+    if (root && !dead && !root.parent) { world.add(root); stats.loaded = true; }
   });
   return {
     stats,

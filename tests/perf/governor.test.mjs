@@ -78,3 +78,24 @@ test('governor: a tier we stepped up into and could not hold is not retried', ()
   feed(g, 6, 120);                                  // plenty of headroom afterwards
   assert.equal(g.tier, 'low');
 });
+
+test('governor: a stepped-up tier that needs the scale at or below 0.8 is given back at full scale', () => {
+  const g = new Governor({ tier: 'low' });
+  g.setTier('med');                                 // the boot benchmark (it ran on the cheap menu scene)
+  feed(g, 25, 8.5);                                 // 1.0 -> 0.9 -> 0.8 ..., then back to low (scale reset) once the 8 s cooldown allows
+  assert.equal(g.tier, 'low'); assert.equal(g.scale, budget.low.scale);
+  feed(g, 10, 60);                                  // low holds easily: med is not tried again
+  assert.equal(g.tier, 'low');
+});
+
+test('governor: isolated hitches do not cost resolution (window p75)', () => {
+  const g = new Governor({ tier: 'low', minTier: 'low', maxTier: 'low' });
+  for (let s = 0; s < 10; s++) { for (let i = 0; i < 55; i++) g.frame(16.7); g.frame(120); g.frame(80); } // two spikes a second
+  assert.equal(g.scale, budget.low.scale);
+});
+
+test('governor: a third of frames missing vsync still lowers the scale', () => {
+  const g = new Governor({ tier: 'low', minTier: 'low', maxTier: 'low' });
+  for (let s = 0; s < 3; s++) for (let i = 0; i < 40; i++) g.frame(i % 3 ? 16.7 : 33.3);
+  assert.ok(g.scale < budget.low.scale, `scale ${g.scale}`);
+});

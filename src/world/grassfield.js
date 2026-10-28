@@ -53,8 +53,11 @@ function shadowPatches(rects) {
 
 // Wind sway + the hider-only near-camera fade, as an onBeforeCompile patch. Shared by the procedural fields below and the authored GLB
 // grass (src/world/mapglb.js). drive(meshes) keeps the patch on whatever material a preset swaps in and returns a stop fn.
+// One uniform pair per page, not per call: three only runs onBeforeCompile for a material that has no program yet, so a cached GLB grass
+// material revisited keeps the uniforms of its first compile. Per-call uniforms froze its wind (and its lit pass then missed the new
+// depth twin's depth). Every live drive() writes the same values.
+const uTime = { value: 0 }, uFade = { value: 0 };
 export function grassShader() {
-  const uTime = { value: 0 }, uFade = { value: 0 };
   const patch = (s) => {
     s.uniforms.uTime = uTime; s.uniforms.uFade = uFade;
     s.vertexShader = 'invariant gl_Position; uniform float uTime; varying float vCamD;\n' + s.vertexShader.replace('#include <begin_vertex>',
@@ -83,6 +86,9 @@ export function grassShader() {
     p.renderOrder = -10; p.matrixAutoUpdate = false; p.castShadow = p.receiveShadow = false; p.name = 'grass-depth';
     p.userData.noScan = true; p.userData.grassDepth = true; p.raycast = () => {};
     im.add(p); im.userData.pre = p; // a child: hidden, moved and removed with its grass
+    // depthWrite is per draw, not per material: the GLB's 56 grass meshes share 2 materials, and a patch drawing with depthWrite off but
+    // no twin in front of it would let anything behind it show through
+    im.onBeforeRender = (r, s, c, g, m) => { m.depthWrite = !p.visible; };
     return p;
   }
   function drive(meshes) {
@@ -99,7 +105,7 @@ export function grassShader() {
       for (const im of meshes) {
         const p = im.userData.pre; if (!p) continue;
         const c = im.userData.wc ??= im.boundingSphere.center.clone().applyMatrix4(im.matrixWorld), r = im.boundingSphere.radius * im.matrixWorld.getMaxScaleOnAxis() + PRE_NEAR;
-        p.visible = camera.position.distanceToSquared(c) < r * r; im.material.depthWrite = !p.visible;
+        p.visible = camera.position.distanceToSquared(c) < r * r; // (onBeforeRender sets the lit pass's depthWrite from this)
       }
     } });
     return () => { off = true; stop(); stopPre(); };

@@ -14,6 +14,12 @@ import { Governor } from './governor.js';
 import { DEBUG } from '../core/state.js';
 
 export function initPerf() {
+  // a benchmark run (src/perf/bench.js) that was abandoned mid-way (tab closed, reloaded by hand) left its preset in hs-opts: put the
+  // player's own settings back and boot again with them
+  try {
+    const bak = localStorage.getItem('hs-bench-opts0');
+    if (bak != null && !sessionStorage.getItem('hs-bench')) { const o = JSON.parse(bak); if (o == null) localStorage.removeItem('hs-opts'); else localStorage.setItem('hs-opts', o); localStorage.removeItem('hs-bench-opts0'); location.reload(); }
+  } catch (e) { console.warn('could not restore settings saved by the benchmark', e); }
   const gl = renderer.getContext();
   const info = gl.getExtension('WEBGL_debug_renderer_info');
   const rendererName = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
@@ -52,8 +58,11 @@ export function initPerf() {
     if (t - benchT0 >= BENCH.ms) {
       benchDone = true; samples.sort((a, b) => a - b);
       st.benchMs = samples[samples.length >> 1];
+      // down only: the boot view is the title-screen backdrop, far cheaper than a round, so a fast verdict there said nothing about play
+      // (an Intel iGPU stepped up to med, then fell to med at 0.6 scale or back to low with a ~1 s recompile mid-round). Stepping up is
+      // left to the governor, which only does it after 15 s of in-game headroom at full scale.
       const next = benchTier(gov.tier, st.benchMs);
-      if (next !== gov.tier) { if (TIERS.indexOf(next) > TIERS.indexOf(gov.maxTier)) gov.maxTier = next; gov.setTier(next); }
+      if (TIERS.indexOf(next) < TIERS.indexOf(gov.tier)) gov.setTier(next);
     }
   };
   const readGpu = () => {

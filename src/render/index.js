@@ -18,7 +18,7 @@ const PRESETS = {
   ultra: { pr: 1.5, lambert: false, env: true, shadow: 'csm', cascades: 2, size: 2048, casters: 65, aa: 'smaa', bloom: true, lut: true, vignette: true, grain: true, ca: true, ao: true },
 };
 const isCharacter = (o) => { for (let p = o.parent; p; p = p.parent) if (p.userData.keepShadow) return true; return false; };
-const LOW_FILL = 1.7;
+const LOW_FILL = 1.7, WARM_MS = 4000;
 const ENV_URL = { dusk: '/env/dusk.hdr', night: '/env/night.hdr' };
 
 let level = null, cfg = PRESETS.high, pipe = null, N8AO = null, csm = null, csmMats = new WeakSet();
@@ -137,9 +137,15 @@ export const render = {
     if (cfg.lambert !== undefined) useLambert(obj, cfg.lambert);
     patch?.();
     if (csm) obj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (!csmMats.has(m) && m.isMeshStandardMaterial) { csm.setupMaterial(m); m.needsUpdate = true; csmMats.add(m); } });
+    if (renderer.getContext().isContextLost()) return;
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(pipe?.composer.inputBuffer ?? null); // programs are keyed on the target's colour space: compile for the RenderPass's target
-    try { const p = renderer.compileAsync(obj, camera, scene); renderer.setRenderTarget(prev); await p; } catch (e) { renderer.setRenderTarget(prev); console.warn('shader warm-up failed (compiles on first sight instead)', e); }
+    let p;
+    try { p = renderer.compileAsync(obj, camera, scene); } catch (e) { console.warn('shader warm-up failed (compiles on first sight instead)', e); return; } finally { renderer.setRenderTarget(prev); }
+    // compileAsync never rejects and can poll forever (context lost, a material disposed meanwhile): it is only an optimisation, so cap it
+    let t; const late = new Promise((r) => { t = setTimeout(() => r('late'), WARM_MS); });
+    if ((await Promise.race([p, late])) === 'late') console.warn(`shader warm-up still busy after ${WARM_MS} ms; showing the map anyway`);
+    clearTimeout(t);
   },
   hit() { hitT = 0.25; }, // brief chromatic aberration on a hit
   stats() { return { calls: last.calls, tris: last.tris, fps: Math.round(fpsEma) }; }, // last frame, all passes

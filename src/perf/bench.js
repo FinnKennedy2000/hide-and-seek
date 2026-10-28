@@ -16,7 +16,7 @@ import { G, hooks } from '../core/state.js';
 import { setWorld } from '../world/build.js';
 import { summarize } from './helpers.js';
 
-const KEY = 'hs-bench', OPTS = 'hs-opts';
+const KEY = 'hs-bench', OPTS = 'hs-opts', BACKUP = 'hs-bench-opts0'; // BACKUP: the player's own settings, restored by runtime.js if a run is abandoned
 const qs = new URLSearchParams(location.search);
 const SECS = Math.max(1, +qs.get('secs') || 5), UNCAP = qs.get('uncap') === '1', SCALE = +qs.get('scale') || 0;
 const RUNS = (qs.get('tiers') || 'auto,low,med,high').split(',').filter((t) => ['auto', 'potato', 'low', 'med', 'high', 'ultra'].includes(t));
@@ -66,7 +66,8 @@ async function sample(p, secs = SECS) {
   for (let i = 0; ; i++) {
     await until(() => !document.hidden, 3600000);
     pose = p; await sleep(1500); const h = hidden; startRec(); await sleep(secs * 1000); const r = stopRec();
-    if (h === hidden || i >= 3) return r;
+    if (h === hidden) return r;
+    if (i >= 3) return { ...r, hidden: true }; // never got a clean sample: flagged, not passed off as one
   }
 }
 function tourPose(speed = 15) { // pose fn along TOUR; sets .done at the end
@@ -78,7 +79,7 @@ function tourPose(speed = 15) { // pose fn along TOUR; sets .done at the end
   };
   return fn;
 }
-async function tour() { const fn = tourPose(); pose = fn; lastT = 0; startRec(); await until(() => fn.done, 120000); return stopRec(); }
+async function tour() { const fn = tourPose(); pose = fn; lastT = 0; startRec(); const ok = await until(() => fn.done, 120000); const r = stopRec(); return ok ? r : { ...r, timedOut: true }; }
 function chasePose() { // follow the fastest-moving remote avatar (a bot), 4.5 m behind it along its motion
   const last = new WeakMap(); let target = null, hx = 0, hz = 1, t = 0;
   return (dt) => {
@@ -113,7 +114,7 @@ async function runOne(run) {
   ui(`bench ${run}: entering a trial round with bots`);
   const online = await enterTrial();
   if (!online) { setWorld('coldwood'); G.paused = true; G.phase = 'play'; for (const e of document.querySelectorAll('.panelwrap,[data-screen]')) e.style.display = 'none'; } // no server: bare map, game frozen
-  await until(() => window.__glb?.loaded, 90000);
+  if (!(await until(() => window.__glb?.loaded, 90000))) throw new Error('the Coldwood GLB did not load within 90 s'); // (numbers for an empty map would look great)
   quiet();
   const P = window.__perf;
   if (run !== 'auto') { P.gov.enabled = false; P.gov.setScale(SCALE || P.perf.budget[P.st.tier].scale); }
@@ -134,18 +135,22 @@ function want(run) { const o = read(OPTS, localStorage) || {}; return run === 'a
 const booted = (run) => (run === 'auto' ? settings.autoQuality : !settings.autoQuality && settings.quality === run);
 async function main() {
   let s = read(KEY, sessionStorage);
-  if (!s || s.href !== location.href) s = { href: location.href, runs: RUNS, i: 0, results: [], opts0: localStorage.getItem(OPTS) };
+  if (!s || s.href !== location.href) {
+    if (localStorage.getItem(BACKUP) == null) localStorage.setItem(BACKUP, JSON.stringify(localStorage.getItem(OPTS))); // survives a closed tab
+    s = { href: location.href, runs: RUNS, i: 0, results: [], reloads: 0 };
+  }
   if (s.i < s.runs.length) {
     const run = s.runs[s.i];
-    if (!booted(run) || s.bootedFor !== s.i) { s.bootedFor = s.i; sessionStorage.setItem(KEY, JSON.stringify(s)); localStorage.setItem(OPTS, JSON.stringify(want(run))); location.replace(s.href); return; }
+    if (!booted(run) || s.bootedFor !== s.i) {
+      if (++s.reloads > s.runs.length * 2 + 2) throw new Error(`preset ${run} did not apply after a reload`);
+      s.bootedFor = s.i; sessionStorage.setItem(KEY, JSON.stringify(s)); localStorage.setItem(OPTS, JSON.stringify(want(run))); location.replace(s.href); return; }
     let r;
     try { r = await runOne(run); } catch (e) { r = { run, error: String(e?.stack || e) }; }
     s.results.push(r); s.i++; sessionStorage.setItem(KEY, JSON.stringify(s));
     if (G.mode === 'online') { hooks.leave?.(); await sleep(500); } // the server keeps at most 3 rooms per address: free this one before the next boot
     if (s.i < s.runs.length) { localStorage.setItem(OPTS, JSON.stringify(want(s.runs[s.i]))); s.bootedFor = s.i; sessionStorage.setItem(KEY, JSON.stringify(s)); location.replace(s.href); return; }
   }
-  if (s.opts0 == null) localStorage.removeItem(OPTS); else localStorage.setItem(OPTS, s.opts0);
-  sessionStorage.removeItem(KEY);
+  restoreOpts(); sessionStorage.removeItem(KEY);
   const P = window.__perf, d = renderer.getContext(), result = {
     env: { ua: navigator.userAgent, gpu: P.perf.rendererName, detected: P.perf.detected, dpr: devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight], uncap: UNCAP, secs: SECS, maxTex: d.getParameter(d.MAX_TEXTURE_SIZE) },
     runs: s.results,
@@ -176,4 +181,9 @@ function table(res) {
   return h + '</table>';
 }
 
-main().catch((e) => { console.error('[bench] failed', e); ui('bench failed: ' + esc(e)); });
+function restoreOpts() { const o = read(BACKUP, localStorage); if (o == null) localStorage.removeItem(OPTS); else localStorage.setItem(OPTS, o); localStorage.removeItem(BACKUP); }
+main().catch((e) => {
+  console.error('[bench] failed', e); ui('bench failed: ' + esc(e));
+  try { restoreOpts(); sessionStorage.removeItem(KEY); } catch {} // (the player's settings come back even when the bench breaks)
+  window.__bench = { done: true, error: String(e?.stack || e) };
+});

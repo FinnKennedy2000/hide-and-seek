@@ -126,7 +126,7 @@ export function batchStatic(root, skip, solid = () => false, keep = false) {
     const g = o.geometry, n = o.isInstancedMesh ? o.count : 1, t = (g.index ? g.index.count : g.attributes.position.count) / 3;
     if (t * n > BATCH_MAX_TRIS || Object.keys(g.morphAttributes).length) return;
     let top = o; while (top.parent && top.parent !== root) top = top.parent;
-    const base = toFloat(g), sig = Object.keys(base.attributes).sort().join() + (base.index ? '|i' : '');
+    const base = toFloat(g), sig = Object.entries(base.attributes).map(([k, a]) => k + a.itemSize).sort().join() + (base.index ? '|i' : '');
     for (let i = 0; i < n; i++) {
       m.copy(o.matrixWorld); if (o.isInstancedMesh) m.multiply((o.getMatrixAt(i, mi), mi));
       const b = base.clone().applyMatrix4(m); b.computeBoundingBox(); b.boundingBox.getCenter(c);
@@ -136,10 +136,14 @@ export function batchStatic(root, skip, solid = () => false, keep = false) {
     }
     base.dispose(); gone.push(o); draws++;
   });
+  const merged = [];
+  for (const e of buckets.values()) { const g = mergeGeometries(e.geos); e.geos.forEach((x) => x.dispose()); merged.push([e, g]); }
+  if (merged.some(([, g]) => !g)) { // an attribute layout mergeGeometries refused: leave the scene exactly as it was
+    console.warn('batchStatic: a merge failed, scene left unbatched'); merged.forEach(([, g]) => g?.dispose()); return { from: draws, to: draws };
+  }
   for (const o of gone) if (keep) o.visible = false; else o.removeFromParent();
   const batches = [];
-  for (const { top, mat, sol, geos } of buckets.values()) {
-    const g = mergeGeometries(geos); geos.forEach((x) => x.dispose());
+  for (const [{ top, mat, sol }, g] of merged) {
     g.applyMatrix4(m.copy(top.matrixWorld).invert());
     const b = new THREE.Mesh(g, mat); b.name = 'batch'; b.userData.solid = sol; b.matrixAutoUpdate = false; top.add(b); batches.push(b);
   }

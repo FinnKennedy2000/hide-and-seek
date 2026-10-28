@@ -1,0 +1,837 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "gpu": "ANGLE (Intel, Intel(R) Graphics (0x00007D41) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "detected": "low",
+  "dpr": 1,
+  "screen": [
+   800,
+   600
+  ],
+  "viewport": [
+   1920,
+   1080
+  ],
+  "uncap": false,
+  "secs": 5,
+  "maxTex": 16384
+ },
+ "runs": [
+  {
+   "run": "auto",
+   "online": true,
+   "tour": {
+    "n": 660,
+    "mean": 18.2,
+    "p50": 16.6,
+    "p95": 21,
+    "p99": 29.9,
+    "max": 447.4,
+    "fps": 54.9,
+    "over33": 5,
+    "over50": 4,
+    "cpuP95": 17.3,
+    "gpuMean": null,
+    "calls": 544,
+    "tris": 2426874,
+    "scale": "0.8/1",
+    "tier": "low/med",
+    "heapMB": 1.7,
+    "worst": [
+     {
+      "ms": 447,
+      "x": 41,
+      "z": -24
+     },
+     {
+      "ms": 372,
+      "x": 41,
+      "z": -21
+     },
+     {
+      "ms": 120,
+      "x": 41,
+      "z": -24
+     },
+     {
+      "ms": 51,
+      "x": 41,
+      "z": -23
+     }
+    ]
+   },
+   "views": {
+    "spawn": {
+     "n": 291,
+     "mean": 17.3,
+     "p50": 17,
+     "p95": 21.6,
+     "p99": 24.1,
+     "max": 25.3,
+     "fps": 57.9,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 17.1,
+     "gpuMean": null,
+     "calls": 460,
+     "tris": 2148771,
+     "scale": "0.6",
+     "tier": "low",
+     "heapMB": 4.2,
+     "worst": []
+    },
+    "grassEdge": {
+     "n": 301,
+     "mean": 16.7,
+     "p50": 16.8,
+     "p95": 19.6,
+     "p99": 20.9,
+     "max": 21.1,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 8.6,
+     "gpuMean": null,
+     "calls": 67,
+     "tris": 562066,
+     "scale": "0.6",
+     "tier": "low",
+     "heapMB": -0.6,
+     "worst": []
+    },
+    "grassIn": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 20.2,
+     "p99": 22,
+     "max": 27,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 15.7,
+     "gpuMean": null,
+     "calls": 457,
+     "tris": 2095529,
+     "scale": "0.6",
+     "tier": "low",
+     "heapMB": 7.5,
+     "worst": []
+    },
+    "vista": {
+     "n": 301,
+     "mean": 16.7,
+     "p50": 16.6,
+     "p95": 20.1,
+     "p99": 22,
+     "max": 25.8,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 16.5,
+     "gpuMean": null,
+     "calls": 523,
+     "tris": 2189849,
+     "scale": "0.6",
+     "tier": "low",
+     "heapMB": -17.9,
+     "worst": []
+    },
+    "barn": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 20.1,
+     "p99": 21.8,
+     "max": 24.9,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 12.3,
+     "gpuMean": null,
+     "calls": 253,
+     "tris": 1293397,
+     "scale": "0.6",
+     "tier": "low",
+     "heapMB": -15.9,
+     "worst": []
+    },
+    "chase": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.8,
+     "p95": 20.2,
+     "p99": 22.9,
+     "max": 24.7,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 10.4,
+     "gpuMean": null,
+     "calls": 137,
+     "tris": 617166,
+     "scale": "0.7",
+     "tier": "low",
+     "heapMB": 9.1,
+     "worst": []
+    }
+   },
+   "tourWarm": {
+    "n": 784,
+    "mean": 16.7,
+    "p50": 16.6,
+    "p95": 20,
+    "p99": 21.5,
+    "max": 30.8,
+    "fps": 60,
+    "over33": 0,
+    "over50": 0,
+    "cpuP95": 12.1,
+    "gpuMean": null,
+    "calls": 469,
+    "tris": 2103442,
+    "scale": "0.7/0.8",
+    "tier": "low",
+    "heapMB": 2.1,
+    "worst": []
+   },
+   "tier": "low",
+   "scale": 0.8,
+   "canvas": [
+    1536,
+    864
+   ],
+   "gpuTimer": false
+  },
+  {
+   "run": "low",
+   "online": true,
+   "tour": {
+    "n": 675,
+    "mean": 16.7,
+    "p50": 16.6,
+    "p95": 20.5,
+    "p99": 21.6,
+    "max": 29.7,
+    "fps": 60,
+    "over33": 0,
+    "over50": 0,
+    "cpuP95": 13,
+    "gpuMean": 5.5,
+    "calls": 481,
+    "tris": 2117265,
+    "scale": "0.8",
+    "tier": "low",
+    "heapMB": -8.1,
+    "worst": []
+   },
+   "views": {
+    "spawn": {
+     "n": 297,
+     "mean": 16.9,
+     "p50": 16.7,
+     "p95": 20.5,
+     "p99": 24.5,
+     "max": 35.7,
+     "fps": 59.2,
+     "over33": 1,
+     "over50": 0,
+     "cpuP95": 16.4,
+     "gpuMean": 10.7,
+     "calls": 449,
+     "tris": 2117003,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": -89.2,
+     "worst": []
+    },
+    "grassEdge": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 20.2,
+     "p99": 21.7,
+     "max": 22.9,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 7.4,
+     "gpuMean": 4.2,
+     "calls": 60,
+     "tris": 530268,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": 11,
+     "worst": []
+    },
+    "grassIn": {
+     "n": 299,
+     "mean": 16.8,
+     "p50": 16.6,
+     "p95": 20.1,
+     "p99": 26.4,
+     "max": 38.5,
+     "fps": 59.5,
+     "over33": 2,
+     "over50": 0,
+     "cpuP95": 16.1,
+     "gpuMean": 12.5,
+     "calls": 475,
+     "tris": 2109258,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": -7.7,
+     "worst": []
+    },
+    "vista": {
+     "n": 299,
+     "mean": 16.7,
+     "p50": 16.5,
+     "p95": 21.1,
+     "p99": 22.1,
+     "max": 28.5,
+     "fps": 59.7,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 17.1,
+     "gpuMean": 10.6,
+     "calls": 527,
+     "tris": 2189977,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": 14,
+     "worst": []
+    },
+    "barn": {
+     "n": 295,
+     "mean": 17,
+     "p50": 16.6,
+     "p95": 21,
+     "p99": 30.9,
+     "max": 50.2,
+     "fps": 59,
+     "over33": 2,
+     "over50": 1,
+     "cpuP95": 12.7,
+     "gpuMean": 5.2,
+     "calls": 265,
+     "tris": 1320226,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": 12,
+     "worst": [
+      {
+       "ms": 50,
+       "x": 0,
+       "z": 6
+      }
+     ]
+    },
+    "chase": {
+     "n": 301,
+     "mean": 16.7,
+     "p50": 16.6,
+     "p95": 20.1,
+     "p99": 20.9,
+     "max": 22.3,
+     "fps": 60.1,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 9.7,
+     "gpuMean": 4,
+     "calls": 173,
+     "tris": 1102195,
+     "scale": "0.8",
+     "tier": "low",
+     "heapMB": 2.6,
+     "worst": []
+    }
+   },
+   "tourWarm": {
+    "n": 678,
+    "mean": 16.7,
+    "p50": 16.6,
+    "p95": 20.1,
+    "p99": 21.6,
+    "max": 25.7,
+    "fps": 60,
+    "over33": 0,
+    "over50": 0,
+    "cpuP95": 12.3,
+    "gpuMean": 5.3,
+    "calls": 477,
+    "tris": 2103950,
+    "scale": "0.8",
+    "tier": "low",
+    "heapMB": 3.4,
+    "worst": []
+   },
+   "tier": "low",
+   "scale": 0.8,
+   "canvas": [
+    1536,
+    864
+   ],
+   "gpuTimer": true
+  },
+  {
+   "run": "med",
+   "online": true,
+   "tour": {
+    "n": 601,
+    "mean": 21,
+    "p50": 17.8,
+    "p95": 37.2,
+    "p99": 47.2,
+    "max": 77.6,
+    "fps": 47.5,
+    "over33": 45,
+    "over50": 5,
+    "cpuP95": 27.6,
+    "gpuMean": 19.8,
+    "calls": 550,
+    "tris": 2445491,
+    "scale": "1",
+    "tier": "med",
+    "heapMB": -45.6,
+    "worst": [
+     {
+      "ms": 78,
+      "x": -10,
+      "z": -10
+     },
+     {
+      "ms": 54,
+      "x": -38,
+      "z": -37
+     },
+     {
+      "ms": 53,
+      "x": -11,
+      "z": -11
+     },
+     {
+      "ms": 52,
+      "x": -37,
+      "z": -36
+     },
+     {
+      "ms": 52,
+      "x": -20,
+      "z": -19
+     }
+    ]
+   },
+   "views": {
+    "spawn": {
+     "n": 174,
+     "mean": 28.8,
+     "p50": 27.8,
+     "p95": 37,
+     "p99": 82.1,
+     "max": 95.7,
+     "fps": 34.7,
+     "over33": 17,
+     "over50": 3,
+     "cpuP95": 22.6,
+     "gpuMean": 26.5,
+     "calls": 526,
+     "tris": 2442563,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": -12.1,
+     "worst": [
+      {
+       "ms": 96,
+       "x": -6,
+       "z": -56
+      },
+      {
+       "ms": 82,
+       "x": -6,
+       "z": -56
+      },
+      {
+       "ms": 76,
+       "x": -6,
+       "z": -56
+      }
+     ]
+    },
+    "grassEdge": {
+     "n": 179,
+     "mean": 28,
+     "p50": 28,
+     "p95": 31.5,
+     "p99": 33.4,
+     "max": 34,
+     "fps": 35.7,
+     "over33": 1,
+     "over50": 0,
+     "cpuP95": 7.4,
+     "gpuMean": 26.1,
+     "calls": 118,
+     "tris": 747525,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": 13.7,
+     "worst": []
+    },
+    "grassIn": {
+     "n": 141,
+     "mean": 35.6,
+     "p50": 35.2,
+     "p95": 42.4,
+     "p99": 45,
+     "max": 46.1,
+     "fps": 28.1,
+     "over33": 99,
+     "over50": 0,
+     "cpuP95": 19.6,
+     "gpuMean": 33.3,
+     "calls": 536,
+     "tris": 2399036,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": 4.8,
+     "worst": []
+    },
+    "vista": {
+     "n": 155,
+     "mean": 32.4,
+     "p50": 30.6,
+     "p95": 49.7,
+     "p99": 67.1,
+     "max": 79.4,
+     "fps": 30.9,
+     "over33": 46,
+     "over50": 7,
+     "cpuP95": 40.2,
+     "gpuMean": 29.5,
+     "calls": 606,
+     "tris": 2504038,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": -8.7,
+     "worst": [
+      {
+       "ms": 79,
+       "x": -62,
+       "z": -62
+      },
+      {
+       "ms": 67,
+       "x": -62,
+       "z": -62
+      },
+      {
+       "ms": 63,
+       "x": -62,
+       "z": -62
+      },
+      {
+       "ms": 56,
+       "x": -62,
+       "z": -62
+      },
+      {
+       "ms": 55,
+       "x": -62,
+       "z": -62
+      },
+      {
+       "ms": 54,
+       "x": -62,
+       "z": -62
+      }
+     ]
+    },
+    "barn": {
+     "n": 194,
+     "mean": 25.8,
+     "p50": 25.7,
+     "p95": 29.4,
+     "p99": 30.8,
+     "max": 30.9,
+     "fps": 38.7,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 13.1,
+     "gpuMean": 24.1,
+     "calls": 351,
+     "tris": 1660976,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": -0.6,
+     "worst": []
+    },
+    "chase": {
+     "n": 296,
+     "mean": 16.9,
+     "p50": 16.8,
+     "p95": 20.2,
+     "p99": 27.5,
+     "max": 31,
+     "fps": 59.1,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 5.8,
+     "gpuMean": 15,
+     "calls": 98,
+     "tris": 716711,
+     "scale": "1",
+     "tier": "med",
+     "heapMB": 14.9,
+     "worst": []
+    }
+   },
+   "tourWarm": {
+    "n": 525,
+    "mean": 25.5,
+    "p50": 25.3,
+    "p95": 33,
+    "p99": 37.7,
+    "max": 40.4,
+    "fps": 39.2,
+    "over33": 24,
+    "over50": 0,
+    "cpuP95": 14.9,
+    "gpuMean": 23.6,
+    "calls": 540,
+    "tris": 2405460,
+    "scale": "1",
+    "tier": "med",
+    "heapMB": -4.4,
+    "worst": []
+   },
+   "tier": "med",
+   "scale": 1,
+   "canvas": [
+    1920,
+    1080
+   ],
+   "gpuTimer": true
+  },
+  {
+   "run": "high",
+   "online": true,
+   "tour": {
+    "n": 563,
+    "mean": 22.8,
+    "p50": 21.1,
+    "p95": 33.5,
+    "p99": 40.3,
+    "max": 70,
+    "fps": 44,
+    "over33": 29,
+    "over50": 2,
+    "cpuP95": 20.3,
+    "gpuMean": 20.6,
+    "calls": 640,
+    "tris": 3129257,
+    "scale": "1",
+    "tier": "high",
+    "heapMB": -1.8,
+    "worst": [
+     {
+      "ms": 70,
+      "x": -5,
+      "z": -55
+     },
+     {
+      "ms": 58,
+      "x": -27,
+      "z": -27
+     }
+    ]
+   },
+   "views": {
+    "spawn": {
+     "n": 176,
+     "mean": 28.5,
+     "p50": 27.9,
+     "p95": 35.6,
+     "p99": 76.2,
+     "max": 115.1,
+     "fps": 35.1,
+     "over33": 18,
+     "over50": 2,
+     "cpuP95": 24.8,
+     "gpuMean": 26.2,
+     "calls": 629,
+     "tris": 3196920,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": 4.7,
+     "worst": [
+      {
+       "ms": 115,
+       "x": -6,
+       "z": -56
+      },
+      {
+       "ms": 76,
+       "x": -6,
+       "z": -56
+      }
+     ]
+    },
+    "grassEdge": {
+     "n": 191,
+     "mean": 26.3,
+     "p50": 25.9,
+     "p95": 32.5,
+     "p99": 91.2,
+     "max": 129.8,
+     "fps": 38.1,
+     "over33": 5,
+     "over50": 2,
+     "cpuP95": 11.7,
+     "gpuMean": 24.8,
+     "calls": 143,
+     "tris": 953576,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": -56.3,
+     "worst": [
+      {
+       "ms": 130,
+       "x": -52,
+       "z": 9
+      },
+      {
+       "ms": 91,
+       "x": -52,
+       "z": 9
+      }
+     ]
+    },
+    "grassIn": {
+     "n": 138,
+     "mean": 36.3,
+     "p50": 36.2,
+     "p95": 42.8,
+     "p99": 44.3,
+     "max": 50.1,
+     "fps": 27.6,
+     "over33": 114,
+     "over50": 1,
+     "cpuP95": 27.1,
+     "gpuMean": 33.9,
+     "calls": 660,
+     "tris": 3283288,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": 17.1,
+     "worst": [
+      {
+       "ms": 50,
+       "x": -57,
+       "z": 9
+      }
+     ]
+    },
+    "vista": {
+     "n": 150,
+     "mean": 33.5,
+     "p50": 33,
+     "p95": 43.3,
+     "p99": 48.7,
+     "max": 49.2,
+     "fps": 29.9,
+     "over33": 70,
+     "over50": 0,
+     "cpuP95": 27.8,
+     "gpuMean": 31.2,
+     "calls": 733,
+     "tris": 3373592,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": 8.9,
+     "worst": []
+    },
+    "barn": {
+     "n": 177,
+     "mean": 28.3,
+     "p50": 28,
+     "p95": 32.7,
+     "p99": 35.4,
+     "max": 101.8,
+     "fps": 35.4,
+     "over33": 8,
+     "over50": 1,
+     "cpuP95": 17.7,
+     "gpuMean": 26.1,
+     "calls": 450,
+     "tris": 2286033,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": 8.7,
+     "worst": [
+      {
+       "ms": 102,
+       "x": 0,
+       "z": 6
+      }
+     ]
+    },
+    "chase": {
+     "n": 220,
+     "mean": 22.8,
+     "p50": 22.2,
+     "p95": 27.3,
+     "p99": 37,
+     "max": 84.8,
+     "fps": 43.9,
+     "over33": 3,
+     "over50": 2,
+     "cpuP95": 16,
+     "gpuMean": 21.1,
+     "calls": 339,
+     "tris": 2201121,
+     "scale": "1",
+     "tier": "high",
+     "heapMB": 1.6,
+     "worst": [
+      {
+       "ms": 85,
+       "x": 27,
+       "z": 25
+      },
+      {
+       "ms": 76,
+       "x": 27,
+       "z": 24
+      }
+     ]
+    }
+   },
+   "tourWarm": {
+    "n": 525,
+    "mean": 25.9,
+    "p50": 25,
+    "p95": 36.7,
+    "p99": 43.3,
+    "max": 48,
+    "fps": 38.6,
+    "over33": 56,
+    "over50": 0,
+    "cpuP95": 18.5,
+    "gpuMean": 23.4,
+    "calls": 637,
+    "tris": 3091797,
+    "scale": "1",
+    "tier": "high",
+    "heapMB": 5.5,
+    "worst": []
+   },
+   "tier": "high",
+   "scale": 1,
+   "canvas": [
+    1920,
+    1080
+   ],
+   "gpuTimer": true
+  }
+ ]
+}

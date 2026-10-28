@@ -24,6 +24,8 @@ const flags = [`--remote-debugging-port=${PORT}`, `--user-data-dir=${path.join(o
   `--window-size=${W + 16},${H + 140}`, '--window-position=0,0', ...(UNCAP ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []),
   ...(HEADLESS ? ['--headless=new', '--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : []), 'about:blank'];
 const chrome = spawn(CHROME, flags, { stdio: 'ignore', detached: false });
+let done = false;
+chrome.on('exit', (c) => { if (!done) { console.error('chrome exited early, code', c); process.exit(1); } });
 let ver = null;
 for (let i = 0; i < 60 && !ver; i++) { await sleep(500); ver = await fetch(`http://127.0.0.1:${PORT}/json/version`).then((r) => r.json()).catch(() => null); }
 if (!ver) { console.error('no CDP endpoint on port', PORT); process.exit(1); }
@@ -38,6 +40,7 @@ ws.onmessage = (m) => {
   else if (d.method === 'Runtime.exceptionThrown') console.log('[page] exception', d.params.exceptionDetails.exception?.description?.slice(0, 300));
 };
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; wait.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+ws.onclose = () => { if (!done) { console.error('CDP connection closed'); process.exit(1); } };
 const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.result?.value;
 
 await send('Runtime.enable');
@@ -45,11 +48,13 @@ await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceSc
 await send('Page.bringToFront');
 await send('Page.navigate', { url });
 console.log('chrome', ver.Browser, '->', url);
-const t0 = Date.now(); let last = '';
+const t0 = Date.now(); let last = '', ok = false, failed = false;
 while (Date.now() - t0 < 30 * 60_000) {
   await sleep(3000);
-  const s = await evaluate(`(() => { const b = window.__bench; if (b?.done) return JSON.stringify(b.result); const s = sessionStorage.getItem('hs-bench'); return 'run ' + (s ? JSON.parse(s).i : '?') + ' gpu ' + (window.__perf?.perf?.rendererName || '?'); })()`).catch(() => null);
-  if (s?.startsWith('{')) { fs.writeFileSync(OUT, s); console.log('wrote', OUT); break; }
+  const s = await evaluate(`(() => { const b = window.__bench; if (b?.done) return b.error ? 'ERROR ' + b.error : JSON.stringify(b.result); const s = sessionStorage.getItem('hs-bench'); return 'run ' + (s ? JSON.parse(s).i : '?') + ' gpu ' + (window.__perf?.perf?.rendererName || '?'); })()`).catch(() => null);
+  if (s?.startsWith('{')) { fs.writeFileSync(OUT, s); console.log('wrote', OUT); ok = true; break; }
+  if (s?.startsWith('ERROR')) { console.error('bench failed in the page:', s.slice(6, 600)); failed = true; break; }
   if (s && s !== last) { console.log(s); last = s; }
 }
-ws.close(); chrome.kill(); process.exit(0);
+if (!ok && !failed) console.error('no result (timed out after 30 min)');
+done = true; ws.close(); chrome.kill(); process.exit(ok ? 0 : 1);

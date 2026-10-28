@@ -1,0 +1,217 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "gpu": "ANGLE (Intel, Intel(R) Graphics (0x00007D41) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "detected": "low",
+  "dpr": 1,
+  "screen": [
+   800,
+   600
+  ],
+  "viewport": [
+   1920,
+   1080
+  ],
+  "uncap": false,
+  "secs": 5,
+  "maxTex": 16384
+ },
+ "runs": [
+  {
+   "run": "auto",
+   "online": true,
+   "tour": {
+    "n": 604,
+    "mean": 23.8,
+    "p50": 18.9,
+    "p95": 35.6,
+    "p99": 70.5,
+    "max": 906.7,
+    "fps": 42.1,
+    "over33": 34,
+    "over50": 8,
+    "cpuP95": 10.9,
+    "gpuMean": null,
+    "calls": 396,
+    "tris": 2688387,
+    "scale": "1/0.9/0.8/0.7",
+    "tier": "low/med",
+    "heapMB": -3.7,
+    "worst": [
+     {
+      "ms": 907,
+      "x": 41,
+      "z": -27
+     },
+     {
+      "ms": 630,
+      "x": 41,
+      "z": -26
+     },
+     {
+      "ms": 376,
+      "x": 41,
+      "z": -24
+     },
+     {
+      "ms": 143,
+      "x": 42,
+      "z": 17
+     },
+     {
+      "ms": 139,
+      "x": 41,
+      "z": -27
+     },
+     {
+      "ms": 75,
+      "x": 40,
+      "z": 40
+     }
+    ]
+   },
+   "views": {
+    "spawn": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 18.3,
+     "p99": 19.4,
+     "max": 22.6,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 5.7,
+     "gpuMean": null,
+     "calls": 300,
+     "tris": 2267755,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -4.2,
+     "worst": []
+    },
+    "grassEdge": {
+     "n": 301,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 17.8,
+     "p99": 19,
+     "max": 20.8,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 3.4,
+     "gpuMean": null,
+     "calls": 71,
+     "tris": 672291,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -3.6,
+     "worst": []
+    },
+    "grassIn": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 18.3,
+     "p99": 19,
+     "max": 20.2,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 5.2,
+     "gpuMean": null,
+     "calls": 296,
+     "tris": 2234766,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -0.4,
+     "worst": []
+    },
+    "vista": {
+     "n": 301,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 19.1,
+     "p99": 23.5,
+     "max": 24,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 9.8,
+     "gpuMean": null,
+     "calls": 318,
+     "tris": 2376548,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -6.1,
+     "worst": []
+    },
+    "barn": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.7,
+     "p95": 17.8,
+     "p99": 18.7,
+     "max": 19.3,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 4,
+     "gpuMean": null,
+     "calls": 182,
+     "tris": 1391615,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -10.3,
+     "worst": []
+    },
+    "chase": {
+     "n": 300,
+     "mean": 16.7,
+     "p50": 16.6,
+     "p95": 18.3,
+     "p99": 19.2,
+     "max": 19.4,
+     "fps": 60,
+     "over33": 0,
+     "over50": 0,
+     "cpuP95": 4.6,
+     "gpuMean": null,
+     "calls": 271,
+     "tris": 2025801,
+     "scale": "1",
+     "tier": "low",
+     "heapMB": -2.2,
+     "worst": []
+    }
+   },
+   "tourWarm": {
+    "n": 678,
+    "mean": 16.7,
+    "p50": 16.6,
+    "p95": 18,
+    "p99": 19.2,
+    "max": 21.3,
+    "fps": 60,
+    "over33": 0,
+    "over50": 0,
+    "cpuP95": 4.5,
+    "gpuMean": null,
+    "calls": 303,
+    "tris": 2444064,
+    "scale": "1",
+    "tier": "low",
+    "heapMB": 3,
+    "worst": []
+   },
+   "tier": "low",
+   "scale": 1,
+   "canvas": [
+    1920,
+    1080
+   ],
+   "gpuTimer": false
+  }
+ ]
+}
