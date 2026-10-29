@@ -175,7 +175,7 @@ const handlers = {
     if (tri && !m.resume) { let n = 0; const iv = setInterval(() => { if (mapReady() || ++n > 150 || st.view !== 'play') { clearInterval(iv); st.net?.send('ready'); } }, 200); } // tell the server the map is up: the round clock starts when everyone is
     if (pro) PH.begin({ id: st.id, role: st.role, send: (t, d) => st.net?.send(t, d), colorOf: (id) => playerOf(id)?.color ?? 0xffffff, self: { color: self.color, hat: self.hat, pattern: self.outfit } });
     const seekerRole = st.role === 'seeker';
-    if (tri) intro(seekerRole ? `You are ${TR.CLASSES[m.cls]?.name || 'the SEEKER'} \u2014 hunt them down!` : 'You are a HIDER \u2014 collect relics, then escape!');
+    if (tri) intro(seekerRole ? `You are ${TR.CLASSES[m.cls]?.name || 'the SEEKER'} \u2014 hunt them down!` : 'You are a HIDER \u2014 install 3 fuses of your own, then escape!');
     else intro(`You are a ${seekerRole ? 'SEEKER' : 'HIDER'} \u2014 ${seekerRole ? (pro ? 'hunt them down with your blaster!' : 'tag every hider!') : (pro ? 'find a prop!' : 'find a hiding spot!')}`);
     requestLock();
   },

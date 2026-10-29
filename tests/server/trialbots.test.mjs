@@ -115,7 +115,7 @@ test('hider bot crouches still in grass when the seeker is close', () => {
 
 test('hider bot relocates away from a relic it just collected', () => {
   const m = mk(); const h = m.P('hider', 0, 0, { tb: { hideUntil: 0, skip: {}, tries: 0, relic: 0 } });
-  m.room.trial.relics[0].done = true; m.room.trial.grass = [{ x0: 8, x1: 12, z0: 8, z1: 12 }, { x0: -10, x1: -6, z0: 5, z1: 9 }];
+  h.fuses = new Set([0]); m.room.trial.grass = [{ x0: 8, x1: 12, z0: 8, z1: 12 }, { x0: -10, x1: -6, z0: 5, z1: 9 }];
   m.tick(h, 1);
   assert.ok(h.tb.relic == null && h.tb.hideUntil > 5 && h.tb.spot.x < 0, 'picks cover away from the relic ' + JSON.stringify(h.tb.spot));
 });
@@ -126,4 +126,13 @@ test('missing room / trial / bot / api are ignored', () => {
     for (const b of [h, s, null, {}, { role: 'hider', st: 'free' }]) assert.doesNotThrow(() => think(room, b, 1, 0.1, m.api));
   }
   assert.doesNotThrow(() => think(m.room, h, 1, 0.1, null));
+});
+
+test('hider bot heads for a gate only once it has 3 fuses of its own', () => {
+  const m = mk(); m.room.trial.gates = [{ i: 0, x: 1, z: 0 }];
+  const h = m.P('hider', 0, 0, { tb: { hideUntil: 999, skip: {}, tries: 0 }, fuses: new Set([0, 1]) });
+  m.tick(h, 20);
+  assert.ok(!m.calls.chan.some((c) => c.what === 'gate'), 'two fuses: no gate');
+  h.fuses.add(2); m.tick(h, 40);
+  assert.ok(m.calls.chan.some((c) => c.what === 'gate'), 'three fuses: gate');
 });

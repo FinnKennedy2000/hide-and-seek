@@ -28,7 +28,10 @@ test('trial round starts and the hider can interact state-wise', async ({ page }
   }
   // fuse / alert / escape UI, driven through the same handlers online.js calls
   const F = (fn, m) => page.evaluate(([f, a]) => window.__trialFns[f](a), [fn, m]);
-  await F('onCollected', { i: 0, n: 1, need: 3, by: 999 });
+  const myId = await page.evaluate(() => __trial.id);
+  await F('onCollected', { i: 0, n: 1, need: 3, by: myId + 1000 }); // someone else's install: our own counter must not move
+  await expect(page.locator('#trRelics b')).not.toHaveText('1/3');
+  await F('onCollected', { i: 0, n: 1, need: 3, by: myId });
   await expect(page.locator('#trRelics b')).toHaveText('1/3');
   await expect(page.locator('#trToast')).toContainText('FUSE 1/3 INSTALLED');
   await F('onGates', {});

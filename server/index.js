@@ -132,7 +132,7 @@ const BOT_WS = { readyState: 0, send() {} }; // bots have no socket: every send(
 // per-player trial state, the one place its fields are defined (new players and every trial round start from this).
 // st = health only: free | injured | caged | out | escaped (a trap hold is a clock, `trapped`, never a st).
 // Clocks are all `now()` seconds: trapped / boostEnd / rushEnd / cdEnd / cloakEnd / trapEnd / swingEnd / screamT / markT / terrT / gpT; cageT counts down.
-const trialState = () => ({ st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, mv: null, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
+const trialState = () => ({ st: 'free', chan: null, chanP: 0, speed: 0, cloak: false, rush: false, rushEnd: 0, cdEnd: 0, trapped: 0, cageT: 0, boostEnd: 0, traps: 0, swingEnd: 0, screamT: 0, markT: 0, terr: 0, terrT: 0, gpT: 0, fuses: new Set(), rp: {}, rpT: 0, relOn: -1, mv: null, trapEnd: 0, cloakEnd: 0, tb: null, lastAlert: null, heard: null });
 function newPlayer(ws, bot = false) {
   return {
     id: allocId(), ws, bot, ok: bot, token: bot ? null : crypto.randomBytes(16).toString('hex'), name: 'Player', room: null, role: null, color: 0, score: 0, total: 0, tags: 0,
@@ -517,9 +517,9 @@ function startTrial(room) {
   const live = PICK.pickRelics(T.relics, (a, b) => T.relD[a][b], seed, T_.RELICS);
   room.trial = {
     seed,
-    relics: live.map((k, i) => ({ i, id: T.relicIds?.[k] ?? `R${k + 1}`, x: T.relics[k][0], z: T.relics[k][1], p: 0, done: false, on: false, cn: [], pT: 0 })),
+    relics: live.map((k, i) => ({ i, id: T.relicIds?.[k] ?? `R${k + 1}`, x: T.relics[k][0], z: T.relics[k][1], pT: 0 })), // fuses are per hider: p.fuses (site ids installed), p.rp (that hider's own progress per site)
     gates: T.gates.map(([x, z], i) => ({ i, x, z, p: 0 })), cages: T.cages.map(([x, z], i) => ({ i, x, z, occ: 0, p: 0, on: false, cn: [], pT: 0 })),
-    gatesOpen: false, n: 0, cls: null, vaults: T.vaults, grass: T.grass, traps: [], trapN: 0, marks: [],
+    n: 0, cls: null, vaults: T.vaults, grass: T.grass, traps: [], trapN: 0, marks: [],
   };
   const spots = PICK.pickSpawns(T.hiderSpawns, hiders.length, T.spawnInfo, seed).map((k) => T.hiderSpawns[k]), spawns = [];
   const rnd = (c) => (CLASSES.includes(c) ? c : CLASSES[(Math.random() * CLASSES.length) | 0]);
@@ -546,7 +546,7 @@ function startTrial(room) {
 }
 function trialResume(room, old) { // extra fields of the resume `round` message
   const tr = room.trial;
-  return { ...trialInfo(room), relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, p: r2(q.p), done: q.done })), gatesOpen: tr.gatesOpen, states: Object.fromEntries(hidersOf(room).map((h) => [h.id, h.st])), n: tr.n, caged: tr.cages.map((c) => ({ i: c.i, occ: c.occ })), power: old.role === 'seeker' ? powerMsg(old) : undefined, trapT: old.role === 'hider' ? Math.max(0, r2(old.trapped - now())) : 0 };
+  return { ...trialInfo(room), relics: tr.relics.map((q) => ({ i: q.i, x: q.x, z: q.z, p: r2(old.rp[q.i] || 0), done: old.fuses.has(q.i) })), gatesOpen: old.fuses.size >= T_.NEED, states: Object.fromEntries(hidersOf(room).map((h) => [h.id, h.st])), n: old.role === 'hider' ? old.fuses.size : tr.n, caged: tr.cages.map((c) => ({ i: c.i, occ: c.occ })), power: old.role === 'seeker' ? powerMsg(old) : undefined, trapT: old.role === 'hider' ? Math.max(0, r2(old.trapped - now())) : 0 };
 }
 
 // ----- health states
@@ -579,8 +579,8 @@ function chanOk(room, h, what, i, slack) {
   const tr = room.trial, ob = tr && Number.isInteger(i) ? chanTarget(tr, what, i) : null;
   if (!ob || !canAct(h) || (room.phase !== 'hide' && room.phase !== 'seek')) return false;
   if (Math.hypot(ob.x - h.x, ob.z - h.z) > T_.INTERACT + slack) return false;
-  if (what === 'relic') return !ob.done;
-  if (what === 'gate') return tr.gatesOpen && tr.n >= T_.NEED;
+  if (what === 'relic') return !h.fuses.has(i);
+  if (what === 'gate') return h.fuses.size >= T_.NEED; // each hider escapes only with fuses of their own
   const o = ob.occ && room.players.get(ob.occ);
   return !!o && o !== h && o.st === 'caged';
 }
@@ -591,39 +591,43 @@ function startChannel(room, h, what, i) {
 }
 function stopChannel(room, h) { if (h.chan) dropChan(room, h); }
 
-function completeRelic(room, q, by, all = [by]) {
+function completeRelic(room, q, by) { // `by` installs fuse site `q` for themselves; a site can be installed once per hider
   const tr = room.trial;
-  if (q.done) return; // each relic counts exactly once and alerts exactly once
-  q.done = true; q.p = 1; tr.n++;
-  broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 1 });
-  broadcast(room, { t: 'collected', i: q.i, n: tr.n, need: T_.NEED, by: by.id });
+  if (by.fuses.has(q.i)) return;
+  by.fuses.add(q.i); by.rp[q.i] = 1; tr.n++;
+  const n = by.fuses.size;
+  send(by, { t: 'prog', what: 'relic', i: q.i, p: 1 });
+  broadcast(room, { t: 'collected', i: q.i, n, need: T_.NEED, by: by.id }); // n = the collector's own count; a client shows it only when by is itself
   by.score += 3;
   alertSeekers(room, 'relic', q.x, q.z);
-  for (const h of all) send(h, { t: 'exposed', ttl: TC.ALERT_TTL }); // the collector(s) learn the seeker was told where they are
-  if (tr.n >= T_.NEED && !tr.gatesOpen) {
-    tr.gatesOpen = true; broadcast(room, { t: 'gates', open: true });
-    for (const g of tr.gates) broadcast(room, { t: 'alert', kind: 'gate', x: g.x, z: g.z, ttl: TC.ALERT_TTL });
+  send(by, { t: 'exposed', ttl: TC.ALERT_TTL }); // the collector learns the seeker was told where they are
+  if (n === T_.NEED) {
+    send(by, { t: 'gates', open: true });
+    for (const g of tr.gates) alertSeekers(room, 'gate', g.x, g.z);
   }
 }
 function trialChannels(room, t, dt) {
   const tr = room.trial;
-  for (const o of tr.relics) o.cn = []; for (const o of tr.cages) o.cn = [];
+  for (const o of tr.cages) o.cn = [];
   for (const h of hidersOf(room)) {
-    const c = h.chan; if (!c) continue;
-    if (!chanOk(room, h, c.what, c.i, 0.6)) { dropChan(room, h); continue; } // walked away / target gone / hit
-    if (c.what === 'gate') {
+    const c = h.chan;
+    if (c && !chanOk(room, h, c.what, c.i, 0.6)) { dropChan(room, h); } // walked away / target gone / hit
+    else if (c && c.what === 'gate') {
       h.chanP += dt / T_.GATE_S;
       if (h.chanP >= 1) { dropChan(room, h); h.score += 5; setSt(room, h, 'escaped'); continue; }
       if (t - h.gpT >= 0.2) { h.gpT = t; broadcast(room, { t: 'prog', what: 'gate', i: c.i, p: r2(h.chanP) }); }
-    } else (c.what === 'relic' ? tr.relics : tr.cages)[c.i].cn.push(h);
-  }
-  for (const q of tr.relics) {
-    if (q.done) continue;
-    if (!q.cn.length) { if (q.on) { q.on = false; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: 0 }); } q.p = Math.max(0, q.p - 0.1 * dt); continue; }
-    q.on = true; q.p += (dt / T_.RELIC_S) * q.cn.length;
-    for (const h of q.cn) if (t >= h.screamT) { h.screamT = t + 2; if (Math.random() < T_.SCREAM_P) alertSeekers(room, 'scream', r2(h.x), r2(h.z), 3); }
-    if (q.p >= 1) { for (const h of q.cn) h.chan = null; completeRelic(room, q, q.cn[0], q.cn.slice()); q.on = false; }
-    else if (t - q.pT >= 0.2) { q.pT = t; broadcast(room, { t: 'prog', what: 'relic', i: q.i, p: r2(q.p) }); }
+    } else if (c && c.what === 'relic') {
+      h.relOn = c.i; h.rp[c.i] = (h.rp[c.i] || 0) + dt / T_.RELIC_S;
+      if (t >= h.screamT) { h.screamT = t + 2; if (Math.random() < T_.SCREAM_P) alertSeekers(room, 'scream', r2(h.x), r2(h.z), 3); }
+      if (h.rp[c.i] >= 1) { h.chan = null; h.relOn = -1; completeRelic(room, tr.relics[c.i], h); }
+      else if (t - h.rpT >= 0.2) { h.rpT = t; send(h, { t: 'prog', what: 'relic', i: c.i, p: r2(h.rp[c.i]) }); }
+    } else if (c) tr.cages[c.i].cn.push(h);
+    // unattended partial fuses fade (a site this hider has not finished and is not holding)
+    for (const k in h.rp) {
+      if (h.fuses.has(+k) || (h.chan && h.chan.what === 'relic' && h.chan.i === +k)) continue;
+      if (h.relOn === +k) { h.relOn = -1; send(h, { t: 'prog', what: 'relic', i: +k, p: 0 }); }
+      h.rp[k] = Math.max(0, h.rp[k] - 0.1 * dt);
+    }
   }
   for (const c of tr.cages) {
     if (!c.cn.length) { if (c.on) { c.on = false; broadcast(room, { t: 'prog', what: 'cage', i: c.i, p: 0 }); } c.p = 0; continue; }
@@ -869,6 +873,7 @@ const handlers = {
     send(old, roomMsg(room, old));
     broadcast(room, { t: 'conn', id: old.id, on: true }, old);
     if (room.phase === 'hide' || room.phase === 'seek') {
+      old.ready = true; // a reconnecting client never sends `ready` (resume skips the load gate)
       send(old, { t: 'round', resume: 1, phase: room.phase, mode: room.mode, map: room.map, seekers: seekersOf(room).map((q) => q.id), spawns: [{ id: old.id, x: r2(old.x), z: r2(old.z), yaw: r2(old.yaw) }], hide: HIDE_SECS, seek: room.mode === 'trial' ? TRIAL_SECS : SEEK_SECS, tl: Math.max(0, r2(room.phaseEnd - now())), role: old.role, score: old.score, ...(room.mode === 'trial' && room.trial ? trialResume(room, old) : {}) });
       // others' disguise / tint are re-sent by the snapshot code the moment each player is next visible to us
       if (room.mode === 'prophunt') { if (old.role === 'seeker') sendAmmo(old); if (room.pickup) send(old, { t: 'pickup', x: room.pickup.x, z: room.pickup.z }); }
@@ -943,6 +948,7 @@ const handlers = {
     const room = p.room;
     if (!room || (room.phase !== 'hide' && room.phase !== 'seek')) return;
     if (room.phase === 'hide' && p.role === 'seeker') return; // frozen at the door
+    if (room.hold) return; // trial load gate: nobody moves (no free hiding time for early loaders) until the round clock starts
     const t = Date.now();
     if (t - p.lastPos < MIN_POS_MS) return;
     const bd = worldOf(room).meta.bounds;

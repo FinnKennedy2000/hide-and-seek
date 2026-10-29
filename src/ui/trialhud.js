@@ -31,7 +31,7 @@ const ALERT_COL = { relic: '--lamp', scream: '--bad', gate: '--hide', trap: '--s
 const ALERT_LABEL = { relic: 'Fuse', scream: 'Scream', gate: 'Gate', trap: 'Trap', cage: 'Cage', hit: 'Hit' };
 const ALERT_LIFE = 6, MAX_ALERTS = 8;
 
-const T = { role: null, cls: null, need: 3, done: 0, prog: new Map(), doneSet: new Set(), players: new Map(), alerts: [], cd: 0, cdMax: 0, powerOn: false, nodes: [], built: false };
+const T = { role: null, cls: null, need: 3, done: 0, total: 0, prog: new Map(), doneSet: new Set(), players: new Map(), alerts: [], cd: 0, cdMax: 0, powerOn: false, nodes: [], built: false };
 const el = {};
 let toastT = 0, bannerT = 0, expT = 0;
 
@@ -64,6 +64,7 @@ const say = (s) => { if (el.live) el.live.textContent = s; };
 export const initTrialHud = safe(() => { build(); });
 
 function drawSlots() {
+  if (T.role === 'seeker') { el.slots.innerHTML = ''; mk('b', null, `FUSES INSTALLED ${T.total}`, el.slots); el.slots.setAttribute('aria-label', `Fuses installed by survivors: ${T.total}`); return; }
   const need = T.need, n = Math.min(T.done, need);
   let best = 0; for (const [i, p] of T.prog) if (!T.doneSet.has(i)) best = Math.max(best, p);
   el.slots.innerHTML = '';
@@ -78,7 +79,7 @@ function drawSlots() {
 export const resetTrialHud = safe((o) => {
   if (!build()) return;
   clearTimeout(toastT); clearTimeout(bannerT);
-  Object.assign(T, { role: o?.role ?? null, cls: o?.cls ?? null, need: o?.need ?? 3, done: 0, cd: 0, cdMax: 0, powerOn: false });
+  Object.assign(T, { role: o?.role ?? null, cls: o?.cls ?? null, need: o?.need ?? 3, done: 0, total: 0, cd: 0, cdMax: 0, powerOn: false });
   T.prog.clear(); T.doneSet.clear(); T.players.clear(); T.alerts.length = 0; clearTimeout(expT); lastTerror = -1;
   for (const n of o?.relics || []) if (n?.p > 0) T.prog.set(n.i, n.p); // resume
   for (const n of o?.relics || []) if (n?.done) { T.doneSet.add(n.i); T.done++; }
@@ -89,7 +90,7 @@ export const resetTrialHud = safe((o) => {
   el.power.classList.add('hidden'); el.power.classList.remove('on', 'cool'); el.prompt.classList.remove('show');
   el.terror.style.opacity = '0'; el.terror.classList.remove('beat'); el.chip.classList.add('hidden'); el.exp.classList.add('hidden'); el.beat.classList.add('hidden'); el.shade.classList.remove('on');
   drawSlots();
-  el.hint.textContent = o?.role === 'hider' ? 'Power the gate: install 3 fuses (hold E), then reach a gate. Hide in tall grass. Free caged friends.' : o?.role === 'seeker' ? 'Hunt them down. Hit twice to cage. Watch the edge arrows.' : '';
+  el.hint.textContent = o?.role === 'hider' ? 'To escape you must install 3 fuses yourself (hold E; each fuse site works once per survivor), then reach a gate. Hide in tall grass. Free caged friends.' : o?.role === 'seeker' ? 'Hunt them down. Hit twice to cage. Watch the edge arrows.' : '';
   el.hint.classList.toggle('hidden', !o?.role);
   if (o?.role === 'seeker') setPower({ cls: o.cls, cd: 0, on: false, n: 0 });
 });
@@ -117,6 +118,8 @@ export const relicDone = safe((n, need, byName) => {
   toast(msg, 'relic'); say(byName ? `${msg} by ${byName}` : msg);
   if (byName) { el.toast.dataset.by = byName; } else delete el.toast.dataset.by;
 });
+
+export const relicTotal = safe((n) => { T.total = n | 0; if (build()) drawSlots(); });
 
 export const gatesOpen = safe(() => {
   if (!build()) return;

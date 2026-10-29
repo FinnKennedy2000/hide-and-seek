@@ -8,6 +8,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const arr = (x) => (Array.isArray(x) ? x : []);
 const inGrass = (T, x, z) => arr(T.grass).some((g) => x >= g.x0 && x <= g.x1 && z >= g.z0 && z <= g.z1);
 const eyeLos = (nav, a, b) => nav.losClear(a.x, (a.y || 0) + 1.5, a.z, b.x, (b.y || 0) + 1.0, b.z);
+const NEED = 3; // fuses each hider must install itself (server T_.NEED)
 const SEEKABLE = (st) => st === 'free' || st === 'injured' || st == null;
 
 function walker(room, b, t, dt, api, s) { // walk to (x,z); repaths when key changes or every `refresh` s. Returns true on arrival.
@@ -35,7 +36,8 @@ function hider(room, b, t, dt, api) {
   if (see) s.sk = { x: sk.x, z: sk.z, t };
   const terr = sk && !sk.cloak ? Math.max(0, 1 - d / 24) : 0; // the heartbeat a human hider also gets (TERROR_R 24)
   const known = s.sk && t - s.sk.t < 3 ? s.sk : null; // only what it actually saw, 3 s memory
-  const relics = arr(T.relics), gates = arr(T.gates), cages = arr(T.cages), grass = arr(T.grass);
+  const mine = b.fuses || new Set(), open = mine.size >= NEED; // fuses are personal: this bot's own sites and its own gate
+  const relics = arr(T.relics).map((r) => ({ ...r, done: mine.has(r.i) })), gates = arr(T.gates), cages = arr(T.cages), grass = arr(T.grass);
 
   if (b.chan) { // holding an interaction
     const done = b.chan.what === 'relic' && relics[b.chan.i] && relics[b.chan.i].done;
@@ -75,10 +77,10 @@ function hider(room, b, t, dt, api) {
   }
 
   // seeker close and we are already in grass: crouch and stay still (no movement, no noise)
-  if (terr > 0.4 && !T.gatesOpen && inGrass(T, b.x, b.z)) { b.speed = 0; b.path = null; s.key = null; setC(1); return; }
+  if (terr > 0.4 && !open && inGrass(T, b.x, b.z)) { b.speed = 0; b.path = null; s.key = null; setC(1); return; }
 
   // gates open: leave
-  if (T.gatesOpen && gates.length) {
+  if (open && gates.length) {
     let g = null, bc = 1e9;
     for (const q of gates) { const c = D(b, q) + (known && D(known, q) < 12 ? 40 : 0); if (c < bc) { bc = c; g = q; } }
     if (g && !(known && D(known, g) < 9)) {
@@ -176,6 +178,7 @@ function seeker(room, b, t, dt, api) {
   if (room.phase !== 'seek') { b.speed = 0; return; }
   const T = room.trial, s = b.tb || (b.tb = { avoid: new Map(), lastSeen: t, visit: {}, pw: -99, cloakT: -99, sw: -9, trapped: 0 });
   const walk = walker(room, b, t, dt, api, s), relics = arr(T.relics), gates = arr(T.gates);
+  const gatesOpen = arr(api.hidersOf(room)).some((h) => h.fuses && h.fuses.size >= NEED); // some hider can leave
   const power = () => { api.usePower(room, b); };
 
   const vis = [];
@@ -255,7 +258,7 @@ function seeker(room, b, t, dt, api) {
   // patrol: relic sites weighted by staleness and proximity; gates when open
   if (!s.pat || s.patDone) {
     let c = null;
-    if (T.gatesOpen && gates.length) c = gates[(Math.random() * gates.length) | 0];
+    if (gatesOpen && gates.length) c = gates[(Math.random() * gates.length) | 0];
     else {
       let tot = 0; const ws = [];
       const live = relics.filter((r) => !r.done);

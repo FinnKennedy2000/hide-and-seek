@@ -18,7 +18,7 @@ import { setHeld } from '../characters/index.js';
 // every export this file calls is listed here and anything absent is console.error'd once at load.
 const mods = import.meta.glob(['../ui/trialhud.js', '../fx/trialfx.js', '../audio/trial.js'], { eager: true });
 const REQUIRED = {
-  '../ui/trialhud.js': ['concealed', 'edgeAlert', 'exposed', 'gatesOpen', 'hideTrialHud', 'initTrialHud', 'relicDone', 'resetTrialHud', 'setPlayerState', 'setPower', 'setPrompt', 'setRelicProgress', 'showResults', 'strike', 'terror', 'tickTrialHud'],
+  '../ui/trialhud.js': ['concealed', 'edgeAlert', 'exposed', 'gatesOpen', 'hideTrialHud', 'initTrialHud', 'relicDone', 'relicTotal', 'resetTrialHud', 'setPlayerState', 'setPower', 'setPrompt', 'setRelicProgress', 'showResults', 'strike', 'terror', 'tickTrialHud'],
   '../fx/trialfx.js': ['beacon', 'buildRoundProps', 'cageOccupied', 'clearRoundProps', 'cloakFx', 'mark', 'openGates', 'placeTrap', 'relicDone', 'removeTrap', 'setRelicProgress'],
   '../audio/trial.js': ['alertSound', 'chanLoop', 'gateSound', 'heartbeat', 'hitSound', 'missSound', 'startAmbient', 'stopAmbient', 'swingSound', 'trapSound'],
 };
@@ -75,6 +75,7 @@ export function begin(ctx) {
   UI.initTrialHud?.(); UI.resetTrialHud?.({ role: T.role, cls: T.cls, need: T.need, relics: T.relics, gates: T.gates, cages: T.cages });
   T.relics.forEach((r) => { if (r.p) { FX.setRelicProgress?.(r.i, r.p); UI.setRelicProgress?.(r.i, r.p); } if (r.done) { FX.relicDone?.(r.i); } });
   if (T.gatesOpen) { FX.openGates?.(); UI.gatesOpen?.(); }
+  if (T.role === 'seeker') UI.relicTotal?.(T.n); // the killer's counter: fuses installed in all (hiders each need 3 of their own)
   for (const k of Object.keys(T.cageOcc)) FX.cageOccupied?.(+k, true);
   if (T.role === 'seeker') UI.setPower?.({ cls: T.cls, cd: m.power ? m.power.cd : 0, on: T.power.on, n: m.power ? m.power.n : T.cls === 'trapper' ? 3 : 0 });
   AU.startAmbient?.(); // the controls card is shown by ui/onboarding.js (H re-opens it)
@@ -312,8 +313,13 @@ export function onProg(m) {
   if (m.what === 'relic') { const r = T.relics.find((q) => q.i === m.i); if (r) r.p = m.p; FX.setRelicProgress?.(m.i, m.p); UI.setRelicProgress?.(m.i, m.p); }
 }
 export function onCollected(m, feed) {
+  // fuses are personal: m.n is the collector's own count, so only a collection by us changes our sites / counter (the killer just tallies installs)
+  if (m.by !== T.id) {
+    if (T.role === 'seeker') { T.n++; UI.relicTotal?.(T.n); }
+    feed?.(`${T.nameOf(m.by)} installed a fuse (${m.n}/${m.need})`, '#80ed99'); return;
+  }
   const r = T.relics.find((q) => q.i === m.i); if (r) { r.done = true; r.p = 1; }
-  T.n = m.n; FX.relicDone?.(m.i); UI.relicDone?.(m.n, m.need, T.nameOf(m.by)); feed?.(`${T.nameOf(m.by)} installed a fuse (${m.n}/${m.need})`, '#80ed99');
+  T.n = m.n; FX.relicDone?.(m.i); UI.relicDone?.(m.n, m.need, null); feed?.(`You installed a fuse (${m.n}/${m.need})`, '#80ed99');
   if (T.chan?.what === 'relic' && T.chan.i === m.i) { T.chan = null; AU.chanLoop?.(false); }
 }
 // the server refused an `interact start` (out of range, target done, not yet open ...): drop the channelling state we assumed

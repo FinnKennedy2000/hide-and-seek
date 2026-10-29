@@ -1,4 +1,4 @@
-// Trial mode on the authoritative server: map rules, relics -> gates -> escape, hit -> injured -> caged -> rescue, grass concealment, alerts.
+// Trial mode on the authoritative server: map rules, personal fuses -> gates -> escape, hit -> injured -> caged -> rescue, grass concealment, alerts.
 // Runs its own server (TRIAL_STUB injects a `trial` block into the house map, so this works before / without coldwood).
 const WebSocket = require('ws');
 const http = require('node:http');
@@ -86,6 +86,13 @@ async function startRound(cs) {
     };
     const face = (from, to) => Math.atan2(-(to[0] - from[0]), -(to[1] - from[1])); // yaw whose forward (-sin, -cos) points at `to`
 
+    // each listed hider walks to relic site q and installs it for themselves (fuses are personal: every hider can install every site once)
+    const install = async (hs, q) => {
+      await Promise.all(hs.map((c) => c.walk(q.x, q.z)));
+      hs.forEach((c) => c.send('interact', { k: 'start', what: 'relic', i: q.i }));
+      return Promise.all(hs.map((c) => c.wait((m) => m.t === 'collected' && m.i === q.i && m.by === c.id, 10000)));
+    };
+
     // ===== 1. map / mode rules
     {
       const { cs, room } = await lobby(srv.url, 2, true); all.push(...cs);
@@ -118,19 +125,16 @@ async function startRound(cs) {
       ok(!A.log.some((m) => m.t === 'prog'), 'interact from out of range makes no progress');
       ok(A.log.some((m) => m.t === 'chanx' && m.what === 'relic' && m.i === far.i), 'a refused interact start is answered with chanx');
       A.send('interact', { k: 'stop', what: 'relic', i: far.i });
-      const go = async (c, q) => { await c.walk(q.x, q.z); c.send('interact', { k: 'start', what: 'relic', i: q.i }); };
-      await Promise.all([go(A, r.relics[0]), go(B, r.relics[1])]);
-      const col1 = [];
-      for (let k = 0; k < 2; k++) col1.push(await seeker.wait((m) => m.t === 'collected', 10000).catch(() => null));
-      ok(col1.every(Boolean) && col1.map((m) => m.n).sort().join() === '1,2', 'two relics collected (n counts 1, 2)');
+      // both hiders install the same site together: each gets their own credit, their own bars, their own alert
+      const [a0, b0] = await install([A, B], r.relics[0]);
+      ok(a0.n === 1 && b0.n === 1, 'two hiders can both install the same site and each gets personal credit (n 1 and 1)');
       const alerts = seeker.log.filter((m) => m.t === 'alert' && m.kind === 'relic');
-      ok(alerts.length === 2 && alerts.every((m) => r.relics.some((q) => q.x === m.x && q.z === m.z)), 'seeker is alerted at each relic');
+      ok(alerts.length === 2 && alerts.every((m) => m.x === r.relics[0].x && m.z === r.relics[0].z), 'seeker is alerted at the site once per install');
+      ok(seeker.log.filter((m) => m.t === 'collected').length === 2, 'the seeker is told of each install (collected goes to everyone)');
       ok(!A.log.some((m) => m.t === 'alert' && m.kind === 'relic'), 'hiders get no relic alert');
-      await Promise.all([A.walk(r.relics[2].x, r.relics[2].z), B.walk(r.relics[2].x, r.relics[2].z)]);
-      A.send('interact', { k: 'start', what: 'relic', i: 2 }); B.send('interact', { k: 'start', what: 'relic', i: 2 });
-      const third = await A.wait((m) => m.t === 'collected' && m.n === 3, 8000);
-      ok(third.need === 3 && third.by > 0, 'third relic collected');
-      ok(!!(await A.wait((m) => m.t === 'gates' && m.open)) && !!(await seeker.wait((m) => m.t === 'alert' && m.kind === 'gate')), 'gates open: broadcast + gate alert');
+      await install([A, B], r.relics[1]); await install([A, B], r.relics[2]);
+      const gA = await A.wait((m) => m.t === 'gates' && m.open, 3000), gB = await B.wait((m) => m.t === 'gates' && m.open, 3000);
+      ok(!!gA && !!gB && !!(await seeker.wait((m) => m.t === 'alert' && m.kind === 'gate')), 'gates power for each hider at their own third fuse + gate alert to the seeker');
       await Promise.all([A.walk(r.gates[0].x, r.gates[0].z), B.walk(r.gates[1].x, r.gates[1].z)]);
       A.send('interact', { k: 'start', what: 'gate', i: 0 }); B.send('interact', { k: 'start', what: 'gate', i: 1 });
       const esc = await Promise.all([A, B].map((c) => c.wait((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === c.id, 6000)));
@@ -190,57 +194,57 @@ async function startRound(cs) {
       ok(seenH(n0), 'crouched still hider is seen at 2 m');
     }
 
-    // ===== 5. objective loop: gate gating, double collect, alert ttl / no tracking, exposed, reset between rounds
+    // ===== 5. per-hider objective loop: personal gates (0/1/2 fuses never escape), no double install, alert ttl / no tracking, exposed, reset between rounds
     {
       const { cs } = await lobby(srv.url, 3); all.push(...cs);
       const { r, seeker, hiders } = await startRound(cs), [A, B] = hiders;
       const count = (c, f) => c.log.filter(f).length;
-      const tryGate = async (label, atLeast) => {
+      const tryGate = async (label) => { // A walks to a gate and holds it for longer than GATE_S
         await A.walk(r.gates[0].x, r.gates[0].z);
-        const n0 = count(A, (m) => m.t === 'hurt' && m.st === 'escaped');
+        const n0 = count(A, (m) => m.t === 'hurt' && m.st === 'escaped' && m.id === A.id);
         A.send('interact', { k: 'start', what: 'gate', i: 0 }); await sleep(3800);
         A.send('interact', { k: 'stop', what: 'gate', i: 0 });
-        ok(count(A, (m) => m.t === 'hurt' && m.st === 'escaped') === n0 && !A.log.some((m) => m.t === 'gates') && !A.log.some((m) => m.t === 'prog' && m.what === 'gate'), `${label}: gate cannot be channelled or escaped through (${atLeast} relics)`);
+        ok(count(A, (m) => m.t === 'hurt' && m.st === 'escaped' && m.id === A.id) === n0 && !A.log.some((m) => m.t === 'gates') && !A.log.some((m) => m.t === 'prog' && m.what === 'gate') && A.log.some((m) => m.t === 'chanx' && m.what === 'gate'), `${label}: A cannot channel or escape through a gate`);
+        A.log.length = 0;
       };
-      await tryGate('0 relics', 0);
-      // relic 0: both hiders channel it together -> counts once, alerts once
-      await Promise.all([A.walk(r.relics[0].x, r.relics[0].z), B.walk(r.relics[0].x, r.relics[0].z)]);
-      A.send('interact', { k: 'start', what: 'relic', i: 0 }); B.send('interact', { k: 'start', what: 'relic', i: 0 });
-      const c0 = await seeker.wait((m) => m.t === 'collected', 8000);
+      await tryGate('0 fuses');
+      // B alone installs three sites: B's gates power, A's do not
+      const [b0] = await install([B], r.relics[0]);
       const al = await seeker.wait((m) => m.t === 'alert' && m.kind === 'relic', 2000);
-      ok(c0.n === 1 && al.ttl === 6 && al.x === r.relics[0].x && al.z === r.relics[0].z, `alert carries the relic location at collection time and ttl ${al.ttl}`);
-      const ex = await A.wait((m) => m.t === 'exposed', 2000).catch(() => null);
-      ok(ex && ex.ttl === 6 && !!(await B.wait((m) => m.t === 'exposed', 2000).catch(() => null)), 'each collector gets `exposed {ttl}`');
-      A.send('interact', { k: 'start', what: 'relic', i: 0 }); B.send('interact', { k: 'start', what: 'relic', i: 0 }); await sleep(1500);
-      ok(count(seeker, (m) => m.t === 'collected') === 0 && count(seeker, (m) => m.t === 'alert' && m.kind === 'relic') === 0, 're-channelling a collected relic does not count or alert again');
-      // the collector walks away: the seeker never gets an updated position
-      seeker.log.length = 0; await A.walk(r.relics[0].x + 6, r.relics[0].z + 6); await sleep(600);
-      ok(count(seeker, (m) => m.t === 'alert') === 0, 'no alert follows the collector afterwards');
-      await tryGate('1 relic', 1);
-      await Promise.all([A.walk(r.relics[1].x, r.relics[1].z), B.walk(r.relics[1].x, r.relics[1].z)]);
-      A.send('interact', { k: 'start', what: 'relic', i: 1 }); B.send('interact', { k: 'start', what: 'relic', i: 1 });
-      await seeker.wait((m) => m.t === 'collected' && m.n === 2, 9000);
-      await tryGate('2 relics', 2);
-      // reaching 3 opens the gates; escaping then needs the physical channel (no `escaped` from walking near a gate alone)
-      await Promise.all([A.walk(r.relics[2].x, r.relics[2].z), B.walk(r.relics[2].x, r.relics[2].z)]);
-      A.send('interact', { k: 'start', what: 'relic', i: 2 });
-      await A.wait((m) => m.t === 'gates' && m.open, 9000);
+      ok(b0.n === 1 && al.ttl === 6 && al.x === r.relics[0].x && al.z === r.relics[0].z, `alert carries the site location at install time and ttl ${al.ttl}`);
+      ok(!!(await B.wait((m) => m.t === 'exposed' && m.ttl === 6, 2000).catch(() => null)) && !A.log.some((m) => m.t === 'exposed'), 'only the installer gets `exposed {ttl}`');
+      // B cannot install the same site twice
+      seeker.log.length = 0; B.log.length = 0;
+      B.send('interact', { k: 'start', what: 'relic', i: 0 }); await sleep(1500);
+      ok(count(seeker, (m) => m.t === 'collected') === 0 && count(seeker, (m) => m.t === 'alert' && m.kind === 'relic') === 0 && B.log.some((m) => m.t === 'chanx' && m.what === 'relic' && m.i === 0), 'a hider cannot install the same site twice (refused, no count, no alert)');
+      // the installer walks away: the seeker never gets an updated position
+      seeker.log.length = 0; await B.walk(r.relics[0].x + 6, r.relics[0].z + 6); await sleep(600);
+      ok(count(seeker, (m) => m.t === 'alert') === 0, 'no alert follows the installer afterwards');
+      await install([B], r.relics[1]); const [b2] = await install([B], r.relics[2]);
+      ok(b2.n === 3 && !!(await B.wait((m) => m.t === 'gates' && m.open, 2000)) && !A.log.some((m) => m.t === 'gates'), 'B reaches 3 fuses: B gets gates {open}, A does not');
+      // A with 0 / 1 / 2 personal fuses cannot escape even though B has 3
+      await tryGate('0 fuses (teammate has 3)');
+      await install([A], r.relics[0]); await tryGate('1 fuse (teammate has 3)');
+      await install([A], r.relics[1]); await tryGate('2 fuses (teammate has 3)');
+      // a site B already finished is still open to A; A's third fuse powers A's gate
+      const [a2] = await install([A], r.relics[2]);
+      ok(a2.n === 3 && !!(await A.wait((m) => m.t === 'gates' && m.open, 2000)), 'A reaches 3 fuses of their own: A gets gates {open}');
+      // escaping still needs the physical channel
       const g = r.gates[1]; await B.walk(g.x, g.z); await sleep(800);
-      ok(!B.log.some((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === B.id), 'standing at an open gate without channelling does not escape');
+      ok(!B.log.some((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === B.id), 'standing at a powered gate without channelling does not escape');
       await A.walk(r.gates[0].x, r.gates[0].z);
       A.send('interact', { k: 'start', what: 'gate', i: 0 }); B.send('interact', { k: 'start', what: 'gate', i: 1 });
       await Promise.all([A, B].map((c) => c.wait((m) => m.t === 'hurt' && m.st === 'escaped' && m.id === c.id, 6000)));
       await seeker.wait((m) => m.t === 'end', 6000); await sleep(300);
       // ---- new round: everything is reset
       cs.forEach((c) => { c.log.length = 0; c.snaps.length = 0; });
-      const r2 = await startRound(cs), [A2, B2] = r2.hiders;
-      ok(r2.r.relics.length === 6 && !r2.r.gatesOpen && !A2.log.some((m) => m.t === 'gates' || m.t === 'collected' || m.t === 'alert'), 'new round: no gates open, no collected / alert state carried over');
+      const r2 = await startRound(cs), [A2] = r2.hiders;
+      ok(r2.r.relics.length === 6 && !A2.log.some((m) => m.t === 'gates' || m.t === 'collected' || m.t === 'alert'), 'new round: no gates powered, no collected / alert state carried over');
       const g0 = r2.r.gates[0]; await A2.walk(g0.x, g0.z);
       A2.send('interact', { k: 'start', what: 'gate', i: 0 }); await sleep(3800);
-      ok(!A2.log.some((m) => m.t === 'hurt' && m.st === 'escaped'), 'new round: gates are closed again (0 relics)');
-      const q0 = r2.r.relics[0]; await A2.walk(q0.x, q0.z); A2.send('interact', { k: 'start', what: 'relic', i: 0 });
-      const c1 = await r2.seeker.wait((m) => m.t === 'collected', 9000);
-      ok(c1.n === 1, 'new round: relic count restarts at 1');
+      ok(!A2.log.some((m) => m.t === 'hurt' && m.st === 'escaped'), 'new round: gates are closed again (0 fuses)');
+      const [c1] = await install([A2], r2.r.relics[0]);
+      ok(c1.n === 1, 'new round: fuse count restarts at 1');
     }
     { // load gate: a client that opted in with hello {gate:true} holds the round until it says `ready`
       const { cs } = await lobby(srv.url, 2); all.push(...cs);
