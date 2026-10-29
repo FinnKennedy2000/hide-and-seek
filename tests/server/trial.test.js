@@ -242,6 +242,20 @@ async function startRound(cs) {
       const c1 = await r2.seeker.wait((m) => m.t === 'collected', 9000);
       ok(c1.n === 1, 'new round: relic count restarts at 1');
     }
+    { // load gate: a client that opted in with hello {gate:true} holds the round until it says `ready`
+      const { cs } = await lobby(srv.url, 2); all.push(...cs);
+      for (const c of cs) c.ws.send(JSON.stringify({ t: 'hello', protocol: WIRE.P.PROTOCOL, gate: true }));
+      cs[0].send('start');
+      await Promise.all(cs.map((c) => c.wait((m) => m.t === 'round')));
+      await sleep(2500); // HIDE_SECS is 1: without the gate the seek phase would be on by now
+      ok(!cs.some((c) => c.log.some((m) => m.t === 'phase' && m.phase === 'seek')), 'load gate: no seek phase while a client has not said ready');
+      ok(!cs.some((c) => c.snaps.length), 'load gate: no snapshots while held');
+      cs[0].send('ready'); await sleep(500);
+      ok(!cs.some((c) => c.log.some((m) => m.t === 'phase' && m.phase === 'seek')), 'load gate: still held with one client unready');
+      cs[1].send('ready');
+      await Promise.all(cs.map((c) => c.wait((m) => m.t === 'phase' && m.phase === 'seek', 4000)));
+      ok(true, 'load gate: seek phase starts once everyone is ready');
+    }
   } catch (e) { ok(false, 'trial test crashed: ' + e.message); }
   finally { all.forEach((c) => c.ws.terminate()); srv.kill(); }
   console.log(`${pass} pass, ${fail} fail`);

@@ -26,7 +26,7 @@ export function connect({ onopen, onmessage, onclose }) {
   const ws = new WebSocket(wsUrl());
   const to = setTimeout(() => { if (ws.readyState !== 1) { ws.onclose = null; ws.close(); onclose?.('timeout'); } }, 10000);
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { clearTimeout(to); ws.send(JSON.stringify({ t: 'hello', protocol: PROTOCOL })); bus.emit(EV.NET, { kind: 'open' }); onopen?.(); };
+  ws.onopen = () => { clearTimeout(to); ws.send(JSON.stringify({ t: 'hello', protocol: PROTOCOL, gate: true })); bus.emit(EV.NET, { kind: 'open' }); onopen?.(); };
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') { const s = decodeSnap(e.data); if (s) onmessage?.({ t: 'snap', ...s }); return; }
     let m;

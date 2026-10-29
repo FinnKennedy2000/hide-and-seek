@@ -21,6 +21,7 @@ const TYPES = {
 
 // ----- tunables (HIDE_SECS / SEEK_SECS env overrides exist so tests don't wait 3 minutes)
 const HIDE_SECS = Number(process.env.HIDE_SECS) || 30;
+const LOAD_WAIT_SECS = Number(process.env.LOAD_WAIT_SECS) || 30; // trial: longest the round waits for slow clients to load the map
 const SEEK_SECS = Number(process.env.SEEK_SECS) || 150;
 const MAX_PLAYERS = 8, MIN_PLAYERS = 2;
 const TICK_MS = 1000 / 15;
@@ -341,6 +342,11 @@ function sendSnapshots(room, t) {
 
 function tickRoom(room, t) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
+  if (room.hold) {
+    const waiting = [...room.players.values()].some((p) => !p.bot && p.gate && !p.ready && p.ws.readyState === 1);
+    if (waiting && t < room.hold.until) { room.lt = t; return; }
+    room.hold = null; room.t0 = t; room.phaseEnd = t + HIDE_SECS; room.lt = t; // everyone is in (or the wait ran out): the hide phase starts now
+  }
   const dt = room.lt ? Math.min(0.25, t - room.lt) : 0; room.lt = t;
   if (room.phase === 'hide' && t >= room.phaseEnd) {
     const secs = room.mode === 'trial' ? TRIAL_SECS : SEEK_SECS;
@@ -528,6 +534,8 @@ function startTrial(room) {
     spawns.push({ id: p.id, x: p.x, z: p.z, yaw: r2(p.yaw) });
   });
   room.phase = 'hide'; room.lt = 0; room.t0 = now(); room.phaseEnd = room.t0 + HIDE_SECS; room.pickup = null; room.pickupDone = false; room.pickupAt = 0;
+  room.hold = ps.some((p) => !p.bot && p.gate) ? { until: now() + LOAD_WAIT_SECS } : null; // nothing happens (no clock, bots, snapshots) until every human has loaded the map
+  for (const p of ps) p.ready = false;
   const info = trialInfo(room);
   for (const p of ps) {
     if (p.bot) continue;
@@ -841,7 +849,7 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 const handlers = {
   hello(p, m) { // first message on every connection; a different protocol version is refused instead of desyncing
     if (m.protocol !== PR.PROTOCOL) return refuse(p);
-    p.ok = true;
+    p.ok = true; p.gate = !!m.gate; // a client that can say `ready` once its map has loaded: the trial clock waits for it
     sendPing(p);
   },
   pong(p, m) { // server-measured round trip: only a pong for a ping the server really sent counts, and lag comp uses the minimum of the last 8
@@ -959,9 +967,10 @@ const handlers = {
     if (!p.room || p.room.phase !== 'lobby' || typeof m.cls !== 'string' || (m.cls !== 'random' && !CLASSES.includes(m.cls))) return;
     p.cls = m.cls;
   },
+  ready(p) { p.ready = true; }, // trial: this client's map has loaded
   interact(p, m) {
     const room = p.room;
-    if (!room || room.mode !== 'trial' || !room.trial || p.role !== 'hider') return;
+    if (!room || room.mode !== 'trial' || !room.trial || p.role !== 'hider' || room.hold) return;
     if (m.k === 'stop') return stopChannel(room, p);
     if (m.k === 'start' && (m.what === 'relic' || m.what === 'gate' || m.what === 'cage') && Number.isInteger(m.i) && !startChannel(room, p, m.what, m.i)) send(p, { t: 'chanx', what: m.what, i: m.i }); // refused: the client drops its channelling state
   },

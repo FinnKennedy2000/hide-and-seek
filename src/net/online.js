@@ -5,7 +5,7 @@ import { $, fmt, setText } from '../core/util.js';
 import { P, G, hooks } from '../core/state.js';
 import { requestLock } from '../core/input.js';
 import { camera, canvas } from '../render/renderer.js';
-import { setWorld, worldId } from '../world/build.js';
+import { setWorld, worldId, mapReady } from '../world/build.js';
 import { losClear } from '../ai/nav.js';
 import { initAudio, sfx } from '../audio/sfx.js';
 import { burst } from '../render/fx.js';
@@ -172,6 +172,7 @@ const handlers = {
     setView('play'); G.phase = 'play';
     const self = playerOf(st.id), pro = st.mode === 'prophunt';
     if (tri) TR.begin({ id: st.id, role: st.role, m, send: (t, d) => st.net?.send(t, d), nameOf, teleport: (x, z) => { P.x = x; P.z = z; P.vx = 0; P.vz = 0; st.hist.length = 0; }, self: { color: self.color, hat: self.hat, pattern: self.outfit } });
+    if (tri && !m.resume) { let n = 0; const iv = setInterval(() => { if (mapReady() || ++n > 150 || st.view !== 'play') { clearInterval(iv); st.net?.send('ready'); } }, 200); } // tell the server the map is up: the round clock starts when everyone is
     if (pro) PH.begin({ id: st.id, role: st.role, send: (t, d) => st.net?.send(t, d), colorOf: (id) => playerOf(id)?.color ?? 0xffffff, self: { color: self.color, hat: self.hat, pattern: self.outfit } });
     const seekerRole = st.role === 'seeker';
     if (tri) intro(seekerRole ? `You are ${TR.CLASSES[m.cls]?.name || 'the SEEKER'} \u2014 hunt them down!` : 'You are a HIDER \u2014 collect relics, then escape!');

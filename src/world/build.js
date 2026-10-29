@@ -230,6 +230,7 @@ export function setWorld(id) {
   setSpots(map);
 }
 export const worldId = () => worldKey;
+export const mapReady = () => !glb || glb.stats.loaded; // a GLB-drawn map is shown once its shaders are compiled (mapglb.js)
 
 // fluorescent strips (lights whose colour is the map's `flicker` colour): jitter intensity, with the odd brief dropout
 export function updateFlicker(dt) {
