@@ -245,6 +245,7 @@ function startRound(room) {
 
 function endRound(room, winner) {
   if (room.phase !== 'hide' && room.phase !== 'seek') return;
+  room.hold = null; // a round that ends during the trial load gate must not freeze the next one
   for (const p of room.players.values()) {
     if (winner === 'hiders' && p.role === 'hider' && room.mode !== 'trial') p.score += 5; // (trial: the +5 is paid per gate escape)
     p.total += p.score;
@@ -345,6 +346,7 @@ function tickRoom(room, t) {
   if (room.hold) {
     const waiting = [...room.players.values()].some((p) => !p.bot && p.gate && !p.ready && p.ws.readyState === 1);
     if (waiting && t < room.hold.until) { room.lt = t; return; }
+    if (waiting) console.warn(`[trial] load gate timed out in ${room.code}; not ready: ${[...room.players.values()].filter((p) => !p.bot && p.gate && !p.ready).map((p) => p.name).join(', ')}`);
     room.hold = null; room.t0 = t; room.phaseEnd = t + HIDE_SECS; room.lt = t; // everyone is in (or the wait ran out): the hide phase starts now
   }
   const dt = room.lt ? Math.min(0.25, t - room.lt) : 0; room.lt = t;

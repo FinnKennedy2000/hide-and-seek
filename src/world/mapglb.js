@@ -74,6 +74,7 @@ export function mapGlbLayer(world, url, opts = {}) {
     stats.loaded = true;
   }).catch((e) => { // the map is the only cover there is: whatever failed above, show what was loaded rather than nothing
     console.error('[mapglb] map build failed', e);
+    stats.loaded = true; stats.failed = true; // never leave the online load gate waiting on a map that cannot finish
     if (root && !dead && !root.parent) { world.add(root); stats.loaded = true; }
   });
   return {

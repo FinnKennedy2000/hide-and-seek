@@ -178,7 +178,7 @@ function seeker(room, b, t, dt, api) {
   if (room.phase !== 'seek') { b.speed = 0; return; }
   const T = room.trial, s = b.tb || (b.tb = { avoid: new Map(), lastSeen: t, visit: {}, pw: -99, cloakT: -99, sw: -9, trapped: 0 });
   const walk = walker(room, b, t, dt, api, s), relics = arr(T.relics), gates = arr(T.gates);
-  const gatesOpen = arr(api.hidersOf(room)).some((h) => h.fuses && h.fuses.size >= NEED); // some hider can leave
+  const gatesOpen = arr(api.hidersOf(room)).some((h) => h.fuses && h.fuses.size >= NEED && (h.st === 'free' || h.st === 'injured' || h.st === 'caged')); // some hider still in the round can leave
   const power = () => { api.usePower(room, b); };
 
   const vis = [];
